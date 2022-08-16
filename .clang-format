@@ -1,0 +1,14 @@
+AlignAfterOpenBracket: AlwaysBreak
+AlignConsecutiveMacros: Consecutive
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AlwaysBreakAfterReturnType: TopLevel
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false
+ContinuationIndentWidth: 2
+ColumnLimit: 0
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterFunctionDeclarationName: true
+  AfterFunctionDefinitionName: true
