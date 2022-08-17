@@ -2,29 +2,29 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "types.h"
+#include "platform/platform.h"
 
 using v8::V8;
 
-static js_platform_t *platform = nullptr;
+static js::Platform *platform = nullptr;
 
 extern "C" int
-js_platform_init (const char *path) {
+js_init (const char *path) {
   assert(platform == nullptr);
 
   V8::InitializeICUDefaultLocation(path);
   V8::InitializeExternalStartupData(path);
 
-  platform = new js_platform_t(v8::platform::NewDefaultPlatform());
+  platform = new js::Platform();
 
-  V8::InitializePlatform(platform->platform.get());
+  V8::InitializePlatform(platform);
   V8::Initialize();
 
   return 0;
 }
 
 extern "C" int
-js_platform_destroy () {
+js_destroy () {
   assert(platform != nullptr);
 
   V8::Dispose();

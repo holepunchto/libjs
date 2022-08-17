@@ -8,21 +8,19 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct js_platform_s js_platform_t;
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_value_s js_value_t;
 
-struct js_platform_s;
 struct js_env_s;
 struct js_handle_scope_s;
 struct js_value_s;
 
 int
-js_platform_init (const char *path);
+js_init (const char *path);
 
 int
-js_platform_destroy ();
+js_destroy ();
 
 int
 js_env_init (js_env_t **result);

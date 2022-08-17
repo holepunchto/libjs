@@ -1,7 +1,6 @@
 #ifndef JS_TYPES_H
 #define JS_TYPES_H
 
-#include <libplatform/libplatform.h>
 #include <v8.h>
 
 using v8::ArrayBuffer;
@@ -12,10 +11,10 @@ using v8::Persistent;
 using v8::Platform;
 
 struct js_platform_s {
-  std::unique_ptr<Platform> platform;
+  Platform *platform;
 
-  js_platform_s(std::unique_ptr<Platform> platform)
-      : platform(std::move(platform)) {}
+  js_platform_s(Platform *platform)
+      : platform(platform) {}
 };
 
 struct js_env_s {
