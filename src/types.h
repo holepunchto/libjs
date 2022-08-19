@@ -1,33 +1,23 @@
-#ifndef JS_TYPES_H
-#define JS_TYPES_H
+#pragma once
 
 #include <v8.h>
 
-using v8::ArrayBuffer;
-using v8::Context;
-using v8::HandleScope;
-using v8::Isolate;
-using v8::Persistent;
-using v8::Platform;
-
 struct js_env_s {
-  Platform *platform;
-  Isolate *isolate;
-  ArrayBuffer::Allocator *allocator;
-  Persistent<Context> context;
+  v8::Platform *platform;
+  v8::Isolate *isolate;
+  v8::ArrayBuffer::Allocator *allocator;
+  v8::Persistent<v8::Context> context;
 
-  js_env_s(Platform *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
+  js_env_s(v8::Platform *platform, v8::Isolate *isolate, v8::ArrayBuffer::Allocator *allocator)
       : platform(platform),
         isolate(isolate),
         allocator(allocator),
-        context(isolate, Context::New(isolate)) {}
+        context(isolate, v8::Context::New(isolate)) {}
 };
 
 struct js_handle_scope_s {
-  HandleScope scope;
+  v8::HandleScope scope;
 
-  js_handle_scope_s(Isolate *isolate)
+  js_handle_scope_s(v8::Isolate *isolate)
       : scope(isolate) {}
 };
-
-#endif // JS_TYPES_H
