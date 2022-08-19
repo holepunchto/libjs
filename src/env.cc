@@ -1,6 +1,7 @@
 #include <v8.h>
 
 #include "../include/js.h"
+#include "platform.h"
 #include "types.h"
 
 using v8::ArrayBuffer;
@@ -18,7 +19,7 @@ js_env_init (js_env_t **result) {
 
   HandleScope scope(isolate);
 
-  *result = new js_env_s(isolate, allocator);
+  *result = new js_env_s(js::platform, isolate, allocator);
 
   return 0;
 }

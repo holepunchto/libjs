@@ -1,5 +1,6 @@
 list(APPEND tests
-  basic
+  run-module
+  run-script
 )
 
 foreach(test IN LISTS tests)

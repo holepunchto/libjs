@@ -1,7 +1,7 @@
 #include <v8.h>
 
-#include "tracing-controller.h"
-
 namespace js {
+
+static v8::Platform *platform = nullptr;
 
 } // namespace js

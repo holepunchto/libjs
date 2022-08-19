@@ -17,10 +17,10 @@ struct js_handle_scope_s;
 struct js_value_s;
 
 int
-js_init (const char *path);
+js_platform_init (const char *path);
 
 int
-js_destroy ();
+js_platform_destroy ();
 
 int
 js_env_init (js_env_t **result);
@@ -30,6 +30,9 @@ js_env_destroy (js_env_t *env);
 
 int
 js_run_script (js_env_t *env, js_value_t *script, js_value_t **result);
+
+int
+js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t **result);
 
 int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result);

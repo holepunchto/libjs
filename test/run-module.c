@@ -7,7 +7,7 @@ int
 main (int argc, char *argv[]) {
   int e;
 
-  e = js_init(argv[0]);
+  e = js_platform_init(argv[0]);
   assert(e == 0);
 
   js_env_t *env;
@@ -23,7 +23,7 @@ main (int argc, char *argv[]) {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, script, &result);
+  e = js_run_module(env, script, "test.js", &result);
   assert(e == 0);
 
   uint32_t value;
@@ -38,6 +38,6 @@ main (int argc, char *argv[]) {
   e = js_env_destroy(env);
   assert(e == 0);
 
-  e = js_destroy();
+  e = js_platform_destroy();
   assert(e == 0);
 }
