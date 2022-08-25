@@ -12,10 +12,6 @@ typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_value_s js_value_t;
 
-struct js_env_s;
-struct js_handle_scope_s;
-struct js_value_s;
-
 int
 js_platform_init (const char *path);
 
