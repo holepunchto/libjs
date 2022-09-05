@@ -81,6 +81,7 @@ install(TARGETS js_shared js_static)
 
 install(FILES include/js.h DESTINATION include)
 
-enable_testing()
-
-add_subdirectory(test)
+if(PROJECT_IS_TOP_LEVEL)
+  enable_testing()
+  add_subdirectory(test)
+endif()
