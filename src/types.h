@@ -2,6 +2,10 @@
 
 #include <v8.h>
 
+#include "../include/js.h"
+
+typedef struct js_callback_data_s js_callback_data_t;
+
 struct js_env_s {
   v8::Platform *platform;
   v8::Isolate *isolate;
@@ -20,4 +24,15 @@ struct js_handle_scope_s {
 
   js_handle_scope_s(v8::Isolate *isolate)
       : scope(isolate) {}
+};
+
+struct js_callback_data_s {
+  js_env_t *env;
+  js_callback_t cb;
+  void *data;
+
+  js_callback_data_s(js_env_t *env, js_callback_t cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
 };

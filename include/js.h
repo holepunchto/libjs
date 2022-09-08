@@ -7,10 +7,14 @@ extern "C" {
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_value_s js_value_t;
+typedef struct js_callback_info_s js_callback_info_t;
+
+typedef js_value_t *(*js_callback_t)(js_env_t *, const js_callback_info_t *);
 
 int
 js_platform_init (const char *path);
@@ -46,10 +50,22 @@ int
 js_create_string_utf8 (js_env_t *env, const char *str, ssize_t len, js_value_t **result);
 
 int
+js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t cb, void *data, js_value_t **result);
+
+int
+js_get_global (js_env_t *env, js_value_t **result);
+
+int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result);
 
 int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result);
+
+int
+js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result);
+
+int
+js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
 
 #ifdef __cplusplus
 }
