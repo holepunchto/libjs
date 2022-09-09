@@ -3,7 +3,7 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "platform.h"
+#include "platform.hh"
 
 using v8::V8;
 

@@ -27,7 +27,9 @@ target_sources(
     src/env.cc
     src/handle.cc
     src/platform.cc
+    src/platform.hh
     src/run.cc
+    src/types.hh
     src/value.cc
 )
 

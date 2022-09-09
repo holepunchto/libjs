@@ -2,7 +2,7 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "types.h"
+#include "types.hh"
 
 using v8::Context;
 using v8::EscapableHandleScope;

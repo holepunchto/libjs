@@ -1,7 +1,7 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "types.h"
+#include "types.hh"
 
 extern "C" int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result) {

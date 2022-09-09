@@ -1,8 +1,8 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "platform.h"
-#include "types.h"
+#include "platform.hh"
+#include "types.hh"
 
 using v8::ArrayBuffer;
 using v8::HandleScope;
