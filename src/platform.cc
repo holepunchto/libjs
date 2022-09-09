@@ -27,7 +27,7 @@ js_platform_destroy () {
   assert(js::platform != nullptr);
 
   V8::Dispose();
-  V8::ShutdownPlatform();
+  V8::DisposePlatform();
 
   delete js::platform;
 
