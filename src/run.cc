@@ -18,9 +18,15 @@ js_run_script (js_env_t *env, js_value_t *script, js_value_t **result) {
 
   ScriptCompiler::Source source(local.As<String>());
 
+  env->isolate->Enter();
+  context->Enter();
+
   auto compiled = ScriptCompiler::Compile(context, &source);
 
   *result = reinterpret_cast<js_value_t *>(*compiled.ToLocalChecked()->Run(context).ToLocalChecked());
+
+  context->Exit();
+  env->isolate->Exit();
 
   return 0;
 }
@@ -35,9 +41,15 @@ js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t *
 
   ScriptCompiler::Source source(local.As<String>());
 
+  env->isolate->Enter();
+  context->Enter();
+
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &source).ToLocalChecked();
 
   *result = reinterpret_cast<js_value_t *>(*compiled->Evaluate(context).ToLocalChecked());
+
+  context->Exit();
+  env->isolate->Exit();
 
   return 0;
 }
