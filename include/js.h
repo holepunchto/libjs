@@ -7,7 +7,6 @@ extern "C" {
 
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/types.h>
 
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
@@ -47,7 +46,7 @@ int
 js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result);
 
 int
-js_create_string_utf8 (js_env_t *env, const char *str, ssize_t len, js_value_t **result);
+js_create_string_utf8 (js_env_t *env, const char *str, size_t len, js_value_t **result);
 
 int
 js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t cb, void *data, js_value_t **result);
