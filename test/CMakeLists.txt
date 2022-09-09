@@ -1,14 +1,16 @@
 list(APPEND tests
-  create-function
-  run-module
-  run-script
-  set-named-property
+  create-function.c
+  run-module.c
+  run-script.c
+  set-named-property.c
 )
 
-foreach(test IN LISTS tests)
-  add_executable(${test} ${test}.c)
+foreach(file IN LISTS tests)
+  get_filename_component(test ${file} NAME_WE)
 
-  target_link_libraries(${test} js_static)
+  add_executable(${test} ${file})
+
+  target_link_libraries(${test} js_shared)
 
   add_test(
     NAME ${test}
