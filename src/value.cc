@@ -12,6 +12,7 @@ using v8::FunctionCallbackInfo;
 using v8::Int32;
 using v8::Integer;
 using v8::Local;
+using v8::NewStringType;
 using v8::Object;
 using v8::String;
 using v8::Uint32;
@@ -36,8 +37,8 @@ js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result) {
 }
 
 extern "C" int
-js_create_string_utf8 (js_env_t *env, const char *value, ssize_t len, js_value_t **result) {
-  auto string = String::NewFromUtf8(env->isolate, value, v8::NewStringType::kNormal, len);
+js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t **result) {
+  auto string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
 
   *result = reinterpret_cast<js_value_t *>(*string.ToLocalChecked());
 
@@ -46,7 +47,7 @@ js_create_string_utf8 (js_env_t *env, const char *value, ssize_t len, js_value_t
 
 static void
 on_function_call (const FunctionCallbackInfo<Value> &info) {
-  auto wrapper = reinterpret_cast<js_callback_data_t *>(info.Data().As<v8::External>()->Value());
+  auto wrapper = reinterpret_cast<js_callback_data_t *>(info.Data().As<External>()->Value());
 
   auto result = wrapper->cb(wrapper->env, reinterpret_cast<const js_callback_info_t *>(&info));
 
@@ -68,7 +69,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t c
   auto fn = Function::New(context, on_function_call, external).ToLocalChecked();
 
   if (name != nullptr) {
-    auto string = String::NewFromUtf8(env->isolate, name, v8::NewStringType::kNormal, len);
+    auto string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
 
     fn->SetName(string.ToLocalChecked());
   }
@@ -109,7 +110,7 @@ extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
 
-  auto key = String::NewFromUtf8(env->isolate, name, v8::NewStringType::kNormal, -1);
+  auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
 
   auto target = *reinterpret_cast<Local<Object> *>(&object);
 
@@ -124,7 +125,7 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
 
-  auto key = String::NewFromUtf8(env->isolate, name, v8::NewStringType::kNormal, -1);
+  auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
 
   auto local = *reinterpret_cast<Local<Value> *>(&value);
 
