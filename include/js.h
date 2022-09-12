@@ -55,6 +55,9 @@ int
 js_get_global (js_env_t *env, js_value_t **result);
 
 int
+js_get_null (js_env_t *env, js_value_t **result);
+
+int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result);
 
 int
@@ -65,6 +68,9 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
 int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
+
+int
+js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result);
 
 #ifdef __cplusplus
 }

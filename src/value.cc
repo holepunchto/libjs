@@ -13,8 +13,10 @@ using v8::Int32;
 using v8::Integer;
 using v8::Local;
 using v8::NewStringType;
+using v8::Null;
 using v8::Object;
 using v8::String;
+using v8::TryCatch;
 using v8::Uint32;
 using v8::Value;
 
@@ -88,6 +90,13 @@ js_get_global (js_env_t *env, js_value_t **result) {
   return 0;
 }
 
+int
+js_get_null (js_env_t *env, js_value_t **result) {
+  *result = reinterpret_cast<js_value_t *>(*Null(env->isolate));
+
+  return 0;
+}
+
 extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   auto local = *reinterpret_cast<Local<Value> *>(&value);
@@ -134,4 +143,32 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   target->Set(context, key.ToLocalChecked(), local).ToChecked();
 
   return 0;
+}
+
+int
+js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
+  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+
+  auto local_recv = *reinterpret_cast<Local<Value> *>(&recv);
+
+  auto local_fn = *reinterpret_cast<Local<Function> *>(&fn);
+
+  TryCatch try_catch(env->isolate);
+
+  auto local = local_fn->Call(
+    context,
+    local_recv,
+    argc,
+    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  );
+
+  if (try_catch.HasCaught()) {
+    env->exception.Reset(env->isolate, try_catch.Exception());
+
+    return -1;
+  } else {
+    *result = reinterpret_cast<js_value_t *>(*local.ToLocalChecked());
+
+    return 0;
+  }
 }

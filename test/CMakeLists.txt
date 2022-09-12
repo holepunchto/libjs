@@ -1,4 +1,6 @@
 list(APPEND tests
+  call-function.c
+  call-function-throw.c
   create-function.c
   run-module.c
   run-script.c
