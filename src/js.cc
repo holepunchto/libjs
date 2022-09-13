@@ -13,25 +13,34 @@ using namespace v8;
 typedef struct js_callback_data_s js_callback_data_t;
 
 struct js_env_s {
-  v8::Platform *platform;
-  v8::Isolate *isolate;
-  v8::ArrayBuffer::Allocator *allocator;
-  v8::Persistent<v8::Context> context;
-  v8::Persistent<v8::Value> exception;
+  Platform *platform;
+  Isolate *isolate;
+  ArrayBuffer::Allocator *allocator;
+  Persistent<Context> context;
+  Persistent<Value> exception;
 
-  js_env_s(v8::Platform *platform, v8::Isolate *isolate, v8::ArrayBuffer::Allocator *allocator)
+  js_env_s(Platform *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : platform(platform),
         isolate(isolate),
         allocator(allocator),
-        context(isolate, v8::Context::New(isolate)),
+        context(isolate, Context::New(isolate)),
         exception() {}
 };
 
 struct js_handle_scope_s {
-  v8::HandleScope scope;
+  HandleScope scope;
 
-  js_handle_scope_s(v8::Isolate *isolate)
+  js_handle_scope_s(Isolate *isolate)
       : scope(isolate) {}
+};
+
+struct js_ref_s {
+  Persistent<Value> value;
+  uint32_t count;
+
+  js_ref_s(Isolate *isolate, Local<Value> value, uint32_t count)
+      : value(isolate, value),
+        count(count) {}
 };
 
 struct js_callback_data_s {
@@ -45,7 +54,7 @@ struct js_callback_data_s {
         data(data) {}
 };
 
-static v8::Platform *js_platform = nullptr;
+static Platform *js_platform = nullptr;
 
 extern "C" int
 js_platform_init (const char *path) {
@@ -54,7 +63,7 @@ js_platform_init (const char *path) {
   V8::InitializeICUDefaultLocation(path);
   V8::InitializeExternalStartupData(path);
 
-  js_platform = v8::platform::NewDefaultPlatform().release();
+  js_platform = platform::NewDefaultPlatform().release();
 
   V8::InitializePlatform(js_platform);
   V8::Initialize();
@@ -70,6 +79,24 @@ js_platform_destroy () {
   V8::DisposePlatform();
 
   delete js_platform;
+
+  return 0;
+}
+
+extern "C" int
+js_set_flags_from_string (const char *string, size_t len) {
+  if (len == (size_t) -1) {
+    V8::SetFlagsFromString(string);
+  } else {
+    V8::SetFlagsFromString(string, len);
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
+  V8::SetFlagsFromCommandLine(argc, argv, remove_flags);
 
   return 0;
 }
@@ -159,6 +186,80 @@ js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t *
   return 0;
 }
 
+static void
+on_reference_finalize (const WeakCallbackInfo<js_ref_t> &info) {
+  auto reference = info.GetParameter();
+
+  reference->value.Reset();
+}
+
+inline void
+js_set_weak_reference (js_env_t *env, js_ref_t *reference) {
+  reference->value.SetWeak(reference, on_reference_finalize, WeakCallbackType::kParameter);
+}
+
+inline void
+js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
+  reference->value.ClearWeak();
+}
+
+extern "C" int
+js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result) {
+  auto reference = new js_ref_t(env->isolate, *reinterpret_cast<Local<Value> *>(&value), count);
+
+  if (reference->count == 0) js_set_weak_reference(env, reference);
+
+  *result = reference;
+
+  return 0;
+}
+
+extern "C" int
+js_delete_reference (js_env_t *env, js_ref_t *reference) {
+  delete reference;
+
+  return 0;
+}
+
+extern "C" int
+js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
+  reference->count++;
+
+  if (reference->count == 1) js_clear_weak_reference(env, reference);
+
+  if (result != nullptr) {
+    *result = reference->count;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
+  if (reference->count == 0) return -1;
+
+  reference->count--;
+
+  if (reference->count == 0) js_set_weak_reference(env, reference);
+
+  if (result != nullptr) {
+    *result = reference->count;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result) {
+  if (reference->value.IsEmpty()) {
+    *result = nullptr;
+  } else {
+    *result = reinterpret_cast<js_value_t *>(*reference->value.Get(env->isolate));
+  }
+
+  return 0;
+}
+
 extern "C" int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result) {
   auto uint = Integer::New(env->isolate, value);
@@ -182,6 +283,21 @@ js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t 
   auto string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
 
   *result = reinterpret_cast<js_value_t *>(*string.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_object (js_env_t *env, js_value_t **result) {
+  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+
+  context->Enter();
+
+  auto object = Object::New(env->isolate);
+
+  context->Exit();
+
+  *result = reinterpret_cast<js_value_t *>(*object);
 
   return 0;
 }
@@ -229,21 +345,21 @@ js_get_global (js_env_t *env, js_value_t **result) {
   return 0;
 }
 
-int
+extern "C" int
 js_get_null (js_env_t *env, js_value_t **result) {
   *result = reinterpret_cast<js_value_t *>(*Null(env->isolate));
 
   return 0;
 }
 
-int
+extern "C" int
 js_get_undefined (js_env_t *env, js_value_t **result) {
   *result = reinterpret_cast<js_value_t *>(*Undefined(env->isolate));
 
   return 0;
 }
 
-int
+extern "C" int
 js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
   if (value) {
     *result = reinterpret_cast<js_value_t *>(*True(env->isolate));
@@ -302,7 +418,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   return 0;
 }
 
-int
+extern "C" int
 js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
 
@@ -330,7 +446,7 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
   }
 }
 
-int
+extern "C" int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t *self, void **data) {
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
@@ -351,6 +467,13 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
   if (data != nullptr) {
     *data = reinterpret_cast<js_callback_data_t *>(v8_info.Data().As<External>()->Value())->data;
   }
+
+  return 0;
+}
+
+extern "C" int
+js_request_garbage_collection (js_env_t *env) {
+  env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
 
   return 0;
 }

@@ -2,6 +2,7 @@ list(APPEND tests
   call-function.c
   call-function-throw.c
   create-function.c
+  create-reference-weak.c
   run-module.c
   run-script.c
   set-named-property.c
