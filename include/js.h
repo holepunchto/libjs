@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -58,6 +59,12 @@ int
 js_get_null (js_env_t *env, js_value_t **result);
 
 int
+js_get_undefined (js_env_t *env, js_value_t **result);
+
+int
+js_get_boolean (js_env_t *env, bool value, js_value_t **result);
+
+int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result);
 
 int
@@ -71,6 +78,9 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
 int
 js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result);
+
+int
+js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t *self, void **data);
 
 #ifdef __cplusplus
 }

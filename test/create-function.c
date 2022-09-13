@@ -1,13 +1,27 @@
 #include <assert.h>
-#include <stdio.h>
 
 #include "../include/js.h"
 
 js_value_t *
 on_call (js_env_t *env, const js_callback_info_t *info) {
-  js_value_t *result;
-  js_create_uint32(env, 42, &result);
-  return result;
+  int e;
+
+  js_value_t *argv[1];
+  size_t argc = 1;
+
+  e = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(e == 0);
+
+  assert(argc == 2);
+
+  uint32_t value;
+  e = js_get_value_uint32(env, argv[0], &value);
+  assert(e == 0);
+
+  e = js_create_uint32(env, value * 2, &argv[0]);
+  assert(e == 0);
+
+  return argv[0];
 }
 
 int
@@ -37,7 +51,7 @@ main (int argc, char *argv[]) {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "hello()", -1, &script);
+  e = js_create_string_utf8(env, "hello(42, 'foo')", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
@@ -48,7 +62,7 @@ main (int argc, char *argv[]) {
   js_get_value_uint32(env, result, &value);
   assert(e == 0);
 
-  assert(value == 42);
+  assert(value == 84);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
