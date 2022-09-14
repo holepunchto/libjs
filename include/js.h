@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
+typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_callback_info_s js_callback_info_t;
@@ -36,16 +37,25 @@ int
 js_env_destroy (js_env_t *env);
 
 int
-js_run_script (js_env_t *env, js_value_t *script, js_value_t **result);
-
-int
-js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t **result);
-
-int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result);
 
 int
 js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope);
+
+int
+js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **result);
+
+int
+js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *scope);
+
+int
+js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
+
+int
+js_run_script (js_env_t *env, js_value_t *script, js_value_t **result);
+
+int
+js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t **result);
 
 int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result);

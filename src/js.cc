@@ -34,6 +34,15 @@ struct js_handle_scope_s {
       : scope(isolate) {}
 };
 
+struct js_escapable_handle_scope_s {
+  EscapableHandleScope scope;
+  bool escaped;
+
+  js_escapable_handle_scope_s(Isolate *isolate)
+      : scope(isolate),
+        escaped(false) {}
+};
+
 struct js_ref_s {
   Persistent<Value> value;
   uint32_t count;
@@ -138,6 +147,35 @@ js_open_handle_scope (js_env_t *env, js_handle_scope_t **result) {
 extern "C" int
 js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope) {
   delete scope;
+
+  return 0;
+}
+
+extern "C" int
+js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **result) {
+  *result = new js_escapable_handle_scope_s(env->isolate);
+
+  return 0;
+}
+
+extern "C" int
+js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *scope) {
+  delete scope;
+
+  return 0;
+}
+
+extern "C" int
+js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
+  if (scope->escaped) {
+    return -1;
+  }
+
+  scope->escaped = true;
+
+  auto local = *reinterpret_cast<Local<Value> *>(&escapee);
+
+  *result = reinterpret_cast<js_value_t *>(*scope->scope.Escape(local));
 
   return 0;
 }
