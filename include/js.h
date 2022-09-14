@@ -14,6 +14,7 @@ typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
+typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
 typedef js_value_t *(*js_callback_t)(js_env_t *, const js_callback_info_t *);
@@ -86,6 +87,15 @@ js_create_object (js_env_t *env, js_value_t **result);
 
 int
 js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t cb, void *data, js_value_t **result);
+
+int
+js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
+
+int
+js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
+
+int
+js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
 int
 js_get_global (js_env_t *env, js_value_t **result);

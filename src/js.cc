@@ -52,6 +52,13 @@ struct js_ref_s {
         count(count) {}
 };
 
+struct js_deferred_s {
+  Persistent<Promise::Resolver> resolver;
+
+  js_deferred_s(Isolate *isolate, Local<Promise::Resolver> resolver)
+      : resolver(isolate, resolver) {}
+};
+
 struct js_callback_data_s {
   js_env_t *env;
   js_callback_t cb;
@@ -231,12 +238,12 @@ on_reference_finalize (const WeakCallbackInfo<js_ref_t> &info) {
   reference->value.Reset();
 }
 
-inline void
+static inline void
 js_set_weak_reference (js_env_t *env, js_ref_t *reference) {
   reference->value.SetWeak(reference, on_reference_finalize, WeakCallbackType::kParameter);
 }
 
-inline void
+static inline void
 js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
   reference->value.ClearWeak();
 }
@@ -372,6 +379,46 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t c
   *result = reinterpret_cast<js_value_t *>(*scope.Escape(fn));
 
   return 0;
+}
+
+extern "C" int
+js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
+  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+
+  auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+  *deferred = new js_deferred_t(env->isolate, resolver);
+
+  *promise = reinterpret_cast<js_value_t *>(*resolver->GetPromise());
+
+  return 0;
+}
+
+static inline int
+on_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution, bool resolved) {
+  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+
+  auto resolver = Local<Promise::Resolver>::New(env->isolate, deferred->resolver);
+
+  auto local = *reinterpret_cast<Local<Value> *>(&resolution);
+
+  auto status = resolved
+                  ? resolver->Resolve(context, local)
+                  : resolver->Reject(context, local);
+
+  delete deferred;
+
+  return status.FromMaybe(false) ? 0 : -1;
+}
+
+extern "C" int
+js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  return on_conclude_deferred(env, deferred, resolution, true);
+}
+
+extern "C" int
+js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  return on_conclude_deferred(env, deferred, resolution, false);
 }
 
 extern "C" int
