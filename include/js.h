@@ -12,12 +12,15 @@ extern "C" {
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
+typedef struct js_module_s js_module_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
-typedef js_value_t *(*js_callback_t)(js_env_t *, const js_callback_info_t *);
+typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
+typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer);
+typedef js_value_t *(*js_synethic_module_cb)(js_env_t *, js_module_t *module);
 
 int
 js_platform_init (const char *path);
@@ -53,10 +56,25 @@ int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
 int
-js_run_script (js_env_t *env, js_value_t *script, js_value_t **result);
+js_run_script (js_env_t *env, js_value_t *source, js_value_t **result);
 
 int
-js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t **result);
+js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_t **result);
+
+int
+js_create_synthetic_module (js_env_t *env, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, js_module_t **result);
+
+int
+js_delete_module (js_env_t *env, js_module_t *module);
+
+int
+js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value);
+
+int
+js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb);
+
+int
+js_run_module (js_env_t *env, js_module_t *module, js_value_t **result);
 
 int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result);
@@ -86,7 +104,7 @@ int
 js_create_object (js_env_t *env, js_value_t **result);
 
 int
-js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t cb, void *data, js_value_t **result);
+js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
 int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);

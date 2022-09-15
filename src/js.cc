@@ -1,3 +1,5 @@
+#include <unordered_map>
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -12,12 +14,17 @@ using namespace v8;
 
 typedef struct js_callback_data_s js_callback_data_t;
 
+typedef enum {
+  js_context_environment = 1,
+} js_context_index_t;
+
 struct js_env_s {
   Platform *platform;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
   Persistent<Context> context;
   Persistent<Value> exception;
+  std::unordered_multimap<int, js_module_s *> modules;
 
   js_env_s(Platform *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : platform(platform),
@@ -43,6 +50,17 @@ struct js_escapable_handle_scope_s {
         escaped(false) {}
 };
 
+struct js_module_s {
+  Local<Module> module;
+  js_module_resolve_cb resolve;
+  js_synethic_module_cb evaluate;
+
+  js_module_s(Local<Module> module)
+      : module(module),
+        resolve(nullptr),
+        evaluate(nullptr) {}
+};
+
 struct js_ref_s {
   Persistent<Value> value;
   uint32_t count;
@@ -61,14 +79,52 @@ struct js_deferred_s {
 
 struct js_callback_data_s {
   js_env_t *env;
-  js_callback_t cb;
+  js_function_cb cb;
   void *data;
 
-  js_callback_data_s(js_env_t *env, js_callback_t cb, void *data)
+  js_callback_data_s(js_env_t *env, js_function_cb cb, void *data)
       : env(env),
         cb(cb),
         data(data) {}
 };
+
+static inline js_env_t *
+get_env (Local<Context> context) {
+  return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
+}
+
+static inline js_module_t *
+get_module (Local<Context> context, Local<Module> referrer) {
+  auto env = get_env(context);
+
+  auto range = env->modules.equal_range(referrer->GetIdentityHash());
+
+  for (auto it = range.first; it != range.second; ++it) {
+    if (it->second->module == referrer) {
+      return it->second;
+    }
+  }
+
+  return nullptr;
+}
+
+template <typename T>
+static inline Local<T>
+to_local (Persistent<T> &persistent) {
+  return *reinterpret_cast<Local<T> *>(&persistent);
+}
+
+template <typename T = Value>
+static inline Local<T>
+to_local (js_value_t *value) {
+  return *reinterpret_cast<Local<T> *>(&value);
+}
+
+template <typename T>
+static inline js_value_t *
+from_local (Local<T> local) {
+  return reinterpret_cast<js_value_t *>(*local);
+}
 
 static Platform *js_platform = nullptr;
 
@@ -128,7 +184,13 @@ js_env_init (js_env_t **result) {
 
   HandleScope scope(isolate);
 
-  *result = new js_env_s(js_platform, isolate, allocator);
+  auto env = new js_env_s(js_platform, isolate, allocator);
+
+  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+
+  context->SetAlignedPointerInEmbedderData(js_context_environment, env);
+
+  *result = env;
 
   return 0;
 }
@@ -188,19 +250,19 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
-js_run_script (js_env_t *env, js_value_t *script, js_value_t **result) {
-  auto local = *reinterpret_cast<Local<Value> *>(&script);
+js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
+  auto local = *reinterpret_cast<Local<Value> *>(&source);
 
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
 
-  ScriptCompiler::Source source(local.As<String>());
+  ScriptCompiler::Source v8_source(local.As<String>());
 
   env->isolate->Enter();
   context->Enter();
 
-  auto compiled = ScriptCompiler::Compile(context, &source);
+  auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
-  *result = reinterpret_cast<js_value_t *>(*compiled.ToLocalChecked()->Run(context).ToLocalChecked());
+  *result = reinterpret_cast<js_value_t *>(*compiled->Run(context).ToLocalChecked());
 
   context->Exit();
   env->isolate->Exit();
@@ -209,21 +271,145 @@ js_run_script (js_env_t *env, js_value_t *script, js_value_t **result) {
 }
 
 extern "C" int
-js_run_module (js_env_t *env, js_value_t *module, const char *name, js_value_t **result) {
-  auto local = *reinterpret_cast<Local<Value> *>(&module);
+js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_t **result) {
+  auto local = to_local(source);
 
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
-  ScriptOrigin origin(env->isolate, String::NewFromUtf8(env->isolate, name).ToLocalChecked());
+  ScriptOrigin origin(
+    env->isolate,
+    String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
+    0,
+    0,
+    false,
+    -1,
+    Local<Value>(),
+    false,
+    false,
+    true
+  );
 
-  ScriptCompiler::Source source(local.As<String>());
+  ScriptCompiler::Source v8_source(local.As<String>(), origin);
 
   env->isolate->Enter();
   context->Enter();
 
-  auto compiled = ScriptCompiler::CompileModule(env->isolate, &source).ToLocalChecked();
+  auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
-  *result = reinterpret_cast<js_value_t *>(*compiled->Evaluate(context).ToLocalChecked());
+  context->Exit();
+  env->isolate->Exit();
+
+  auto module = new js_module_t(compiled);
+
+  env->modules.emplace(compiled->GetIdentityHash(), module);
+
+  *result = module;
+
+  return 0;
+}
+
+static MaybeLocal<Value>
+on_evaluate_synethic_module (Local<Context> context, Local<Module> referrer) {
+  auto env = get_env(context);
+
+  auto module = get_module(context, referrer);
+
+  auto result = module->evaluate(env, module);
+
+  if (result == nullptr) return Undefined(env->isolate);
+
+  return to_local(result);
+}
+
+extern "C" int
+js_create_synthetic_module (js_env_t *env, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, js_module_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
+
+  std::vector<Local<String>> names(local, local + names_len);
+
+  env->isolate->Enter();
+  context->Enter();
+
+  auto compiled = Module::CreateSyntheticModule(
+    env->isolate,
+    String::NewFromUtf8Literal(env->isolate, "synthetic"),
+    names,
+    on_evaluate_synethic_module
+  );
+
+  context->Exit();
+  env->isolate->Exit();
+
+  auto module = new js_module_t(compiled);
+
+  module->evaluate = cb;
+
+  env->modules.emplace(compiled->GetIdentityHash(), module);
+
+  *result = module;
+
+  return 0;
+}
+
+extern "C" int
+js_delete_module (js_env_t *env, js_module_t *module) {
+  delete module;
+
+  return 0;
+}
+
+extern "C" int
+js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value) {
+  auto local = module->module;
+
+  auto success = local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value));
+
+  return success.FromMaybe(false) ? 0 : -1;
+}
+
+static MaybeLocal<Module>
+on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> assertions, Local<Module> referrer) {
+  auto env = get_env(context);
+
+  auto module = get_module(context, referrer);
+
+  auto result = module->resolve(
+    env,
+    from_local(specifier),
+    from_local(assertions),
+    module
+  );
+
+  if (result == nullptr) return MaybeLocal<Module>();
+
+  return result->module;
+}
+
+extern "C" int
+js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb) {
+  auto context = to_local(env->context);
+
+  module->resolve = cb;
+
+  auto local = module->module;
+
+  auto success = local->InstantiateModule(context, on_resolve_module);
+
+  return success.FromMaybe(false) ? 0 : -1;
+}
+
+extern "C" int
+js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = module->module;
+
+  env->isolate->Enter();
+  context->Enter();
+
+  *result = from_local(local->Evaluate(context).ToLocalChecked());
 
   context->Exit();
   env->isolate->Exit();
@@ -359,7 +545,7 @@ on_function_call (const FunctionCallbackInfo<Value> &info) {
 }
 
 extern "C" int
-js_create_function (js_env_t *env, const char *name, size_t len, js_callback_t cb, void *data, js_value_t **result) {
+js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   EscapableHandleScope scope(env->isolate);
 
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
