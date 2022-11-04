@@ -54,11 +54,13 @@ struct js_module_s {
   Local<Module> module;
   js_module_resolve_cb resolve;
   js_synethic_module_cb evaluate;
+  void *data;
 
-  js_module_s(Local<Module> module)
+  js_module_s(Local<Module> module, void *data)
       : module(module),
         resolve(nullptr),
-        evaluate(nullptr) {}
+        evaluate(nullptr),
+        data(data) {}
 };
 
 struct js_ref_s {
@@ -287,7 +289,7 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
 }
 
 extern "C" int
-js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_t **result) {
+js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, void *data, js_module_t **result) {
   auto local = to_local(source);
 
   auto context = to_local(env->context);
@@ -315,7 +317,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
   context->Exit();
   env->isolate->Exit();
 
-  auto module = new js_module_t(compiled);
+  auto module = new js_module_t(compiled, data);
 
   env->modules.emplace(compiled->GetIdentityHash(), module);
 
@@ -330,7 +332,7 @@ on_evaluate_synethic_module (Local<Context> context, Local<Module> referrer) {
 
   auto module = get_module(context, referrer);
 
-  auto result = module->evaluate(env, module);
+  auto result = module->evaluate(env, module, module->data);
 
   if (result == nullptr) return Undefined(env->isolate);
 
@@ -338,7 +340,7 @@ on_evaluate_synethic_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
@@ -358,7 +360,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const j
   context->Exit();
   env->isolate->Exit();
 
-  auto module = new js_module_t(compiled);
+  auto module = new js_module_t(compiled, data);
 
   module->evaluate = cb;
 
@@ -395,7 +397,8 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
     env,
     from_local(specifier),
     from_local(assertions),
-    module
+    module,
+    module->data
   );
 
   if (result == nullptr) return MaybeLocal<Module>();
