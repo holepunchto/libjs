@@ -819,6 +819,13 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
 }
 
 extern "C" int
+js_throw (js_env_t *env, js_value_t *error) {
+  env->isolate->ThrowException(to_local(error));
+
+  return 0;
+}
+
+extern "C" int
 js_request_garbage_collection (js_env_t *env) {
   env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
 

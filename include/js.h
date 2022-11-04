@@ -183,6 +183,9 @@ int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t *self, void **data);
 
 int
+js_throw (js_env_t *env, js_value_t *error);
+
+int
 js_request_garbage_collection (js_env_t *env);
 
 #ifdef __cplusplus
