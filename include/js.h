@@ -22,6 +22,19 @@ typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
 typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer);
 typedef js_value_t *(*js_synethic_module_cb)(js_env_t *, js_module_t *module);
 
+typedef enum {
+  js_undefined,
+  js_null,
+  js_boolean,
+  js_number,
+  js_string,
+  js_symbol,
+  js_object,
+  js_function,
+  js_external,
+  js_bigint,
+} js_valuetype_t;
+
 int
 js_platform_init (const char *path);
 
@@ -114,6 +127,30 @@ js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
 int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
+
+int
+js_typeof (js_env_t *env, js_value_t *value, js_valuetype_t *result);
+
+int
+js_is_array (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_date (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_error (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_dataview (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
 int
 js_get_global (js_env_t *env, js_value_t **result);

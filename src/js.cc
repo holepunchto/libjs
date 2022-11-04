@@ -606,6 +606,84 @@ js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
 }
 
 extern "C" int
+js_typeof (js_env_t *env, js_value_t *value, js_valuetype_t *result) {
+  auto local = to_local(value);
+
+  if (local->IsNumber()) {
+    *result = js_number;
+  } else if (local->IsBigInt()) {
+    *result = js_bigint;
+  } else if (local->IsString()) {
+    *result = js_string;
+  } else if (local->IsFunction()) {
+    *result = js_function;
+  } else if (local->IsExternal()) {
+    *result = js_external;
+  } else if (local->IsObject()) {
+    *result = js_object;
+  } else if (local->IsBoolean()) {
+    *result = js_boolean;
+  } else if (local->IsUndefined()) {
+    *result = js_undefined;
+  } else if (local->IsSymbol()) {
+    *result = js_symbol;
+  } else if (local->IsNull()) {
+    *result = js_null;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_is_array (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsArray();
+
+  return 0;
+}
+
+extern "C" int
+js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsArrayBuffer();
+
+  return 0;
+}
+
+extern "C" int
+js_is_date (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsDate();
+
+  return 0;
+}
+
+extern "C" int
+js_is_error (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsNativeError();
+
+  return 0;
+}
+
+extern "C" int
+js_is_typedarray (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsTypedArray();
+
+  return 0;
+}
+
+extern "C" int
+js_is_dataview (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsDataView();
+
+  return 0;
+}
+
+extern "C" int
+js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
+  *result = to_local(a)->StrictEquals(to_local(b));
+
+  return 0;
+}
+
+extern "C" int
 js_get_global (js_env_t *env, js_value_t **result) {
   auto context = *reinterpret_cast<Local<Context> *>(&env->context);
 
