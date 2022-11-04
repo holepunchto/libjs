@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+if (WIN32)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 project(js C CXX)
 
 find_library(V8 v8 REQUIRED)
