@@ -606,7 +606,7 @@ js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
 }
 
 extern "C" int
-js_typeof (js_env_t *env, js_value_t *value, js_valuetype_t *result) {
+js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
   auto local = to_local(value);
 
   if (local->IsNumber()) {
@@ -890,6 +890,105 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
 
   if (data != nullptr) {
     *data = reinterpret_cast<js_callback_data_t *>(v8_info.Data().As<External>()->Value())->data;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
+  auto local = to_local(arraybuffer).As<ArrayBuffer>();
+
+  if (data != nullptr) {
+    *data = local->Data();
+  }
+
+  if (len != nullptr) {
+    *len = local->ByteLength();
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_typedarray_info (js_env_t env, js_value_t *typedarray, js_typedarray_type_t *type, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset) {
+  auto local = to_local(typedarray).As<TypedArray>();
+
+  if (type != nullptr) {
+    if (local->IsInt8Array()) {
+      *type = js_int8_array;
+    } else if (local->IsUint8Array()) {
+      *type = js_uint8_array;
+    } else if (local->IsUint8ClampedArray()) {
+      *type = js_uint8_clamped_array;
+    } else if (local->IsInt16Array()) {
+      *type = js_int16_array;
+    } else if (local->IsUint16Array()) {
+      *type = js_uint16_array;
+    } else if (local->IsInt32Array()) {
+      *type = js_int32_array;
+    } else if (local->IsUint32Array()) {
+      *type = js_uint32_array;
+    } else if (local->IsFloat32Array()) {
+      *type = js_float32_array;
+    } else if (local->IsFloat64Array()) {
+      *type = js_float64_array;
+    } else if (local->IsBigInt64Array()) {
+      *type = js_bigint64_array;
+    } else if (local->IsBigUint64Array()) {
+      *type = js_biguint64_array;
+    }
+  }
+
+  if (len != nullptr) {
+    *len = local->Length();
+  }
+
+  Local<ArrayBuffer> buffer;
+
+  if (data != nullptr || arraybuffer != nullptr) {
+    buffer = local->Buffer();
+  }
+
+  if (data != nullptr) {
+    *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
+  }
+
+  if (arraybuffer != nullptr) {
+    *arraybuffer = from_local(buffer);
+  }
+
+  if (offset != nullptr) {
+    *offset = local->ByteOffset();
+  }
+
+  return 0;
+}
+
+int
+js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset) {
+  auto local = to_local(dataview).As<DataView>();
+
+  if (len != nullptr) {
+    *len = local->ByteLength();
+  }
+
+  Local<ArrayBuffer> buffer;
+
+  if (data != nullptr || arraybuffer != nullptr) {
+    buffer = local->Buffer();
+  }
+
+  if (data != nullptr) {
+    *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
+  }
+
+  if (arraybuffer != nullptr) {
+    *arraybuffer = from_local(buffer);
+  }
+
+  if (offset != nullptr) {
+    *offset = local->ByteOffset();
   }
 
   return 0;

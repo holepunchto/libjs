@@ -33,7 +33,21 @@ typedef enum {
   js_function,
   js_external,
   js_bigint,
-} js_valuetype_t;
+} js_value_type_t;
+
+typedef enum {
+  js_int8_array,
+  js_uint8_array,
+  js_uint8_clamped_array,
+  js_int16_array,
+  js_uint16_array,
+  js_int32_array,
+  js_uint32_array,
+  js_float32_array,
+  js_float64_array,
+  js_bigint64_array,
+  js_biguint64_array,
+} js_typedarray_type_t;
 
 int
 js_platform_init (const char *path);
@@ -129,7 +143,7 @@ int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
 int
-js_typeof (js_env_t *env, js_value_t *value, js_valuetype_t *result);
+js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
 
 int
 js_is_array (js_env_t *env, js_value_t *value, bool *result);
@@ -214,6 +228,15 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
 
 int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t *self, void **data);
+
+int
+js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
+
+int
+js_get_typedarray_info (js_env_t env, js_value_t *typedarray, js_typedarray_type_t *type, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset);
+
+int
+js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset);
 
 int
 js_throw (js_env_t *env, js_value_t *error);
