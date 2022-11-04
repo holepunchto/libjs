@@ -17,10 +17,12 @@ typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
+typedef struct js_task_s js_task_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
 typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer);
 typedef js_value_t *(*js_synethic_module_cb)(js_env_t *, js_module_t *module);
+typedef void (*js_task_cb)(js_env_t *, void *data);
 
 typedef enum {
   js_undefined,
@@ -240,6 +242,18 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **d
 
 int
 js_throw (js_env_t *env, js_value_t *error);
+
+int
+js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
+
+int
+js_run_microtasks (js_env_t *env);
+
+int
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data);
+
+int
+js_run_macrotasks (js_env_t *env);
 
 int
 js_request_garbage_collection (js_env_t *env);

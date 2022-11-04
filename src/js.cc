@@ -88,6 +88,22 @@ struct js_callback_data_s {
         data(data) {}
 };
 
+struct js_task_s : Task {
+  js_env_t *env;
+  js_task_cb cb;
+  void *data;
+
+  js_task_s(js_env_t *env, js_task_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
+
+  void
+  Run () override {
+    cb(env, data);
+  }
+};
+
 static inline js_env_t *
 get_env (Local<Context> context) {
   return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
@@ -181,6 +197,8 @@ js_env_init (js_env_t **result) {
   params.array_buffer_allocator = allocator;
 
   auto isolate = Isolate::New(params);
+
+  isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
   HandleScope scope(isolate);
 
@@ -965,7 +983,7 @@ js_get_typedarray_info (js_env_t env, js_value_t *typedarray, js_typedarray_type
   return 0;
 }
 
-int
+extern "C" int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset) {
   auto local = to_local(dataview).As<DataView>();
 
@@ -997,6 +1015,62 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **d
 extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
   env->isolate->ThrowException(to_local(error));
+
+  return 0;
+}
+
+static void
+on_microtask (void *data) {
+  auto task = reinterpret_cast<js_task_t *>(data);
+
+  task->cb(task->env, task->data);
+
+  delete task;
+}
+
+extern "C" int
+js_queue_microtask (js_env_t *env, js_task_cb cb, void *data) {
+  auto context = to_local(env->context);
+
+  auto task = new js_task_t(env, cb, data);
+
+  context->Enter();
+
+  env->isolate->EnqueueMicrotask(on_microtask, task);
+
+  context->Exit();
+
+  return 0;
+}
+
+extern "C" int
+js_run_microtasks (js_env_t *env) {
+  auto context = to_local(env->context);
+
+  context->Enter();
+
+  env->isolate->PerformMicrotaskCheckpoint();
+
+  context->Exit();
+
+  return 0;
+}
+
+extern "C" int
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data) {
+  auto tasks = js_platform->GetForegroundTaskRunner(env->isolate);
+
+  tasks->PostTask(std::make_unique<js_task_t>(env, cb, data));
+
+  return 0;
+}
+
+extern "C" int
+js_run_macrotasks (js_env_t *env) {
+  while (
+    platform::PumpMessageLoop(env->platform, env->isolate, platform::MessageLoopBehavior::kDoNotWait)
+  ) {
+  }
 
   return 0;
 }

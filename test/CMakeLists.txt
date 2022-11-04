@@ -1,17 +1,17 @@
 list(APPEND tests
-  call-function.c
-  call-function-throw.c
-  create-function.c
-  create-reference-weak.c
-  run-module.c
-  run-script.c
-  set-named-property.c
+  call-function
+  call-function-throw
+  create-function
+  create-reference-weak
+  run-macrotask
+  run-microtask
+  run-module
+  run-script
+  set-named-property
 )
 
-foreach(file IN LISTS tests)
-  get_filename_component(test ${file} NAME_WE)
-
-  add_executable(${test} ${file})
+foreach(test IN LISTS tests)
+  add_executable(${test} ${test}.c)
 
   target_link_libraries(${test} js_shared)
 
