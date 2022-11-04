@@ -649,6 +649,76 @@ js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_number (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsNumber();
+
+  return 0;
+}
+
+extern "C" int
+js_is_bigint (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsBigInt();
+
+  return 0;
+}
+
+extern "C" int
+js_is_null (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsNull();
+
+  return 0;
+}
+
+extern "C" int
+js_is_undefined (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsUndefined();
+
+  return 0;
+}
+
+extern "C" int
+js_is_symbol (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsSymbol();
+
+  return 0;
+}
+
+extern "C" int
+js_is_boolean (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsBoolean();
+
+  return 0;
+}
+
+extern "C" int
+js_is_external (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsExternal();
+
+  return 0;
+}
+
+extern "C" int
+js_is_string (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsString();
+
+  return 0;
+}
+
+extern "C" int
+js_is_function (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsFunction();
+
+  return 0;
+}
+
+extern "C" int
+js_is_object (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsObject();
+
+  return 0;
+}
+
+extern "C" int
 js_is_date (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsDate();
 

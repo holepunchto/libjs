@@ -138,6 +138,36 @@ int
 js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
 int
+js_is_number (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_bigint (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_null (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_undefined (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_symbol (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_boolean (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_external (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_string (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_function (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_object (js_env_t *env, js_value_t *value, bool *result);
+
+int
 js_is_date (js_env_t *env, js_value_t *value, bool *result);
 
 int
