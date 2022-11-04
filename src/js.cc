@@ -236,9 +236,7 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 
 extern "C" int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
-  if (scope->escaped) {
-    return -1;
-  }
+  if (scope->escaped) return -1;
 
   scope->escaped = true;
 
@@ -322,7 +320,7 @@ on_evaluate_synethic_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
@@ -334,7 +332,7 @@ js_create_synthetic_module (js_env_t *env, const js_value_t *export_names[], siz
 
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
-    String::NewFromUtf8Literal(env->isolate, "synthetic"),
+    String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
     names,
     on_evaluate_synethic_module
   );
