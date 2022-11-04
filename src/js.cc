@@ -677,6 +677,13 @@ js_is_dataview (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsPromise();
+
+  return 0;
+}
+
+extern "C" int
 js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
   *result = to_local(a)->StrictEquals(to_local(b));
 
