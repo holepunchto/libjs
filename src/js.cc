@@ -12,7 +12,8 @@
 
 using namespace v8;
 
-typedef struct js_callback_data_s js_callback_data_t;
+typedef struct js_callback_s js_callback_t;
+typedef struct js_task_s js_task_t;
 
 typedef enum {
   js_context_environment = 1,
@@ -79,12 +80,12 @@ struct js_deferred_s {
       : resolver(isolate, resolver) {}
 };
 
-struct js_callback_data_s {
+struct js_callback_s {
   js_env_t *env;
   js_function_cb cb;
   void *data;
 
-  js_callback_data_s(js_env_t *env, js_function_cb cb, void *data)
+  js_callback_s(js_env_t *env, js_function_cb cb, void *data)
       : env(env),
         cb(cb),
         data(data) {}
@@ -206,7 +207,7 @@ js_env_init (js_env_t **result) {
 
   auto env = new js_env_s(js_platform, isolate, allocator);
 
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   context->SetAlignedPointerInEmbedderData(js_context_environment, env);
 
@@ -260,29 +261,29 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 
   scope->escaped = true;
 
-  auto local = *reinterpret_cast<Local<Value> *>(&escapee);
+  auto local = to_local(escapee);
 
-  *result = reinterpret_cast<js_value_t *>(*scope->scope.Escape(local));
+  *result = from_local(scope->scope.Escape(local));
 
   return 0;
 }
 
 extern "C" int
 js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
-  auto local = *reinterpret_cast<Local<Value> *>(&source);
+  auto local = to_local(source);
 
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   ScriptCompiler::Source v8_source(local.As<String>());
 
+  Context::Scope scope(context);
+
   env->isolate->Enter();
-  context->Enter();
 
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
-  *result = reinterpret_cast<js_value_t *>(*compiled->Run(context).ToLocalChecked());
+  *result = from_local(compiled->Run(context).ToLocalChecked());
 
-  context->Exit();
   env->isolate->Exit();
 
   return 0;
@@ -309,12 +310,12 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
 
   ScriptCompiler::Source v8_source(local.As<String>(), origin);
 
+  Context::Scope scope(context);
+
   env->isolate->Enter();
-  context->Enter();
 
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
-  context->Exit();
   env->isolate->Exit();
 
   auto module = new js_module_t(compiled, data);
@@ -347,8 +348,9 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const j
 
   std::vector<Local<String>> names(local, local + names_len);
 
+  Context::Scope scope(context);
+
   env->isolate->Enter();
-  context->Enter();
 
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
@@ -357,7 +359,6 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const j
     on_evaluate_synethic_module
   );
 
-  context->Exit();
   env->isolate->Exit();
 
   auto module = new js_module_t(compiled, data);
@@ -421,16 +422,16 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb 
 
 extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
-  auto context = to_local(env->context);
-
   auto local = module->module;
 
+  auto context = to_local(env->context);
+
+  Context::Scope scope(context);
+
   env->isolate->Enter();
-  context->Enter();
 
   *result = from_local(local->Evaluate(context).ToLocalChecked());
 
-  context->Exit();
   env->isolate->Exit();
 
   return 0;
@@ -455,7 +456,7 @@ js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
 
 extern "C" int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result) {
-  auto reference = new js_ref_t(env->isolate, *reinterpret_cast<Local<Value> *>(&value), count);
+  auto reference = new js_ref_t(env->isolate, to_local(value), count);
 
   if (reference->count == 0) js_set_weak_reference(env, reference);
 
@@ -504,7 +505,7 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
   if (reference->value.IsEmpty()) {
     *result = nullptr;
   } else {
-    *result = reinterpret_cast<js_value_t *>(*reference->value.Get(env->isolate));
+    *result = from_local(reference->value.Get(env->isolate));
   }
 
   return 0;
@@ -514,7 +515,7 @@ extern "C" int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result) {
   auto uint = Integer::New(env->isolate, value);
 
-  *result = reinterpret_cast<js_value_t *>(*uint);
+  *result = from_local(uint);
 
   return 0;
 }
@@ -523,7 +524,7 @@ extern "C" int
 js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result) {
   auto uint = Integer::NewFromUnsigned(env->isolate, value);
 
-  *result = reinterpret_cast<js_value_t *>(*uint);
+  *result = from_local(uint);
 
   return 0;
 }
@@ -532,33 +533,31 @@ extern "C" int
 js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t **result) {
   auto string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
 
-  *result = reinterpret_cast<js_value_t *>(*string.ToLocalChecked());
+  *result = from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_object (js_env_t *env, js_value_t **result) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
-  context->Enter();
+  Context::Scope scope(context);
 
   auto object = Object::New(env->isolate);
 
-  context->Exit();
-
-  *result = reinterpret_cast<js_value_t *>(*object);
+  *result = from_local(object);
 
   return 0;
 }
 
 static void
 on_function_call (const FunctionCallbackInfo<Value> &info) {
-  auto wrapper = reinterpret_cast<js_callback_data_t *>(info.Data().As<External>()->Value());
+  auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
-  auto result = wrapper->cb(wrapper->env, reinterpret_cast<const js_callback_info_t *>(&info));
+  auto result = callback->cb(callback->env, reinterpret_cast<const js_callback_info_t *>(&info));
 
-  auto local = *reinterpret_cast<Local<Value> *>(&result);
+  auto local = to_local(result);
 
   info.GetReturnValue().Set(local);
 }
@@ -567,11 +566,11 @@ extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   EscapableHandleScope scope(env->isolate);
 
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
-  auto wrapper = new js_callback_data_t(env, cb, data);
+  auto callback = new js_callback_t(env, cb, data);
 
-  auto external = External::New(env->isolate, wrapper);
+  auto external = External::New(env->isolate, callback);
 
   auto fn = Function::New(context, on_function_call, external).ToLocalChecked();
 
@@ -581,31 +580,31 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     fn->SetName(string.ToLocalChecked());
   }
 
-  *result = reinterpret_cast<js_value_t *>(*scope.Escape(fn));
+  *result = from_local(scope.Escape(fn));
 
   return 0;
 }
 
 extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
   *deferred = new js_deferred_t(env->isolate, resolver);
 
-  *promise = reinterpret_cast<js_value_t *>(*resolver->GetPromise());
+  *promise = from_local(resolver->GetPromise());
 
   return 0;
 }
 
 static inline int
 on_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution, bool resolved) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   auto resolver = Local<Promise::Resolver>::New(env->isolate, deferred->resolver);
 
-  auto local = *reinterpret_cast<Local<Value> *>(&resolution);
+  auto local = to_local(resolution);
 
   auto status = resolved
                   ? resolver->Resolve(context, local)
@@ -783,23 +782,23 @@ js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
 
 extern "C" int
 js_get_global (js_env_t *env, js_value_t **result) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
-  *result = reinterpret_cast<js_value_t *>(*context->Global());
+  *result = from_local(context->Global());
 
   return 0;
 }
 
 extern "C" int
 js_get_null (js_env_t *env, js_value_t **result) {
-  *result = reinterpret_cast<js_value_t *>(*Null(env->isolate));
+  *result = from_local(Null(env->isolate));
 
   return 0;
 }
 
 extern "C" int
 js_get_undefined (js_env_t *env, js_value_t **result) {
-  *result = reinterpret_cast<js_value_t *>(*Undefined(env->isolate));
+  *result = from_local(Undefined(env->isolate));
 
   return 0;
 }
@@ -807,9 +806,9 @@ js_get_undefined (js_env_t *env, js_value_t **result) {
 extern "C" int
 js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
   if (value) {
-    *result = reinterpret_cast<js_value_t *>(*True(env->isolate));
+    *result = from_local(True(env->isolate));
   } else {
-    *result = reinterpret_cast<js_value_t *>(*False(env->isolate));
+    *result = from_local(False(env->isolate));
   }
 
   return 0;
@@ -817,7 +816,7 @@ js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
 
 extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
-  auto local = *reinterpret_cast<Local<Value> *>(&value);
+  auto local = to_local(value);
 
   *result = local.As<Int32>()->Value();
 
@@ -826,7 +825,7 @@ js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
 
 extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
-  auto local = *reinterpret_cast<Local<Value> *>(&value);
+  auto local = to_local(value);
 
   *result = local.As<Uint32>()->Value();
 
@@ -835,28 +834,28 @@ js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
 
 extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
 
-  auto target = *reinterpret_cast<Local<Object> *>(&object);
+  auto target = to_local<Object>(object);
 
   auto local = target->Get(context, key.ToLocalChecked());
 
-  *result = reinterpret_cast<js_value_t *>(*local.ToLocalChecked());
+  *result = from_local(local.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
   auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
 
-  auto local = *reinterpret_cast<Local<Value> *>(&value);
+  auto local = to_local(value);
 
-  auto target = *reinterpret_cast<Local<Object> *>(&object);
+  auto target = to_local<Object>(object);
 
   target->Set(context, key.ToLocalChecked(), local).ToChecked();
 
@@ -865,11 +864,11 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
 extern "C" int
 js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
-  auto context = *reinterpret_cast<Local<Context> *>(&env->context);
+  auto context = to_local(env->context);
 
-  auto local_recv = *reinterpret_cast<Local<Value> *>(&recv);
+  auto local_recv = to_local(recv);
 
-  auto local_fn = *reinterpret_cast<Local<Function> *>(&fn);
+  auto local_fn = to_local<Function>(fn);
 
   TryCatch try_catch(env->isolate);
 
@@ -885,19 +884,19 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
 
     return -1;
   } else {
-    *result = reinterpret_cast<js_value_t *>(*local.ToLocalChecked());
+    *result = from_local(local.ToLocalChecked());
 
     return 0;
   }
 }
 
 extern "C" int
-js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t *self, void **data) {
+js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data) {
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
   if (argv != nullptr) {
     for (size_t i = 0, n = *argc; i < n; i++) {
-      argv[i] = reinterpret_cast<js_value_t *>(*v8_info[i]);
+      argv[i] = from_local(v8_info[i]);
     }
   }
 
@@ -906,11 +905,11 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
   }
 
   if (self != nullptr) {
-    self = reinterpret_cast<js_value_t *>(*v8_info.This());
+    *self = from_local(v8_info.This());
   }
 
   if (data != nullptr) {
-    *data = reinterpret_cast<js_callback_data_t *>(v8_info.Data().As<External>()->Value())->data;
+    *data = reinterpret_cast<js_callback_t *>(v8_info.Data().As<External>()->Value())->data;
   }
 
   return 0;
@@ -1033,15 +1032,13 @@ on_microtask (void *data) {
 
 extern "C" int
 js_queue_microtask (js_env_t *env, js_task_cb cb, void *data) {
-  auto context = to_local(env->context);
-
   auto task = new js_task_t(env, cb, data);
 
-  context->Enter();
+  auto context = to_local(env->context);
+
+  Context::Scope scope(context);
 
   env->isolate->EnqueueMicrotask(on_microtask, task);
-
-  context->Exit();
 
   return 0;
 }
@@ -1050,11 +1047,9 @@ extern "C" int
 js_run_microtasks (js_env_t *env) {
   auto context = to_local(env->context);
 
-  context->Enter();
+  Context::Scope scope(context);
 
   env->isolate->PerformMicrotaskCheckpoint();
-
-  context->Exit();
 
   return 0;
 }
