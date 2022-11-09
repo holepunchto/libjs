@@ -4,6 +4,7 @@ list(APPEND tests
   create-function
   create-reference-weak
   run-macrotask
+  run-microtask-throw
   run-microtask
   run-module
   run-script
