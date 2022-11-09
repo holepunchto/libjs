@@ -1,4 +1,9 @@
+#include <chrono>
+#include <deque>
 #include <map>
+#include <mutex>
+#include <optional>
+#include <queue>
 #include <unordered_map>
 
 #include <assert.h>
@@ -13,8 +18,11 @@
 using namespace v8;
 
 typedef struct js_callback_s js_callback_t;
-typedef struct js_task_s js_task_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
+typedef struct js_task_s js_task_t;
+typedef struct js_task_handle_s js_task_handle_t;
+typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
+typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_platform_s js_platform_t;
@@ -22,6 +30,16 @@ typedef struct js_platform_s js_platform_t;
 typedef enum {
   js_context_environment = 1,
 } js_context_index_t;
+
+typedef enum {
+  js_task_nested,
+  js_task_non_nested,
+} js_task_nestability_t;
+
+static inline double
+now () {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 struct js_env_s {
   js_platform_t *platform;
@@ -95,6 +113,10 @@ struct js_callback_s {
         data(data) {}
 };
 
+struct js_tracing_controller_s : public TracingController {
+private: // V8 embedder API
+};
+
 struct js_task_s : public Task {
   js_env_t *env;
   js_task_cb cb;
@@ -105,27 +127,151 @@ struct js_task_s : public Task {
         cb(cb),
         data(data) {}
 
-public: // V8 embedder API
+  void
+  run () {
+    cb(env, data);
+  }
+
+private: // V8 embedder API
   void
   Run () override {
-    cb(env, data);
+    run();
   }
 };
 
-struct js_tracing_controller_s : public TracingController {
-public: // V8 embedder API
+struct js_task_handle_s {
+  std::unique_ptr<Task> task;
+  js_task_nestability_t nestability;
+
+  js_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability)
+      : task(std::move(task)),
+        nestability(nestability) {}
+
+  void
+  run () {
+    task->Run();
+  }
 };
 
-class js_task_runner_s : public TaskRunner {
-public: // V8 embedder API
-  void
-  PostTask (std::unique_ptr<Task> task) override {}
+struct js_delayed_task_handle_s : js_task_handle_t {
+  double expiry;
+
+  js_delayed_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability, double expiry)
+      : js_task_handle_t(std::move(task), nestability),
+        expiry(expiry) {}
+
+  friend bool
+  operator<(const js_delayed_task_handle_t &a, const js_delayed_task_handle_t &b) {
+    return a.expiry > b.expiry;
+  }
+};
+
+struct js_idle_task_handle_s {
+  std::unique_ptr<IdleTask> task;
+
+  js_idle_task_handle_s(std::unique_ptr<IdleTask> task)
+      : task(std::move(task)) {}
 
   void
-  PostDelayedTask (std::unique_ptr<Task> task, double delay_in_seconds) override {}
+  run (double deadline) {
+    task->Run(deadline);
+  }
+};
+
+struct js_task_runner_s : public TaskRunner {
+  std::deque<js_task_handle_t> tasks;
+  std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
+  std::deque<js_idle_task_handle_t> idle_tasks;
+  std::mutex lock;
+
+  js_task_runner_s()
+      : tasks(),
+        delayed_tasks(),
+        idle_tasks(),
+        lock() {}
+
+  bool
+  empty () {
+    std::scoped_lock guard(lock);
+
+    return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
+  }
 
   void
-  PostIdleTask (std::unique_ptr<IdleTask> task) override {}
+  push_task (js_task_handle_t &&task) {
+    std::scoped_lock guard(lock);
+
+    tasks.push_back(std::move(task));
+  }
+
+  void
+  push_task (js_delayed_task_handle_t &&task) {
+    std::scoped_lock guard(lock);
+
+    delayed_tasks.push(std::move(task));
+  }
+
+  void
+  push_task (js_idle_task_handle_t &&task) {
+    std::scoped_lock guard(lock);
+
+    idle_tasks.push_back(std::move(task));
+  }
+
+  std::optional<js_task_handle_t>
+  pop_task () {
+    std::scoped_lock guard(lock);
+
+    if (!tasks.empty()) {
+      js_task_handle_t const &task = tasks.front();
+
+      auto value = std::move(const_cast<js_task_handle_t &>(task));
+
+      tasks.pop_front();
+
+      return value;
+    }
+
+    if (!delayed_tasks.empty()) {
+      js_delayed_task_handle_t const &task = delayed_tasks.top();
+
+      if (task.expiry <= now()) {
+        auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
+
+        delayed_tasks.pop();
+
+        return value;
+      }
+    }
+
+    return std::nullopt;
+  }
+
+private: // V8 embedder API
+  void
+  PostTask (std::unique_ptr<Task> task) override {
+    push_task(js_task_handle_t(std::move(task), js_task_nested));
+  }
+
+  void
+  PostNonNestableTask (std::unique_ptr<Task> task) override {
+    push_task(js_task_handle_t(std::move(task), js_task_non_nested));
+  }
+
+  void
+  PostDelayedTask (std::unique_ptr<Task> task, double delay) override {
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
+  }
+
+  void
+  PostNonNestableDelayedTask (std::unique_ptr<Task> task, double delay) override {
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, now() + delay));
+  }
+
+  void
+  PostIdleTask (std::unique_ptr<IdleTask> task) override {
+    push_task(js_idle_task_handle_t(std::move(task)));
+  }
 
   bool
   IdleTasksEnabled () override {
@@ -136,10 +282,43 @@ public: // V8 embedder API
   NonNestableTasksEnabled () const override {
     return true;
   }
+
+  bool
+  NonNestableDelayedTasksEnabled () const override {
+    return true;
+  }
+};
+
+struct js_job_delegate_s : public JobDelegate {
+private: // V8 embedder API
+  bool
+  ShouldYield () override {
+    return false;
+  }
+
+  void
+  NotifyConcurrencyIncrease () override {}
+
+  uint8_t
+  GetTaskId () override {
+    return 0;
+  }
+
+  bool
+  IsJoiningThread () const override {
+    return false;
+  }
 };
 
 struct js_job_handle_s : public JobHandle {
-public: // V8 embedder API
+  TaskPriority priority;
+  std::unique_ptr<JobTask> task;
+
+  js_job_handle_s(TaskPriority priority, std::unique_ptr<JobTask> task)
+      : priority(priority),
+        task(std::move(task)) {}
+
+private: // V8 embedder API
   void
   NotifyConcurrencyIncrease () override {}
 
@@ -174,7 +353,7 @@ struct js_platform_s : public Platform {
         tracing_controller(new js_tracing_controller_t()) {
   }
 
-public: // V8 embedder API
+private: // V8 embedder API
   PageAllocator *
   GetPageAllocator () override {
     return nullptr;
@@ -192,17 +371,17 @@ public: // V8 embedder API
 
   void
   CallOnWorkerThread (std::unique_ptr<Task> task) override {
-    background_task_runner->PostTask(std::move(task));
+    background_task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
   }
 
   void
-  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay_in_seconds) override {
-    background_task_runner->PostDelayedTask(std::move(task), delay_in_seconds);
+  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
+    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
   }
 
   std::unique_ptr<JobHandle>
-  CreateJob (TaskPriority priority, std::unique_ptr<JobTask> job_task) override {
-    return std::make_unique<js_job_handle_t>();
+  CreateJob (TaskPriority priority, std::unique_ptr<JobTask> task) override {
+    return std::make_unique<js_job_handle_t>(priority, std::move(task));
   }
 
   double
@@ -1175,17 +1354,32 @@ js_run_microtasks (js_env_t *env) {
 }
 
 extern "C" int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data) {
-  auto tasks = js_platform->GetForegroundTaskRunner(env->isolate);
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay) {
+  auto task = std::make_unique<js_task_t>(env, cb, data);
 
-  tasks->PostTask(std::make_unique<js_task_t>(env, cb, data));
+  auto task_runner = js_platform->foreground_task_runners[env->isolate];
+
+  if (delay) {
+    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
+  } else {
+    task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
+  }
 
   return 0;
 }
 
 extern "C" int
 js_run_macrotasks (js_env_t *env) {
-  return 0;
+  auto task_runner = js_platform->foreground_task_runners[env->isolate];
+
+  while (true) {
+    auto task = task_runner->pop_task();
+
+    if (task) task->run();
+    else break;
+  }
+
+  return !task_runner->empty();
 }
 
 extern "C" int

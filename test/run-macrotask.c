@@ -21,7 +21,7 @@ main (int argc, char *argv[]) {
   e = js_env_init(&env);
   assert(e == 0);
 
-  e = js_queue_macrotask(env, on_call, NULL);
+  e = js_queue_macrotask(env, on_call, NULL, 0);
   assert(e == 0);
 
   assert(!fn_called);

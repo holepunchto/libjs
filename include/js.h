@@ -249,7 +249,7 @@ int
 js_run_microtasks (js_env_t *env);
 
 int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data);
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay);
 
 int
 js_run_macrotasks (js_env_t *env);
