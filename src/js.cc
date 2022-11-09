@@ -1,3 +1,4 @@
+#include <map>
 #include <unordered_map>
 
 #include <assert.h>
@@ -159,11 +160,11 @@ struct js_job_handle_s : public JobHandle {
 };
 
 struct js_platform_s : public Platform {
-  std::shared_ptr<js_task_runner_t> task_runner;
+  std::map<Isolate *, std::shared_ptr<js_task_runner_t>> task_runners;
   std::unique_ptr<js_tracing_controller_t> tracing_controller;
 
   js_platform_s()
-      : task_runner(new js_task_runner_t()),
+      : task_runners(),
         tracing_controller(new js_tracing_controller_t()) {
   }
 
@@ -178,8 +179,8 @@ struct js_platform_s : public Platform {
   }
 
   std::shared_ptr<TaskRunner>
-  GetForegroundTaskRunner (Isolate *) override {
-    return std::static_pointer_cast<TaskRunner>(task_runner);
+  GetForegroundTaskRunner (Isolate *isolate) override {
+    return task_runners[isolate];
   }
 
   void
@@ -301,7 +302,11 @@ js_env_init (js_env_t **result) {
   Isolate::CreateParams params;
   params.array_buffer_allocator = allocator;
 
-  auto isolate = Isolate::New(params);
+  auto isolate = Isolate::Allocate();
+
+  js_platform->task_runners.emplace(isolate, new js_task_runner_t());
+
+  Isolate::Initialize(isolate, params);
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
@@ -323,6 +328,8 @@ js_env_destroy (js_env_t *env) {
   delete env->allocator;
 
   env->isolate->Dispose();
+
+  js_platform->task_runners.erase(env->isolate);
 
   delete env;
 
