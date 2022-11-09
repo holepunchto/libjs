@@ -105,6 +105,7 @@ struct js_task_s : public Task {
         cb(cb),
         data(data) {}
 
+public: // V8 embedder API
   void
   Run () override {
     cb(env, data);
@@ -112,9 +113,11 @@ struct js_task_s : public Task {
 };
 
 struct js_tracing_controller_s : public TracingController {
+public: // V8 embedder API
 };
 
 class js_task_runner_s : public TaskRunner {
+public: // V8 embedder API
   void
   PostTask (std::unique_ptr<Task> task) override {}
 
@@ -136,6 +139,7 @@ class js_task_runner_s : public TaskRunner {
 };
 
 struct js_job_handle_s : public JobHandle {
+public: // V8 embedder API
   void
   NotifyConcurrencyIncrease () override {}
 
@@ -160,14 +164,17 @@ struct js_job_handle_s : public JobHandle {
 };
 
 struct js_platform_s : public Platform {
-  std::map<Isolate *, std::shared_ptr<js_task_runner_t>> task_runners;
+  std::unique_ptr<js_task_runner_t> background_task_runner;
+  std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground_task_runners;
   std::unique_ptr<js_tracing_controller_t> tracing_controller;
 
   js_platform_s()
-      : task_runners(),
+      : background_task_runner(),
+        foreground_task_runners(),
         tracing_controller(new js_tracing_controller_t()) {
   }
 
+public: // V8 embedder API
   PageAllocator *
   GetPageAllocator () override {
     return nullptr;
@@ -180,14 +187,18 @@ struct js_platform_s : public Platform {
 
   std::shared_ptr<TaskRunner>
   GetForegroundTaskRunner (Isolate *isolate) override {
-    return task_runners[isolate];
+    return foreground_task_runners[isolate];
   }
 
   void
-  CallOnWorkerThread (std::unique_ptr<Task> task) override {}
+  CallOnWorkerThread (std::unique_ptr<Task> task) override {
+    background_task_runner->PostTask(std::move(task));
+  }
 
   void
-  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay_in_seconds) override {}
+  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay_in_seconds) override {
+    background_task_runner->PostDelayedTask(std::move(task), delay_in_seconds);
+  }
 
   std::unique_ptr<JobHandle>
   CreateJob (TaskPriority priority, std::unique_ptr<JobTask> job_task) override {
@@ -304,7 +315,7 @@ js_env_init (js_env_t **result) {
 
   auto isolate = Isolate::Allocate();
 
-  js_platform->task_runners.emplace(isolate, new js_task_runner_t());
+  js_platform->foreground_task_runners.emplace(isolate, new js_task_runner_t());
 
   Isolate::Initialize(isolate, params);
 
@@ -329,7 +340,7 @@ js_env_destroy (js_env_t *env) {
 
   env->isolate->Dispose();
 
-  js_platform->task_runners.erase(env->isolate);
+  js_platform->foreground_task_runners.erase(env->isolate);
 
   delete env;
 
