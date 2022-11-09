@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <libplatform/libplatform.h>
 #include <v8.h>
 
 #include "../include/js.h"
@@ -14,20 +13,24 @@ using namespace v8;
 
 typedef struct js_callback_s js_callback_t;
 typedef struct js_task_s js_task_t;
+typedef struct js_tracing_controller_s js_tracing_controller_t;
+typedef struct js_task_runner_s js_task_runner_t;
+typedef struct js_job_handle_s js_job_handle_t;
+typedef struct js_platform_s js_platform_t;
 
 typedef enum {
   js_context_environment = 1,
 } js_context_index_t;
 
 struct js_env_s {
-  Platform *platform;
+  js_platform_t *platform;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
   Persistent<Context> context;
   Persistent<Value> exception;
   std::unordered_multimap<int, js_module_s *> modules;
 
-  js_env_s(Platform *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
+  js_env_s(js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : platform(platform),
         isolate(isolate),
         allocator(allocator),
@@ -91,7 +94,7 @@ struct js_callback_s {
         data(data) {}
 };
 
-struct js_task_s : Task {
+struct js_task_s : public Task {
   js_env_t *env;
   js_task_cb cb;
   void *data;
@@ -104,6 +107,105 @@ struct js_task_s : Task {
   void
   Run () override {
     cb(env, data);
+  }
+};
+
+struct js_tracing_controller_s : public TracingController {
+};
+
+class js_task_runner_s : public TaskRunner {
+  void
+  PostTask (std::unique_ptr<Task> task) override {}
+
+  void
+  PostDelayedTask (std::unique_ptr<Task> task, double delay_in_seconds) override {}
+
+  void
+  PostIdleTask (std::unique_ptr<IdleTask> task) override {}
+
+  bool
+  IdleTasksEnabled () override {
+    return true;
+  }
+
+  bool
+  NonNestableTasksEnabled () const override {
+    return true;
+  }
+};
+
+struct js_job_handle_s : public JobHandle {
+  void
+  NotifyConcurrencyIncrease () override {}
+
+  void
+  Join () override {}
+
+  void
+  Cancel () override {}
+
+  void
+  CancelAndDetach () override {}
+
+  bool
+  IsActive () override {
+    return false;
+  }
+
+  bool
+  IsValid () override {
+    return false;
+  }
+};
+
+struct js_platform_s : public Platform {
+  std::shared_ptr<js_task_runner_t> task_runner;
+  std::unique_ptr<js_tracing_controller_t> tracing_controller;
+
+  js_platform_s()
+      : task_runner(new js_task_runner_t()),
+        tracing_controller(new js_tracing_controller_t()) {
+  }
+
+  PageAllocator *
+  GetPageAllocator () override {
+    return nullptr;
+  }
+
+  int
+  NumberOfWorkerThreads () override {
+    return 0;
+  }
+
+  std::shared_ptr<TaskRunner>
+  GetForegroundTaskRunner (Isolate *) override {
+    return std::static_pointer_cast<TaskRunner>(task_runner);
+  }
+
+  void
+  CallOnWorkerThread (std::unique_ptr<Task> task) override {}
+
+  void
+  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay_in_seconds) override {}
+
+  std::unique_ptr<JobHandle>
+  CreateJob (TaskPriority priority, std::unique_ptr<JobTask> job_task) override {
+    return std::make_unique<js_job_handle_t>();
+  }
+
+  double
+  MonotonicallyIncreasingTime () override {
+    return 0;
+  }
+
+  double
+  CurrentClockTimeMillis () override {
+    return SystemClockTimeMillis();
+  }
+
+  TracingController *
+  GetTracingController () override {
+    return tracing_controller.get();
   }
 };
 
@@ -145,7 +247,7 @@ from_local (Local<T> local) {
   return reinterpret_cast<js_value_t *>(*local);
 }
 
-static Platform *js_platform = nullptr;
+static js_platform_t *js_platform = nullptr;
 
 extern "C" int
 js_platform_init (const char *path) {
@@ -154,7 +256,7 @@ js_platform_init (const char *path) {
   V8::InitializeICUDefaultLocation(path);
   V8::InitializeExternalStartupData(path);
 
-  js_platform = platform::NewDefaultPlatform().release();
+  js_platform = new js_platform_t();
 
   V8::InitializePlatform(js_platform);
   V8::Initialize();
@@ -1065,11 +1167,6 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data) {
 
 extern "C" int
 js_run_macrotasks (js_env_t *env) {
-  while (
-    platform::PumpMessageLoop(env->platform, env->isolate, platform::MessageLoopBehavior::kDoNotWait)
-  ) {
-  }
-
   return 0;
 }
 
