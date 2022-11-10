@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <map>
@@ -24,8 +25,8 @@ typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
 typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
+typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
-typedef struct js_platform_s js_platform_t;
 
 typedef enum {
   js_context_environment = 1,
@@ -304,6 +305,13 @@ private: // V8 embedder API
 };
 
 struct js_job_delegate_s : public JobDelegate {
+  js_job_handle_t *handle;
+  bool is_joining_thread;
+
+  js_job_delegate_s(js_job_handle_t *handle, bool is_joining_thread)
+      : handle(handle),
+        is_joining_thread(is_joining_thread) {}
+
 private: // V8 embedder API
   bool
   ShouldYield () override {
@@ -320,39 +328,63 @@ private: // V8 embedder API
 
   bool
   IsJoiningThread () const override {
-    return false;
+    return is_joining_thread;
   }
 };
 
 struct js_job_handle_s : public JobHandle {
   TaskPriority priority;
   std::unique_ptr<JobTask> task;
+  std::atomic<bool> done;
 
   js_job_handle_s(TaskPriority priority, std::unique_ptr<JobTask> task)
       : priority(priority),
-        task(std::move(task)) {}
+        task(std::move(task)),
+        done(false) {}
+
+  void
+  join () {
+    js_job_delegate_t delegate(this, true);
+
+    while (task->GetMaxConcurrency(0) > 0) {
+      task->Run(&delegate);
+    }
+
+    done = true;
+  }
+
+  void
+  cancel () {
+    done = true;
+  }
 
 private: // V8 embedder API
   void
   NotifyConcurrencyIncrease () override {}
 
   void
-  Join () override {}
+  Join () override {
+    join();
+  }
 
   void
-  Cancel () override {}
+  Cancel () override {
+    cancel();
+  }
 
   void
-  CancelAndDetach () override {}
+  CancelAndDetach () override {
+    cancel();
+  }
 
   bool
   IsActive () override {
-    return false;
+    return !done;
   }
 
   bool
   IsValid () override {
-    return false;
+    return !done;
   }
 };
 
@@ -364,8 +396,7 @@ struct js_platform_s : public Platform {
   js_platform_s()
       : background_task_runner(),
         foreground_task_runners(),
-        tracing_controller(new js_tracing_controller_t()) {
-  }
+        tracing_controller(new js_tracing_controller_t()) {}
 
 private: // V8 embedder API
   PageAllocator *
