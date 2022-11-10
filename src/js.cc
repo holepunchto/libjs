@@ -182,7 +182,7 @@ struct js_task_runner_s : public TaskRunner {
   std::deque<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::deque<js_idle_task_handle_t> idle_tasks;
-  std::mutex lock;
+  std::recursive_mutex lock;
 
   js_task_runner_s()
       : tasks(),
@@ -190,28 +190,35 @@ struct js_task_runner_s : public TaskRunner {
         idle_tasks(),
         lock() {}
 
-  bool
+  inline bool
   empty () {
     std::scoped_lock guard(lock);
 
     return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
   }
 
-  void
+  inline size_t
+  size () {
+    std::scoped_lock guard(lock);
+
+    return tasks.size() + delayed_tasks.size() + idle_tasks.size();
+  }
+
+  inline void
   push_task (js_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
     tasks.push_back(std::move(task));
   }
 
-  void
+  inline void
   push_task (js_delayed_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
     delayed_tasks.push(std::move(task));
   }
 
-  void
+  inline void
   push_task (js_idle_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
@@ -221,6 +228,8 @@ struct js_task_runner_s : public TaskRunner {
   std::optional<js_task_handle_t>
   pop_task () {
     std::scoped_lock guard(lock);
+
+    move_expired_tasks();
 
     if (!tasks.empty()) {
       js_task_handle_t const &task = tasks.front();
@@ -232,19 +241,24 @@ struct js_task_runner_s : public TaskRunner {
       return value;
     }
 
-    if (!delayed_tasks.empty()) {
+    return std::nullopt;
+  }
+
+  void
+  move_expired_tasks () {
+    std::scoped_lock guard(lock);
+
+    while (!delayed_tasks.empty()) {
       js_delayed_task_handle_t const &task = delayed_tasks.top();
 
-      if (task.expiry <= now()) {
-        auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
+      if (task.expiry > now()) break;
 
-        delayed_tasks.pop();
+      auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
 
-        return value;
-      }
+      delayed_tasks.pop();
+
+      tasks.push_back(std::move(value));
     }
-
-    return std::nullopt;
   }
 
 private: // V8 embedder API
