@@ -6,11 +6,12 @@ int
 main (int argc, char *argv[]) {
   int e;
 
-  e = js_platform_init(argv[0]);
+  js_platform_t *platform;
+  e = js_platform_init(&platform);
   assert(e == 0);
 
   js_env_t *env;
-  e = js_env_init(&env);
+  e = js_env_init(platform, &env);
   assert(e == 0);
 
   js_handle_scope_t *scope;
@@ -52,6 +53,6 @@ main (int argc, char *argv[]) {
   e = js_env_destroy(env);
   assert(e == 0);
 
-  e = js_platform_destroy();
+  e = js_platform_destroy(platform);
   assert(e == 0);
 }

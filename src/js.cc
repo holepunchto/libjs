@@ -452,31 +452,22 @@ from_local (Local<T> local) {
   return reinterpret_cast<js_value_t *>(*local);
 }
 
-static js_platform_t *js_platform = nullptr;
-
 extern "C" int
-js_platform_init (const char *path) {
-  assert(js_platform == nullptr);
+js_platform_init (js_platform_t **result) {
+  *result = new js_platform_t();
 
-  V8::InitializeICUDefaultLocation(path);
-  V8::InitializeExternalStartupData(path);
-
-  js_platform = new js_platform_t();
-
-  V8::InitializePlatform(js_platform);
+  V8::InitializePlatform(*result);
   V8::Initialize();
 
   return 0;
 }
 
 extern "C" int
-js_platform_destroy () {
-  assert(js_platform != nullptr);
-
+js_platform_destroy (js_platform_t *platform) {
   V8::Dispose();
   V8::DisposePlatform();
 
-  delete js_platform;
+  delete platform;
 
   return 0;
 }
@@ -500,7 +491,7 @@ js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
 }
 
 extern "C" int
-js_env_init (js_env_t **result) {
+js_env_init (js_platform_t *platform, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
 
   Isolate::CreateParams params;
@@ -508,7 +499,7 @@ js_env_init (js_env_t **result) {
 
   auto isolate = Isolate::Allocate();
 
-  js_platform->foreground_task_runners.emplace(isolate, new js_task_runner_t());
+  platform->foreground_task_runners.emplace(isolate, new js_task_runner_t());
 
   Isolate::Initialize(isolate, params);
 
@@ -516,7 +507,7 @@ js_env_init (js_env_t **result) {
 
   HandleScope scope(isolate);
 
-  auto env = new js_env_s(js_platform, isolate, allocator);
+  auto env = new js_env_s(platform, isolate, allocator);
 
   auto context = to_local(env->context);
 
@@ -533,7 +524,7 @@ js_env_destroy (js_env_t *env) {
 
   env->isolate->Dispose();
 
-  js_platform->foreground_task_runners.erase(env->isolate);
+  env->platform->foreground_task_runners.erase(env->isolate);
 
   delete env;
 
@@ -1371,7 +1362,7 @@ extern "C" int
 js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay) {
   auto task = std::make_unique<js_task_t>(env, cb, data);
 
-  auto task_runner = js_platform->foreground_task_runners[env->isolate];
+  auto task_runner = env->platform->foreground_task_runners[env->isolate];
 
   if (delay) {
     task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
@@ -1384,7 +1375,7 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay) {
 
 extern "C" int
 js_run_macrotasks (js_env_t *env) {
-  auto task_runner = js_platform->foreground_task_runners[env->isolate];
+  auto task_runner = env->platform->foreground_task_runners[env->isolate];
 
   while (true) {
     auto task = task_runner->pop_task();
