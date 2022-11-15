@@ -1,5 +1,4 @@
 #include <atomic>
-#include <chrono>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -11,6 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <uv.h>
 
 #include <v8.h>
 
@@ -37,82 +37,23 @@ typedef enum {
   js_task_non_nested,
 } js_task_nestability_t;
 
-static inline double
-now () {
-  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+template <typename T>
+static inline Local<T>
+to_local (Persistent<T> &persistent) {
+  return *reinterpret_cast<Local<T> *>(&persistent);
 }
 
-struct js_env_s {
-  js_platform_t *platform;
-  Isolate *isolate;
-  ArrayBuffer::Allocator *allocator;
-  Persistent<Context> context;
-  Persistent<Value> exception;
-  std::unordered_multimap<int, js_module_s *> modules;
+template <typename T = Value>
+static inline Local<T>
+to_local (js_value_t *value) {
+  return *reinterpret_cast<Local<T> *>(&value);
+}
 
-  js_env_s(js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
-      : platform(platform),
-        isolate(isolate),
-        allocator(allocator),
-        context(isolate, Context::New(isolate)),
-        exception() {}
-};
-
-struct js_handle_scope_s {
-  HandleScope scope;
-
-  js_handle_scope_s(Isolate *isolate)
-      : scope(isolate) {}
-};
-
-struct js_escapable_handle_scope_s {
-  EscapableHandleScope scope;
-  bool escaped;
-
-  js_escapable_handle_scope_s(Isolate *isolate)
-      : scope(isolate),
-        escaped(false) {}
-};
-
-struct js_module_s {
-  Local<Module> module;
-  js_module_resolve_cb resolve;
-  js_synethic_module_cb evaluate;
-  void *data;
-
-  js_module_s(Local<Module> module, void *data)
-      : module(module),
-        resolve(nullptr),
-        evaluate(nullptr),
-        data(data) {}
-};
-
-struct js_ref_s {
-  Persistent<Value> value;
-  uint32_t count;
-
-  js_ref_s(Isolate *isolate, Local<Value> value, uint32_t count)
-      : value(isolate, value),
-        count(count) {}
-};
-
-struct js_deferred_s {
-  Persistent<Promise::Resolver> resolver;
-
-  js_deferred_s(Isolate *isolate, Local<Promise::Resolver> resolver)
-      : resolver(isolate, resolver) {}
-};
-
-struct js_callback_s {
-  js_env_t *env;
-  js_function_cb cb;
-  void *data;
-
-  js_callback_s(js_env_t *env, js_function_cb cb, void *data)
-      : env(env),
-        cb(cb),
-        data(data) {}
-};
+template <typename T>
+static inline js_value_t *
+from_local (Local<T> local) {
+  return reinterpret_cast<js_value_t *>(*local);
+}
 
 struct js_tracing_controller_s : public TracingController {
 private: // V8 embedder API
@@ -155,9 +96,9 @@ struct js_task_handle_s {
 };
 
 struct js_delayed_task_handle_s : js_task_handle_t {
-  double expiry;
+  uint64_t expiry;
 
-  js_delayed_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability, double expiry)
+  js_delayed_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability, uint64_t expiry)
       : js_task_handle_t(std::move(task), nestability),
         expiry(expiry) {}
 
@@ -180,16 +121,24 @@ struct js_idle_task_handle_s {
 };
 
 struct js_task_runner_s : public TaskRunner {
+  uv_loop_t *loop;
+  uv_timer_t timer;
   std::deque<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::deque<js_idle_task_handle_t> idle_tasks;
   std::recursive_mutex lock;
 
-  js_task_runner_s()
-      : tasks(),
+  js_task_runner_s(uv_loop_t *loop)
+      : loop(loop),
+        timer(),
+        tasks(),
         delayed_tasks(),
         idle_tasks(),
-        lock() {}
+        lock() {
+    uv_timer_init(loop, &timer);
+
+    timer.data = this;
+  }
 
   inline bool
   empty () {
@@ -217,6 +166,8 @@ struct js_task_runner_s : public TaskRunner {
     std::scoped_lock guard(lock);
 
     delayed_tasks.push(std::move(task));
+
+    adjust_timer();
   }
 
   inline void
@@ -245,6 +196,28 @@ struct js_task_runner_s : public TaskRunner {
     return std::nullopt;
   }
 
+private:
+  static void
+  on_timer (uv_timer_t *handle) {
+    auto task_runner = reinterpret_cast<js_task_runner_t *>(handle->data);
+
+    task_runner->move_expired_tasks();
+  }
+
+  void
+  adjust_timer () {
+    std::scoped_lock guard(lock);
+
+    if (delayed_tasks.empty()) uv_timer_stop(&timer);
+    else {
+      js_delayed_task_handle_t const &task = delayed_tasks.top();
+
+      uint64_t timeout = task.expiry - uv_now(loop);
+
+      uv_timer_start(&timer, on_timer, timeout, 0);
+    }
+  }
+
   void
   move_expired_tasks () {
     std::scoped_lock guard(lock);
@@ -252,7 +225,7 @@ struct js_task_runner_s : public TaskRunner {
     while (!delayed_tasks.empty()) {
       js_delayed_task_handle_t const &task = delayed_tasks.top();
 
-      if (task.expiry > now()) break;
+      if (task.expiry > uv_now(loop)) break;
 
       auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
 
@@ -260,6 +233,8 @@ struct js_task_runner_s : public TaskRunner {
 
       tasks.push_back(std::move(value));
     }
+
+    adjust_timer();
   }
 
 private: // V8 embedder API
@@ -275,12 +250,12 @@ private: // V8 embedder API
 
   void
   PostDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(loop) + (delay * 1000)));
   }
 
   void
   PostNonNestableDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, now() + delay));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, uv_now(loop) + (delay * 1000)));
   }
 
   void
@@ -389,14 +364,18 @@ private: // V8 embedder API
 };
 
 struct js_platform_s : public Platform {
+  uv_loop_t *loop;
   std::unique_ptr<js_task_runner_t> background_task_runner;
   std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground_task_runners;
   std::unique_ptr<js_tracing_controller_t> tracing_controller;
 
   js_platform_s()
-      : background_task_runner(),
+      : loop(new uv_loop_t()),
+        background_task_runner(new js_task_runner_t(loop)),
         foreground_task_runners(),
-        tracing_controller(new js_tracing_controller_t()) {}
+        tracing_controller(new js_tracing_controller_t()) {
+    uv_loop_init(loop);
+  }
 
 private: // V8 embedder API
   PageAllocator *
@@ -421,7 +400,7 @@ private: // V8 embedder API
 
   void
   CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
-    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
+    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(loop) + (delay * 1000)));
   }
 
   std::unique_ptr<JobHandle>
@@ -431,7 +410,7 @@ private: // V8 embedder API
 
   double
   MonotonicallyIncreasingTime () override {
-    return 0;
+    return uv_now(loop);
   }
 
   double
@@ -443,6 +422,134 @@ private: // V8 embedder API
   GetTracingController () override {
     return tracing_controller.get();
   }
+};
+
+struct js_env_s {
+  js_platform_t *platform;
+  uv_loop_t *loop;
+  Isolate *isolate;
+  ArrayBuffer::Allocator *allocator;
+  Persistent<Context> context;
+  Persistent<Value> exception;
+  std::unordered_multimap<int, js_module_s *> modules;
+  uv_prepare_t prepare;
+  uv_check_t check;
+
+  js_env_s(js_platform_t *platform, uv_loop_t *loop, Isolate *isolate, ArrayBuffer::Allocator *allocator)
+      : platform(platform),
+        loop(loop),
+        isolate(isolate),
+        allocator(allocator),
+        context(isolate, Context::New(isolate)),
+        modules(),
+        prepare(),
+        check() {
+    uv_prepare_init(loop, &prepare);
+    uv_prepare_start(&prepare, on_prepare);
+
+    prepare.data = this;
+
+    uv_check_init(loop, &check);
+    uv_check_start(&check, on_check);
+
+    check.data = this;
+  }
+
+private:
+  inline int
+  run_microtasks () {
+    auto context = to_local(this->context);
+
+    Context::Scope scope(context);
+
+    isolate->PerformMicrotaskCheckpoint();
+
+    return 0;
+  }
+
+  inline int
+  run_macrotasks () {
+    auto task_runner = platform->foreground_task_runners[isolate];
+
+    while (true) {
+      auto task = task_runner->pop_task();
+
+      if (task) task->run();
+      else break;
+    }
+
+    return !task_runner->empty();
+  }
+
+  static void
+  on_prepare (uv_prepare_t *handle) {
+    auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    env->run_microtasks();
+  }
+
+  static void
+  on_check (uv_check_t *handle) {
+    auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    env->run_macrotasks();
+  }
+};
+
+struct js_handle_scope_s {
+  HandleScope scope;
+
+  js_handle_scope_s(Isolate *isolate)
+      : scope(isolate) {}
+};
+
+struct js_escapable_handle_scope_s {
+  EscapableHandleScope scope;
+  bool escaped;
+
+  js_escapable_handle_scope_s(Isolate *isolate)
+      : scope(isolate),
+        escaped(false) {}
+};
+
+struct js_module_s {
+  Local<Module> module;
+  js_module_resolve_cb resolve;
+  js_synethic_module_cb evaluate;
+  void *data;
+
+  js_module_s(Local<Module> module, void *data)
+      : module(module),
+        resolve(nullptr),
+        evaluate(nullptr),
+        data(data) {}
+};
+
+struct js_ref_s {
+  Persistent<Value> value;
+  uint32_t count;
+
+  js_ref_s(Isolate *isolate, Local<Value> value, uint32_t count)
+      : value(isolate, value),
+        count(count) {}
+};
+
+struct js_deferred_s {
+  Persistent<Promise::Resolver> resolver;
+
+  js_deferred_s(Isolate *isolate, Local<Promise::Resolver> resolver)
+      : resolver(isolate, resolver) {}
+};
+
+struct js_callback_s {
+  js_env_t *env;
+  js_function_cb cb;
+  void *data;
+
+  js_callback_s(js_env_t *env, js_function_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
 };
 
 static inline js_env_t *
@@ -463,24 +570,6 @@ get_module (Local<Context> context, Local<Module> referrer) {
   }
 
   return nullptr;
-}
-
-template <typename T>
-static inline Local<T>
-to_local (Persistent<T> &persistent) {
-  return *reinterpret_cast<Local<T> *>(&persistent);
-}
-
-template <typename T = Value>
-static inline Local<T>
-to_local (js_value_t *value) {
-  return *reinterpret_cast<Local<T> *>(&value);
-}
-
-template <typename T>
-static inline js_value_t *
-from_local (Local<T> local) {
-  return reinterpret_cast<js_value_t *>(*local);
 }
 
 extern "C" int
@@ -522,7 +611,7 @@ js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
 }
 
 extern "C" int
-js_env_init (js_platform_t *platform, js_env_t **result) {
+js_env_init (js_platform_t *platform, uv_loop_t *loop, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
 
   Isolate::CreateParams params;
@@ -530,7 +619,9 @@ js_env_init (js_platform_t *platform, js_env_t **result) {
 
   auto isolate = Isolate::Allocate();
 
-  platform->foreground_task_runners.emplace(isolate, new js_task_runner_t());
+  auto task_runner = new js_task_runner_t(loop);
+
+  platform->foreground_task_runners.emplace(isolate, std::move(task_runner));
 
   Isolate::Initialize(isolate, params);
 
@@ -538,7 +629,7 @@ js_env_init (js_platform_t *platform, js_env_t **result) {
 
   HandleScope scope(isolate);
 
-  auto env = new js_env_s(platform, isolate, allocator);
+  auto env = new js_env_s(platform, loop, isolate, allocator);
 
   auto context = to_local(env->context);
 
@@ -1379,43 +1470,18 @@ js_queue_microtask (js_env_t *env, js_task_cb cb, void *data) {
 }
 
 extern "C" int
-js_run_microtasks (js_env_t *env) {
-  auto context = to_local(env->context);
-
-  Context::Scope scope(context);
-
-  env->isolate->PerformMicrotaskCheckpoint();
-
-  return 0;
-}
-
-extern "C" int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay) {
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto task = std::make_unique<js_task_t>(env, cb, data);
 
   auto task_runner = env->platform->foreground_task_runners[env->isolate];
 
   if (delay) {
-    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + delay));
+    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(env->loop) + delay));
   } else {
     task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
   }
 
   return 0;
-}
-
-extern "C" int
-js_run_macrotasks (js_env_t *env) {
-  auto task_runner = env->platform->foreground_task_runners[env->isolate];
-
-  while (true) {
-    auto task = task_runner->pop_task();
-
-    if (task) task->run();
-    else break;
-  }
-
-  return !task_runner->empty();
 }
 
 extern "C" int

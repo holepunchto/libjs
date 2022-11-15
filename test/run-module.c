@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <uv.h>
 
 #include "../include/js.h"
 
@@ -42,12 +43,14 @@ int
 main (int argc, char *argv[]) {
   int e;
 
+  uv_loop_t *loop = uv_default_loop();
+
   js_platform_t *platform;
   e = js_platform_init(&platform);
   assert(e == 0);
 
   js_env_t *env;
-  e = js_env_init(platform, &env);
+  e = js_env_init(platform, loop, &env);
   assert(e == 0);
 
   js_handle_scope_t *scope;

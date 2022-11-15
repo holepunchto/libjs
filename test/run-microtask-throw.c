@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdbool.h>
+#include <uv.h>
 
 #include "../include/js.h"
 
@@ -30,12 +31,14 @@ int
 main (int argc, char *argv[]) {
   int e;
 
+  uv_loop_t *loop = uv_default_loop();
+
   js_platform_t *platform;
   e = js_platform_init(&platform);
   assert(e == 0);
 
   js_env_t *env;
-  e = js_env_init(platform, &env);
+  e = js_env_init(platform, loop, &env);
   assert(e == 0);
 
   e = js_queue_microtask(env, on_call, NULL);
@@ -43,8 +46,7 @@ main (int argc, char *argv[]) {
 
   assert(!fn_called);
 
-  e = js_run_microtasks(env);
-  assert(e == 0);
+  uv_run(loop, UV_RUN_DEFAULT);
 
   assert(fn_called);
 

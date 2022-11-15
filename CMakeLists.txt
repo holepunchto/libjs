@@ -11,6 +11,8 @@ project(js C CXX)
 find_library(V8 v8 REQUIRED)
 find_path(V8_INCLUDE_DIR v8.h)
 
+add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)
+
 add_library(js OBJECT)
 
 set_target_properties(
@@ -33,6 +35,7 @@ target_include_directories(
   js
   PUBLIC
     include
+    $<TARGET_PROPERTY:uv,INCLUDE_DIRECTORIES>
     ${V8_INCLUDE_DIR}
 )
 
@@ -53,6 +56,7 @@ set_target_properties(
 target_link_libraries(
   js_shared
   PUBLIC
+    uv
     ${V8}
 )
 
@@ -67,6 +71,7 @@ set_target_properties(
 target_link_libraries(
   js_static
   PUBLIC
+    uv
     ${V8}
 )
 

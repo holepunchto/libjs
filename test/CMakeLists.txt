@@ -4,8 +4,9 @@ list(APPEND tests
   create-function
   create-reference-weak
   run-macrotask
-  run-microtask-throw
+  run-macrotask-delayed
   run-microtask
+  run-microtask-throw
   run-module
   run-script
   set-named-property

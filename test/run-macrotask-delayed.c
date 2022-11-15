@@ -1,7 +1,15 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <uv.h>
 
 #include "../include/js.h"
+
+bool fn_called = false;
+
+static void
+on_call (js_env_t *env, void *data) {
+  fn_called = true;
+}
 
 int
 main (int argc, char *argv[]) {
@@ -17,26 +25,14 @@ main (int argc, char *argv[]) {
   e = js_env_init(platform, loop, &env);
   assert(e == 0);
 
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
+  e = js_queue_macrotask(env, on_call, NULL, 100);
   assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, "12345", -1, &script);
-  assert(e == 0);
+  assert(!fn_called);
 
-  js_value_t *result;
-  e = js_run_script(env, script, &result);
-  assert(e == 0);
+  uv_run(loop, UV_RUN_DEFAULT);
 
-  uint32_t value;
-  js_get_value_uint32(env, result, &value);
-  assert(e == 0);
-
-  assert(value == 12345);
-
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
+  assert(fn_called);
 
   e = js_env_destroy(env);
   assert(e == 0);

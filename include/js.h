@@ -8,6 +8,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <uv.h>
 
 typedef struct js_platform_s js_platform_t;
 typedef struct js_env_s js_env_t;
@@ -64,7 +65,7 @@ int
 js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags);
 
 int
-js_env_init (js_platform_t *platform, js_env_t **result);
+js_env_init (js_platform_t *platform, uv_loop_t *loop, js_env_t **result);
 
 int
 js_env_destroy (js_env_t *env);
@@ -247,13 +248,7 @@ int
 js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
 
 int
-js_run_microtasks (js_env_t *env);
-
-int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, double delay);
-
-int
-js_run_macrotasks (js_env_t *env);
+js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay);
 
 int
 js_request_garbage_collection (js_env_t *env);
