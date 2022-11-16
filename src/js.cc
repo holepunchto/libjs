@@ -199,6 +199,11 @@ struct js_task_runner_s : public TaskRunner {
   }
 
 private:
+  inline uint64_t
+  now () {
+    return uv_now(loop);
+  }
+
   static void
   on_timer (uv_timer_t *handle) {
     auto task_runner = reinterpret_cast<js_task_runner_t *>(handle->data);
@@ -215,7 +220,7 @@ private:
     } else {
       js_delayed_task_handle_t const &task = delayed_tasks.top();
 
-      uint64_t timeout = task.expiry - uv_now(loop);
+      uint64_t timeout = task.expiry - now();
 
       uv_timer_start(&timer, on_timer, timeout, 0);
     }
@@ -228,7 +233,7 @@ private:
     while (!delayed_tasks.empty()) {
       js_delayed_task_handle_t const &task = delayed_tasks.top();
 
-      if (task.expiry > uv_now(loop)) break;
+      if (task.expiry > now()) break;
 
       auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
 
@@ -253,12 +258,12 @@ private: // V8 embedder API
 
   void
   PostDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(loop) + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
   }
 
   void
   PostNonNestableDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, uv_now(loop) + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, now() + (delay * 1000)));
   }
 
   void
@@ -378,6 +383,12 @@ struct js_platform_s : public Platform {
         foreground_task_runners(),
         tracing_controller(new js_tracing_controller_t()) {}
 
+private:
+  inline uint64_t
+  now () {
+    return uv_now(loop);
+  }
+
 private: // V8 embedder API
   PageAllocator *
   GetPageAllocator () override {
@@ -401,7 +412,7 @@ private: // V8 embedder API
 
   void
   CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
-    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(loop) + (delay * 1000)));
+    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
   }
 
   std::unique_ptr<JobHandle>
@@ -411,7 +422,7 @@ private: // V8 embedder API
 
   double
   MonotonicallyIncreasingTime () override {
-    return uv_now(loop);
+    return now();
   }
 
   double
@@ -460,6 +471,11 @@ struct js_env_s {
 
     prepare.data = this;
     check.data = this;
+  }
+
+  inline uint64_t
+  now () {
+    return uv_now(loop);
   }
 
 private:
@@ -1485,7 +1501,7 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto task_runner = env->platform->foreground_task_runners[env->isolate];
 
   if (delay) {
-    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, uv_now(env->loop) + delay));
+    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, env->now() + delay));
   } else {
     task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
   }
