@@ -138,6 +138,8 @@ struct js_task_runner_s : public TaskRunner {
     uv_timer_init(loop, &timer);
 
     timer.data = this;
+
+    adjust_timer();
   }
 
   inline bool
@@ -208,8 +210,9 @@ private:
   adjust_timer () {
     std::scoped_lock guard(lock);
 
-    if (delayed_tasks.empty()) uv_timer_stop(&timer);
-    else {
+    if (delayed_tasks.empty()) {
+      uv_timer_stop(&timer);
+    } else {
       js_delayed_task_handle_t const &task = delayed_tasks.top();
 
       uint64_t timeout = task.expiry - uv_now(loop);
@@ -369,13 +372,11 @@ struct js_platform_s : public Platform {
   std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground_task_runners;
   std::unique_ptr<js_tracing_controller_t> tracing_controller;
 
-  js_platform_s()
-      : loop(new uv_loop_t()),
+  js_platform_s(uv_loop_t *loop)
+      : loop(loop),
         background_task_runner(new js_task_runner_t(loop)),
         foreground_task_runners(),
-        tracing_controller(new js_tracing_controller_t()) {
-    uv_loop_init(loop);
-  }
+        tracing_controller(new js_tracing_controller_t()) {}
 
 private: // V8 embedder API
   PageAllocator *
@@ -425,8 +426,9 @@ private: // V8 embedder API
 };
 
 struct js_env_s {
-  js_platform_t *platform;
   uv_loop_t *loop;
+  js_platform_t *platform;
+  std::shared_ptr<js_task_runner_t> task_runner;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
   Persistent<Context> context;
@@ -435,9 +437,10 @@ struct js_env_s {
   uv_prepare_t prepare;
   uv_check_t check;
 
-  js_env_s(js_platform_t *platform, uv_loop_t *loop, Isolate *isolate, ArrayBuffer::Allocator *allocator)
-      : platform(platform),
-        loop(loop),
+  js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
+      : loop(loop),
+        platform(platform),
+        task_runner(platform->foreground_task_runners[isolate]),
         isolate(isolate),
         allocator(allocator),
         context(isolate, Context::New(isolate)),
@@ -447,16 +450,30 @@ struct js_env_s {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
 
-    prepare.data = this;
-
     uv_check_init(loop, &check);
     uv_check_start(&check, on_check);
 
+    // The check handle should not on its own keep the loop alive; it's simply
+    // used for running any outstanding tasks that might cause additional work
+    // to be queued.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+
+    prepare.data = this;
     check.data = this;
   }
 
 private:
-  inline int
+  inline void
+  run_macrotasks () {
+    while (true) {
+      auto task = task_runner->pop_task();
+
+      if (task) task->run();
+      else break;
+    }
+  }
+
+  inline void
   run_microtasks () {
     auto context = to_local(this->context);
 
@@ -464,26 +481,18 @@ private:
 
     isolate->PerformMicrotaskCheckpoint();
 
-    return 0;
-  }
-
-  inline int
-  run_macrotasks () {
-    auto task_runner = platform->foreground_task_runners[isolate];
-
-    while (true) {
-      auto task = task_runner->pop_task();
-
-      if (task) task->run();
-      else break;
+    if (task_runner->empty()) {
+      uv_prepare_stop(&prepare);
+    } else {
+      uv_prepare_start(&prepare, on_prepare);
     }
-
-    return !task_runner->empty();
   }
 
   static void
   on_prepare (uv_prepare_t *handle) {
     auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    env->run_macrotasks();
 
     env->run_microtasks();
   }
@@ -492,7 +501,7 @@ private:
   on_check (uv_check_t *handle) {
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
-    env->run_macrotasks();
+    env->run_microtasks();
   }
 };
 
@@ -573,26 +582,6 @@ get_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_platform_init (js_platform_t **result) {
-  *result = new js_platform_t();
-
-  V8::InitializePlatform(*result);
-  V8::Initialize();
-
-  return 0;
-}
-
-extern "C" int
-js_platform_destroy (js_platform_t *platform) {
-  V8::Dispose();
-  V8::DisposePlatform();
-
-  delete platform;
-
-  return 0;
-}
-
-extern "C" int
 js_set_flags_from_string (const char *string, size_t len) {
   if (len == (size_t) -1) {
     V8::SetFlagsFromString(string);
@@ -611,7 +600,27 @@ js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
 }
 
 extern "C" int
-js_env_init (js_platform_t *platform, uv_loop_t *loop, js_env_t **result) {
+js_platform_init (uv_loop_t *loop, js_platform_t **result) {
+  *result = new js_platform_t(loop);
+
+  V8::InitializePlatform(*result);
+  V8::Initialize();
+
+  return 0;
+}
+
+extern "C" int
+js_platform_destroy (js_platform_t *platform) {
+  V8::Dispose();
+  V8::DisposePlatform();
+
+  delete platform;
+
+  return 0;
+}
+
+extern "C" int
+js_env_init (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
 
   Isolate::CreateParams params;
@@ -629,7 +638,7 @@ js_env_init (js_platform_t *platform, uv_loop_t *loop, js_env_t **result) {
 
   HandleScope scope(isolate);
 
-  auto env = new js_env_s(platform, loop, isolate, allocator);
+  auto env = new js_env_s(loop, platform, isolate, allocator);
 
   auto context = to_local(env->context);
 

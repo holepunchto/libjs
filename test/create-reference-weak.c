@@ -12,11 +12,11 @@ main (int argc, char *argv[]) {
   js_set_flags_from_string("--expose-gc", -1);
 
   js_platform_t *platform;
-  e = js_platform_init(&platform);
+  e = js_platform_init(loop, &platform);
   assert(e == 0);
 
   js_env_t *env;
-  e = js_env_init(platform, loop, &env);
+  e = js_env_init(loop, platform, &env);
   assert(e == 0);
 
   js_handle_scope_t *scope;
