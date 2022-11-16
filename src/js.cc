@@ -183,8 +183,6 @@ struct js_task_runner_s : public TaskRunner {
   pop_task () {
     std::scoped_lock guard(lock);
 
-    move_expired_tasks();
-
     if (!tasks.empty()) {
       js_task_handle_t const &task = tasks.front();
 
