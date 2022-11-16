@@ -740,12 +740,11 @@ js_env_init (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
 extern "C" int
 js_env_destroy (js_env_t *env) {
-  delete env->allocator;
-
   env->isolate->Dispose();
 
   env->platform->foreground_task_runners.erase(env->isolate);
 
+  delete env->allocator;
   delete env;
 
   return 0;
