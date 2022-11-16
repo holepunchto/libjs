@@ -1,10 +1,12 @@
 #include <atomic>
-#include <deque>
+#include <condition_variable>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include <assert.h>
 #include <stdbool.h>
@@ -27,6 +29,7 @@ typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
 typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
+typedef struct js_worker_s js_worker_t;
 
 typedef enum {
   js_context_environment = 1,
@@ -123,10 +126,11 @@ struct js_idle_task_handle_s {
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
-  std::deque<js_task_handle_t> tasks;
+  std::queue<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
-  std::deque<js_idle_task_handle_t> idle_tasks;
+  std::queue<js_idle_task_handle_t> idle_tasks;
   std::recursive_mutex lock;
+  std::condition_variable_any condition;
 
   js_task_runner_s(uv_loop_t *loop)
       : loop(loop),
@@ -134,12 +138,17 @@ struct js_task_runner_s : public TaskRunner {
         tasks(),
         delayed_tasks(),
         idle_tasks(),
-        lock() {
+        lock(),
+        condition() {
     uv_timer_init(loop, &timer);
 
     timer.data = this;
 
     adjust_timer();
+  }
+
+  ~js_task_runner_s() {
+    terminate();
   }
 
   inline bool
@@ -160,7 +169,9 @@ struct js_task_runner_s : public TaskRunner {
   push_task (js_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
-    tasks.push_back(std::move(task));
+    tasks.push(std::move(task));
+
+    condition.notify_one();
   }
 
   inline void
@@ -176,7 +187,7 @@ struct js_task_runner_s : public TaskRunner {
   push_task (js_idle_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
-    idle_tasks.push_back(std::move(task));
+    idle_tasks.push(std::move(task));
   }
 
   std::optional<js_task_handle_t>
@@ -188,12 +199,28 @@ struct js_task_runner_s : public TaskRunner {
 
       auto value = std::move(const_cast<js_task_handle_t &>(task));
 
-      tasks.pop_front();
+      tasks.pop();
 
       return value;
     }
 
     return std::nullopt;
+  }
+
+  std::optional<js_task_handle_t>
+  pop_task (bool wait) {
+    std::unique_lock guard(lock);
+
+    if (tasks.empty() && wait) condition.wait(guard);
+
+    return pop_task();
+  }
+
+  inline void
+  terminate () {
+    std::scoped_lock guard(lock);
+
+    condition.notify_all();
   }
 
 private:
@@ -237,7 +264,9 @@ private:
 
       delayed_tasks.pop();
 
-      tasks.push_back(std::move(value));
+      tasks.push(std::move(value));
+
+      condition.notify_one();
     }
 
     adjust_timer();
@@ -369,22 +398,68 @@ private: // V8 embedder API
   }
 };
 
+struct js_worker_s {
+  std::shared_ptr<js_task_runner_t> task_runner;
+  std::thread thread;
+
+  js_worker_s(std::shared_ptr<js_task_runner_t> task_runner)
+      : task_runner(task_runner),
+        thread(&js_worker_t::on_thread, this) {}
+
+  ~js_worker_s() {
+    if (thread.joinable()) join();
+  }
+
+  inline void
+  join () {
+    thread.join();
+  }
+
+private:
+  void
+  on_thread () {
+    while (true) {
+      auto task = task_runner->pop_task(true);
+
+      if (task) task->run();
+      else break;
+    }
+  }
+};
+
 struct js_platform_s : public Platform {
   uv_loop_t *loop;
-  std::unique_ptr<js_task_runner_t> background_task_runner;
   std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground_task_runners;
+  std::shared_ptr<js_task_runner_t> background_task_runner;
+  std::vector<std::shared_ptr<js_worker_t>> workers;
   std::unique_ptr<js_tracing_controller_t> tracing_controller;
 
   js_platform_s(uv_loop_t *loop)
       : loop(loop),
-        background_task_runner(new js_task_runner_t(loop)),
         foreground_task_runners(),
-        tracing_controller(new js_tracing_controller_t()) {}
+        background_task_runner(new js_task_runner_t(loop)),
+        workers(),
+        tracing_controller(new js_tracing_controller_t()) {
+    start_workers();
+  }
+
+  ~js_platform_s() {
+    background_task_runner->terminate();
+  }
 
 private:
   inline uint64_t
   now () {
     return uv_now(loop);
+  }
+
+  inline void
+  start_workers () {
+    workers.reserve(uv_available_parallelism() - 1);
+
+    while (workers.size() < workers.capacity()) {
+      workers.emplace_back(new js_worker_t(background_task_runner));
+    }
   }
 
 private: // V8 embedder API
@@ -395,7 +470,7 @@ private: // V8 embedder API
 
   int
   NumberOfWorkerThreads () override {
-    return 0;
+    return workers.size();
   }
 
   std::shared_ptr<TaskRunner>
@@ -1496,7 +1571,7 @@ extern "C" int
 js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto task = std::make_unique<js_task_t>(env, cb, data);
 
-  auto task_runner = env->platform->foreground_task_runners[env->isolate];
+  auto task_runner = env->task_runner;
 
   if (delay) {
     task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, env->now() + delay));
