@@ -72,7 +72,7 @@ struct js_task_s : public Task {
         cb(cb),
         data(data) {}
 
-  void
+  inline void
   run () {
     cb(env, data);
   }
@@ -84,17 +84,23 @@ private: // V8 embedder API
   }
 };
 
+using js_task_completion_cb = std::function<void()>;
+
 struct js_task_handle_s {
   std::unique_ptr<Task> task;
   js_task_nestability_t nestability;
+  js_task_completion_cb on_completion;
 
   js_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability)
       : task(std::move(task)),
-        nestability(nestability) {}
+        nestability(nestability),
+        on_completion(nullptr) {}
 
-  void
+  inline void
   run () {
     task->Run();
+
+    if (on_completion) on_completion();
   }
 };
 
@@ -113,6 +119,7 @@ struct js_delayed_task_handle_s : js_task_handle_t {
 
 struct js_idle_task_handle_s {
   std::unique_ptr<IdleTask> task;
+  js_task_completion_cb on_completion;
 
   js_idle_task_handle_s(std::unique_ptr<IdleTask> task)
       : task(std::move(task)) {}
@@ -120,6 +127,8 @@ struct js_idle_task_handle_s {
   void
   run (double deadline) {
     task->Run(deadline);
+
+    if (on_completion) on_completion();
   }
 };
 
@@ -130,7 +139,9 @@ struct js_task_runner_s : public TaskRunner {
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::queue<js_idle_task_handle_t> idle_tasks;
   std::recursive_mutex lock;
-  std::condition_variable_any condition;
+  uint32_t outstanding;
+  std::condition_variable_any available;
+  std::condition_variable_any drained;
 
   js_task_runner_s(uv_loop_t *loop)
       : loop(loop),
@@ -139,7 +150,9 @@ struct js_task_runner_s : public TaskRunner {
         delayed_tasks(),
         idle_tasks(),
         lock(),
-        condition() {
+        outstanding(0),
+        available(),
+        drained() {
     uv_timer_init(loop, &timer);
 
     timer.data = this;
@@ -169,14 +182,22 @@ struct js_task_runner_s : public TaskRunner {
   push_task (js_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
+    outstanding++;
+
+    task.on_completion = [this] { on_completion(); };
+
     tasks.push(std::move(task));
 
-    condition.notify_one();
+    available.notify_one();
   }
 
   inline void
   push_task (js_delayed_task_handle_t &&task) {
     std::scoped_lock guard(lock);
+
+    outstanding++;
+
+    task.on_completion = [this] { on_completion(); };
 
     delayed_tasks.push(std::move(task));
 
@@ -187,10 +208,14 @@ struct js_task_runner_s : public TaskRunner {
   push_task (js_idle_task_handle_t &&task) {
     std::scoped_lock guard(lock);
 
+    outstanding++;
+
+    task.on_completion = [this] { on_completion(); };
+
     idle_tasks.push(std::move(task));
   }
 
-  std::optional<js_task_handle_t>
+  inline std::optional<js_task_handle_t>
   pop_task () {
     std::scoped_lock guard(lock);
 
@@ -207,26 +232,44 @@ struct js_task_runner_s : public TaskRunner {
     return std::nullopt;
   }
 
-  std::optional<js_task_handle_t>
+  inline std::optional<js_task_handle_t>
   pop_task (bool wait) {
     std::unique_lock guard(lock);
 
-    if (tasks.empty() && wait) condition.wait(guard);
+    if (tasks.empty() && wait) available.wait(guard);
 
     return pop_task();
+  }
+
+  inline void
+  drain () {
+    std::unique_lock guard(lock);
+
+    while (outstanding > 0) {
+      drained.wait(guard);
+    }
   }
 
   inline void
   terminate () {
     std::scoped_lock guard(lock);
 
-    condition.notify_all();
+    available.notify_all();
   }
 
 private:
   inline uint64_t
   now () {
     return uv_now(loop);
+  }
+
+  void
+  on_completion () {
+    std::scoped_lock guard(lock);
+
+    if (--outstanding == 0) {
+      drained.notify_all();
+    }
   }
 
   static void
@@ -266,7 +309,7 @@ private:
 
       tasks.push(std::move(value));
 
-      condition.notify_one();
+      available.notify_one();
     }
 
     adjust_timer();
@@ -370,7 +413,9 @@ struct js_job_handle_s : public JobHandle {
 
 private: // V8 embedder API
   void
-  NotifyConcurrencyIncrease () override {}
+  NotifyConcurrencyIncrease () override {
+    join();
+  }
 
   void
   Join () override {
@@ -418,11 +463,8 @@ struct js_worker_s {
 private:
   void
   on_thread () {
-    while (true) {
-      auto task = task_runner->pop_task(true);
-
-      if (task) task->run();
-      else break;
+    while (auto task = task_runner->pop_task(true)) {
+      task->run();
     }
   }
 };
@@ -445,6 +487,11 @@ struct js_platform_s : public Platform {
 
   ~js_platform_s() {
     background_task_runner->terminate();
+  }
+
+  inline void
+  drain () {
+    background_task_runner->drain();
   }
 
 private:
@@ -554,11 +601,8 @@ struct js_env_s {
 private:
   inline void
   run_macrotasks () {
-    while (true) {
-      auto task = task_runner->pop_task();
-
-      if (task) task->run();
-      else break;
+    while (auto task = task_runner->pop_task()) {
+      task->run();
     }
   }
 
@@ -589,6 +633,8 @@ private:
   static void
   on_check (uv_check_t *handle) {
     auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    env->platform->drain();
 
     env->run_microtasks();
   }
@@ -1146,6 +1192,38 @@ js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 extern "C" int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
   return on_conclude_deferred(env, deferred, resolution, false);
+}
+
+extern "C" int
+js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result) {
+  auto local = to_local<Promise>(promise);
+
+  switch (local->State()) {
+  case Promise::PromiseState::kPending:
+    *result = js_promise_pending;
+    break;
+  case Promise::PromiseState::kFulfilled:
+    *result = js_promise_fulfilled;
+    break;
+  case Promise::PromiseState::kRejected:
+    *result = js_promise_rejected;
+    break;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
+  auto local = to_local<Promise>(promise);
+
+  if (local->State() == Promise::PromiseState::kPending) {
+    return -1;
+  }
+
+  *result = from_local(local->Result());
+
+  return 0;
 }
 
 extern "C" int

@@ -52,6 +52,12 @@ typedef enum {
   js_biguint64_array,
 } js_typedarray_type_t;
 
+typedef enum {
+  js_promise_pending,
+  js_promise_fulfilled,
+  js_promise_rejected
+} js_promise_state_t;
+
 int
 js_set_flags_from_string (const char *string, size_t len);
 
@@ -144,6 +150,12 @@ js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
 int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
+
+int
+js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result);
+
+int
+js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result);
 
 int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);

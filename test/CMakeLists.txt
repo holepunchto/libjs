@@ -10,6 +10,8 @@ list(APPEND tests
   run-module
   run-script
   set-named-property
+  wasm
+  wasm-async
 )
 
 foreach(test IN LISTS tests)
