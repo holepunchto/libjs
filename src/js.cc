@@ -634,6 +634,12 @@ private:
   on_check (uv_check_t *handle) {
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
+    env->run_microtasks();
+
+    if (uv_loop_alive(env->loop)) return;
+
+    // If the loop died, wait for the platform tasks to drain as this might
+    // cause additional tasks to be queued for the current isolate.
     env->platform->drain();
 
     env->run_microtasks();
