@@ -164,6 +164,11 @@ struct js_task_runner_s : public TaskRunner {
     terminate();
   }
 
+  inline uint64_t
+  now () {
+    return uv_now(loop);
+  }
+
   inline bool
   empty () {
     std::scoped_lock guard(lock);
@@ -229,6 +234,8 @@ struct js_task_runner_s : public TaskRunner {
       return value;
     }
 
+    // TODO: Check if we're idling and return an idle task if available.
+
     return std::nullopt;
   }
 
@@ -254,15 +261,13 @@ struct js_task_runner_s : public TaskRunner {
   terminate () {
     std::scoped_lock guard(lock);
 
+    // TODO: Clear and cancel outstanding tasks and notify threads waiting for
+    // the outstanding tasks to drain.
+
     available.notify_all();
   }
 
 private:
-  inline uint64_t
-  now () {
-    return uv_now(loop);
-  }
-
   void
   on_completion () {
     std::scoped_lock guard(lock);
@@ -274,9 +279,9 @@ private:
 
   static void
   on_timer (uv_timer_t *handle) {
-    auto task_runner = reinterpret_cast<js_task_runner_t *>(handle->data);
+    auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
 
-    task_runner->move_expired_tasks();
+    tasks->move_expired_tasks();
   }
 
   void
@@ -444,11 +449,11 @@ private: // V8 embedder API
 };
 
 struct js_worker_s {
-  std::shared_ptr<js_task_runner_t> task_runner;
+  std::shared_ptr<js_task_runner_t> tasks;
   std::thread thread;
 
-  js_worker_s(std::shared_ptr<js_task_runner_t> task_runner)
-      : task_runner(task_runner),
+  js_worker_s(std::shared_ptr<js_task_runner_t> tasks)
+      : tasks(tasks),
         thread(&js_worker_t::on_thread, this) {}
 
   ~js_worker_s() {
@@ -463,7 +468,7 @@ struct js_worker_s {
 private:
   void
   on_thread () {
-    while (auto task = task_runner->pop_task(true)) {
+    while (auto task = tasks->pop_task(true)) {
       task->run();
     }
   }
@@ -471,41 +476,102 @@ private:
 
 struct js_platform_s : public Platform {
   uv_loop_t *loop;
-  std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground_task_runners;
-  std::shared_ptr<js_task_runner_t> background_task_runner;
+  uv_prepare_t prepare;
+  uv_check_t check;
+  std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground;
+  std::shared_ptr<js_task_runner_t> background;
   std::vector<std::shared_ptr<js_worker_t>> workers;
-  std::unique_ptr<js_tracing_controller_t> tracing_controller;
+  std::unique_ptr<js_tracing_controller_t> trace;
 
   js_platform_s(uv_loop_t *loop)
       : loop(loop),
-        foreground_task_runners(),
-        background_task_runner(new js_task_runner_t(loop)),
+        prepare(),
+        check(),
+        foreground(),
+        background(new js_task_runner_t(loop)),
         workers(),
-        tracing_controller(new js_tracing_controller_t()) {
+        trace(new js_tracing_controller_t()) {
+    uv_prepare_init(loop, &prepare);
+    uv_prepare_start(&prepare, on_prepare);
+
+    uv_check_init(loop, &check);
+    uv_check_start(&check, on_check);
+
+    // The check handle should not on its own keep the loop alive; it's simply
+    // used for running any outstanding tasks that might cause additional work
+    // to be queued.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+
+    prepare.data = this;
+    check.data = this;
+
     start_workers();
   }
 
   ~js_platform_s() {
-    background_task_runner->terminate();
+    background->terminate();
   }
 
-  inline void
-  drain () {
-    background_task_runner->drain();
-  }
-
-private:
   inline uint64_t
   now () {
     return uv_now(loop);
   }
 
   inline void
+  idle () {
+    // TODO: This should wait until either the platform drains completely or a
+    // task is made available.
+    drain();
+  }
+
+  inline void
+  drain () {
+    background->drain();
+  }
+
+private:
+  inline void
+  run_macrotasks () {
+    while (auto task = background->pop_task()) {
+      task->run();
+    }
+  }
+
+  inline void
+  check_liveness () {
+    if (background->empty()) {
+      uv_prepare_stop(&prepare);
+    } else {
+      uv_prepare_start(&prepare, on_prepare);
+    }
+  }
+
+  static void
+  on_prepare (uv_prepare_t *handle) {
+    auto platform = reinterpret_cast<js_platform_t *>(handle->data);
+
+    platform->run_macrotasks();
+
+    platform->check_liveness();
+  }
+
+  static void
+  on_check (uv_check_t *handle) {
+    auto platform = reinterpret_cast<js_platform_t *>(handle->data);
+
+    if (uv_loop_alive(platform->loop)) return;
+
+    platform->idle();
+
+    platform->check_liveness();
+  }
+
+  inline void
   start_workers () {
-    workers.reserve(uv_available_parallelism() - 1);
+    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
 
     while (workers.size() < workers.capacity()) {
-      workers.emplace_back(new js_worker_t(background_task_runner));
+      workers.emplace_back(new js_worker_t(background));
     }
   }
 
@@ -522,17 +588,17 @@ private: // V8 embedder API
 
   std::shared_ptr<TaskRunner>
   GetForegroundTaskRunner (Isolate *isolate) override {
-    return foreground_task_runners[isolate];
+    return foreground[isolate];
   }
 
   void
   CallOnWorkerThread (std::unique_ptr<Task> task) override {
-    background_task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
+    background->push_task(js_task_handle_t(std::move(task), js_task_nested));
   }
 
   void
   CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
-    background_task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
+    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
   }
 
   std::unique_ptr<JobHandle>
@@ -552,32 +618,32 @@ private: // V8 embedder API
 
   TracingController *
   GetTracingController () override {
-    return tracing_controller.get();
+    return trace.get();
   }
 };
 
 struct js_env_s {
   uv_loop_t *loop;
+  uv_prepare_t prepare;
+  uv_check_t check;
   js_platform_t *platform;
-  std::shared_ptr<js_task_runner_t> task_runner;
+  std::shared_ptr<js_task_runner_t> tasks;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
   Persistent<Context> context;
   Persistent<Value> exception;
   std::unordered_multimap<int, js_module_s *> modules;
-  uv_prepare_t prepare;
-  uv_check_t check;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : loop(loop),
+        prepare(),
+        check(),
         platform(platform),
-        task_runner(platform->foreground_task_runners[isolate]),
+        tasks(platform->foreground[isolate]),
         isolate(isolate),
         allocator(allocator),
         context(isolate, Context::New(isolate)),
-        modules(),
-        prepare(),
-        check() {
+        modules() {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
 
@@ -598,10 +664,17 @@ struct js_env_s {
     return uv_now(loop);
   }
 
+  inline void
+  idle () {
+    // TODO: This should wait until either the platform drains completely or a
+    // task is made available for the isolate.
+    platform->drain();
+  }
+
 private:
   inline void
   run_macrotasks () {
-    while (auto task = task_runner->pop_task()) {
+    while (auto task = tasks->pop_task()) {
       task->run();
     }
   }
@@ -613,8 +686,11 @@ private:
     Context::Scope scope(context);
 
     isolate->PerformMicrotaskCheckpoint();
+  }
 
-    if (task_runner->empty()) {
+  inline void
+  check_liveness () {
+    if (tasks->empty()) {
       uv_prepare_stop(&prepare);
     } else {
       uv_prepare_start(&prepare, on_prepare);
@@ -628,6 +704,8 @@ private:
     env->run_macrotasks();
 
     env->run_microtasks();
+
+    env->check_liveness();
   }
 
   static void
@@ -638,11 +716,9 @@ private:
 
     if (uv_loop_alive(env->loop)) return;
 
-    // If the loop died, wait for the platform tasks to drain as this might
-    // cause additional tasks to be queued for the current isolate.
-    env->platform->drain();
+    env->idle();
 
-    env->run_microtasks();
+    env->check_liveness();
   }
 };
 
@@ -769,9 +845,9 @@ js_env_init (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   auto isolate = Isolate::Allocate();
 
-  auto task_runner = new js_task_runner_t(loop);
+  auto tasks = new js_task_runner_t(loop);
 
-  platform->foreground_task_runners.emplace(isolate, std::move(task_runner));
+  platform->foreground.emplace(isolate, std::move(tasks));
 
   Isolate::Initialize(isolate, params);
 
@@ -794,7 +870,7 @@ extern "C" int
 js_env_destroy (js_env_t *env) {
   env->isolate->Dispose();
 
-  env->platform->foreground_task_runners.erase(env->isolate);
+  env->platform->foreground.erase(env->isolate);
 
   delete env->allocator;
   delete env;
@@ -1654,12 +1730,12 @@ extern "C" int
 js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto task = std::make_unique<js_task_t>(env, cb, data);
 
-  auto task_runner = env->task_runner;
+  auto tasks = env->tasks;
 
   if (delay) {
-    task_runner->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, env->now() + delay));
+    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, env->now() + delay));
   } else {
-    task_runner->push_task(js_task_handle_t(std::move(task), js_task_nested));
+    tasks->push_task(js_task_handle_t(std::move(task), js_task_nested));
   }
 
   return 0;
