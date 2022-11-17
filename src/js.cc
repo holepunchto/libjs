@@ -673,19 +673,21 @@ struct js_env_s {
 
 private:
   inline void
-  run_macrotasks () {
-    while (auto task = tasks->pop_task()) {
-      task->run();
-    }
-  }
-
-  inline void
   run_microtasks () {
     auto context = to_local(this->context);
 
     Context::Scope scope(context);
 
     isolate->PerformMicrotaskCheckpoint();
+  }
+
+  inline void
+  run_macrotasks () {
+    while (auto task = tasks->pop_task()) {
+      task->run();
+
+      run_microtasks();
+    }
   }
 
   inline void
@@ -702,8 +704,6 @@ private:
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
     env->run_macrotasks();
-
-    env->run_microtasks();
 
     env->check_liveness();
   }
