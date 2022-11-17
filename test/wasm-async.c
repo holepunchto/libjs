@@ -3,6 +3,8 @@
 
 #include "../include/js.h"
 
+#include "fixtures/wasm-async.js.h"
+
 int
 main (int argc, char *argv[]) {
   int e;
@@ -21,23 +23,8 @@ main (int argc, char *argv[]) {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  const char *code =
-    "const code = new Uint8Array(["
-    "0, 97, 115, 109, 1, 0, 0, 0, 1, 133, 128, 128, 128, 0, 1, 96, 0, 1, 127,"
-    "3, 130, 128, 128, 128, 0, 1, 0, 4, 132, 128, 128, 128, 0, 1, 112, 0, 0,"
-    "5, 131, 128, 128, 128, 0, 1, 0, 1, 6, 129, 128, 128, 128, 0, 0, 7, 145,"
-    "128, 128, 128, 0, 2, 6, 109, 101, 109, 111, 114, 121, 2, 0, 4, 109, 97,"
-    "105, 110, 0, 0, 10, 138, 128, 128, 128, 0, 1, 132, 128, 128, 128, 0, 0,"
-    "65, 42, 11"
-    "]);"
-
-    "WebAssembly.instantiate(code).then((mod) => {"
-    "const main = mod.instance.exports.main;"
-    "return main()"
-    "})";
-
   js_value_t *script;
-  e = js_create_string_utf8(env, code, -1, &script);
+  e = js_create_string_utf8(env, (char *) wasm_async_js, wasm_async_js_len, &script);
   assert(e == 0);
 
   js_value_t *promise;
