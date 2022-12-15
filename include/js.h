@@ -268,4 +268,5 @@ js_request_garbage_collection (js_env_t *env);
 #ifdef __cplusplus
 }
 #endif
+
 #endif // JS_H

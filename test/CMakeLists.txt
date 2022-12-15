@@ -17,7 +17,17 @@ list(APPEND tests
 foreach(test IN LISTS tests)
   add_executable(${test} ${test}.c)
 
-  target_link_libraries(${test} js_shared)
+  target_link_libraries(
+    ${test}
+    PRIVATE
+      js_shared
+  )
+
+  target_include_directories(
+    ${test}
+    PRIVATE
+      $<TARGET_PROPERTY:js,INCLUDE_DIRECTORIES>
+  )
 
   add_test(
     NAME ${test}
