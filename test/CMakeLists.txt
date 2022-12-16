@@ -3,6 +3,7 @@ list(APPEND tests
   call-function-throw
   create-function
   create-reference-weak
+  ffi
   run-macrotask
   run-macrotask-delayed
   run-microtask
