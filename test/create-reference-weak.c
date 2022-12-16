@@ -4,7 +4,7 @@
 #include "../include/js.h"
 
 int
-main (int argc, char *argv[]) {
+main () {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

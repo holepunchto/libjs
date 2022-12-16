@@ -26,7 +26,7 @@ on_call (js_env_t *env, const js_callback_info_t *info) {
 }
 
 int
-main (int argc, char *argv[]) {
+main () {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -6,7 +6,7 @@
 #include "fixtures/wasm-sync.js.h"
 
 int
-main (int argc, char *argv[]) {
+main () {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

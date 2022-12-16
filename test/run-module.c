@@ -40,7 +40,7 @@ on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions,
 }
 
 int
-main (int argc, char *argv[]) {
+main () {
   int e;
 
   uv_loop_t *loop = uv_default_loop();
