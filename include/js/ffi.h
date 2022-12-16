@@ -31,10 +31,10 @@ typedef enum {
   js_ffi_array,
   js_ffi_typedarray,
   js_ffi_arraybuffer,
-} js_ffi_sequence_type_t;
+} js_ffi_kind_t;
 
 int
-js_ffi_create_type_info (js_ffi_type_t type, js_ffi_sequence_type_t sequence_type, js_ffi_type_info_t **result);
+js_ffi_create_type_info (js_ffi_type_t type, js_ffi_kind_t kind, js_ffi_type_info_t **result);
 
 int
 js_ffi_create_function_info (const js_ffi_type_info_t *return_info, const js_ffi_type_info_t arg_info[], unsigned int arg_len, js_ffi_function_info_t **result);
