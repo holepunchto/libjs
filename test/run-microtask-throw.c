@@ -34,11 +34,11 @@ main (int argc, char *argv[]) {
   uv_loop_t *loop = uv_default_loop();
 
   js_platform_t *platform;
-  e = js_platform_init(loop, &platform);
+  e = js_create_platform(loop, &platform);
   assert(e == 0);
 
   js_env_t *env;
-  e = js_env_init(loop, platform, &env);
+  e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
   e = js_queue_microtask(env, on_call, NULL);
@@ -50,9 +50,9 @@ main (int argc, char *argv[]) {
 
   assert(fn_called);
 
-  e = js_env_destroy(env);
+  e = js_destroy_env(env);
   assert(e == 0);
 
-  e = js_platform_destroy(platform);
+  e = js_destroy_platform(platform);
   assert(e == 0);
 }

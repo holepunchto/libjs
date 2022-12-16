@@ -817,7 +817,7 @@ js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
 }
 
 extern "C" int
-js_platform_init (uv_loop_t *loop, js_platform_t **result) {
+js_create_platform (uv_loop_t *loop, js_platform_t **result) {
   *result = new js_platform_t(loop);
 
   V8::InitializePlatform(*result);
@@ -827,7 +827,7 @@ js_platform_init (uv_loop_t *loop, js_platform_t **result) {
 }
 
 extern "C" int
-js_platform_destroy (js_platform_t *platform) {
+js_destroy_platform (js_platform_t *platform) {
   V8::Dispose();
   V8::DisposePlatform();
 
@@ -837,7 +837,14 @@ js_platform_destroy (js_platform_t *platform) {
 }
 
 extern "C" int
-js_env_init (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
+js_get_platform_loop (js_platform_t *platform, uv_loop_t **result) {
+  *result = platform->loop;
+
+  return 0;
+}
+
+extern "C" int
+js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
 
   Isolate::CreateParams params;
@@ -867,13 +874,20 @@ js_env_init (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 }
 
 extern "C" int
-js_env_destroy (js_env_t *env) {
+js_destroy_env (js_env_t *env) {
   env->isolate->Dispose();
 
   env->platform->foreground.erase(env->isolate);
 
   delete env->allocator;
   delete env;
+
+  return 0;
+}
+
+extern "C" int
+js_get_env_loop (js_env_t *env, uv_loop_t **result) {
+  *result = env->loop;
 
   return 0;
 }
