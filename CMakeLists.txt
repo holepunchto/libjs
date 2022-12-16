@@ -29,8 +29,10 @@ target_sources(
   js
   INTERFACE
     include/js.h
+    include/js/ffi.h
   PRIVATE
     src/js.cc
+    src/ffi.cc
 )
 
 target_include_directories(
@@ -80,6 +82,8 @@ target_link_libraries(
 install(TARGETS js_shared js_static)
 
 install(FILES include/js.h DESTINATION include)
+
+install(DIRECTORY include/js DESTINATION include)
 
 if(PROJECT_IS_TOP_LEVEL)
   enable_testing()
