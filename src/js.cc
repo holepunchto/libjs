@@ -1671,7 +1671,7 @@ js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, si
 }
 
 extern "C" int
-js_get_typedarray_info (js_env_t env, js_value_t *typedarray, js_typedarray_type_t *type, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset) {
+js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, size_t *len, void **data, js_value_t **arraybuffer, size_t *offset) {
   auto local = to_local(typedarray).As<TypedArray>();
 
   if (type != nullptr) {
