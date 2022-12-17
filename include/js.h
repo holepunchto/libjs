@@ -10,6 +10,8 @@ extern "C" {
 #include <stdint.h>
 #include <uv.h>
 
+#include "js/ffi.h"
+
 typedef struct js_platform_s js_platform_t;
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
@@ -147,6 +149,9 @@ js_create_object (js_env_t *env, js_value_t **result);
 
 int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
+
+int
+js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result);
 
 int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);

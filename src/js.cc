@@ -14,9 +14,11 @@
 #include <stdint.h>
 #include <uv.h>
 
+#include <v8-fast-api-calls.h>
 #include <v8.h>
 
 #include "../include/js.h"
+#include "../include/js/ffi.h"
 
 using namespace v8;
 
@@ -778,6 +780,31 @@ struct js_callback_s {
         data(data) {}
 };
 
+struct js_ffi_type_info_s {
+  CTypeInfo type_info;
+
+  js_ffi_type_info_s(CTypeInfo::Type type, CTypeInfo::SequenceType sequence_type)
+      : type_info(type, sequence_type) {}
+};
+
+struct js_ffi_function_info_s {
+  CTypeInfo return_info;
+  std::vector<CTypeInfo> arg_info;
+  CFunctionInfo function_info;
+
+  js_ffi_function_info_s(CTypeInfo return_info, std::vector<CTypeInfo> &&arg_info)
+      : return_info(return_info),
+        arg_info(std::move(arg_info)),
+        function_info(this->return_info, this->arg_info.size(), this->arg_info.data()) {}
+};
+
+struct js_ffi_function_s {
+  CFunction function;
+
+  js_ffi_function_s(const void *fn, const CFunctionInfo *function_info)
+      : function(fn, function_info) {}
+};
+
 static inline js_env_t *
 get_env (Local<Context> context) {
   return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
@@ -1229,6 +1256,11 @@ on_function_call (const FunctionCallbackInfo<Value> &info) {
 
 extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
+  return js_create_function_with_ffi(env, name, len, cb, data, nullptr, result);
+}
+
+extern "C" int
+js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
   EscapableHandleScope scope(env->isolate);
 
   auto context = to_local(env->context);
@@ -1237,7 +1269,18 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto external = External::New(env->isolate, callback);
 
-  auto fn = Function::New(context, on_function_call, external).ToLocalChecked();
+  auto tpl = FunctionTemplate::New(
+    env->isolate,
+    on_function_call,
+    external,
+    Local<Signature>(),
+    0,
+    ConstructorBehavior::kThrow,
+    SideEffectType::kHasNoSideEffect,
+    ffi ? &ffi->function : nullptr
+  );
+
+  auto fn = tpl->GetFunction(context).ToLocalChecked();
 
   if (name != nullptr) {
     auto string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
@@ -1758,6 +1801,84 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
 extern "C" int
 js_request_garbage_collection (js_env_t *env) {
   env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
+
+  return 0;
+}
+
+extern "C" int
+js_ffi_create_type_info (js_ffi_type_t type, js_ffi_kind_t kind, js_ffi_type_info_t **result) {
+  CTypeInfo::Type v8_type;
+  CTypeInfo::SequenceType v8_sequence_type;
+
+  switch (type) {
+  case js_ffi_void:
+    v8_type = CTypeInfo::Type::kVoid;
+    break;
+  case js_ffi_bool:
+    v8_type = CTypeInfo::Type::kBool;
+    break;
+  case js_ffi_uint32:
+    v8_type = CTypeInfo::Type::kUint32;
+    break;
+  case js_ffi_int32:
+    v8_type = CTypeInfo::Type::kInt32;
+    break;
+  case js_ffi_float32:
+    v8_type = CTypeInfo::Type::kFloat32;
+    break;
+  case js_ffi_float64:
+    v8_type = CTypeInfo::Type::kFloat64;
+    break;
+  }
+
+  switch (kind) {
+  case js_ffi_scalar:
+    v8_sequence_type = CTypeInfo::SequenceType::kScalar;
+    break;
+  case js_ffi_array:
+    v8_sequence_type = CTypeInfo::SequenceType::kIsSequence;
+    break;
+  case js_ffi_typedarray:
+    v8_sequence_type = CTypeInfo::SequenceType::kIsTypedArray;
+    break;
+  case js_ffi_arraybuffer:
+    v8_sequence_type = CTypeInfo::SequenceType::kIsArrayBuffer;
+    break;
+  }
+
+  auto type_info = new js_ffi_type_info_t(v8_type, v8_sequence_type);
+
+  *result = type_info;
+
+  return 0;
+}
+
+extern "C" int
+js_ffi_create_function_info (const js_ffi_type_info_t *return_info, const js_ffi_type_info_t *arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
+  auto v8_return_info = return_info->type_info;
+
+  std::vector<CTypeInfo> v8_arg_info;
+
+  v8_arg_info.reserve(arg_len);
+
+  for (unsigned int i = 0; i < arg_len; i++) {
+    v8_arg_info.push_back(arg_info[i]->type_info);
+  }
+
+  auto function_info = new js_ffi_function_info_t(v8_return_info, std::move(v8_arg_info));
+
+  *result = function_info;
+
+  return 0;
+}
+
+extern "C" int
+js_ffi_create_function (const void *fn, const js_ffi_function_info_t *type_info, js_ffi_function_t **result) {
+  auto v8_type_info = &type_info->function_info;
+
+  auto function = new js_ffi_function_t(fn, v8_type_info);
+
+  *result = function;
 
   return 0;
 }

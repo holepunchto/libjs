@@ -32,7 +32,6 @@ target_sources(
     include/js/ffi.h
   PRIVATE
     src/js.cc
-    src/ffi.cc
 )
 
 target_include_directories(

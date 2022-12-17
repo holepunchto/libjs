@@ -17,11 +17,8 @@ typedef struct js_ffi_function_s js_ffi_function_t;
 typedef enum {
   js_ffi_void,
   js_ffi_bool,
-  js_ffi_uint8,
   js_ffi_uint32,
-  js_ffi_uint64,
   js_ffi_int32,
-  js_ffi_int64,
   js_ffi_float32,
   js_ffi_float64,
 } js_ffi_type_t;

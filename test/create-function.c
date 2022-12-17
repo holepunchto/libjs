@@ -44,7 +44,7 @@ main () {
   assert(e == 0);
 
   js_value_t *fn;
-  e = js_create_function(env, "hello", 1, on_call, NULL, &fn);
+  e = js_create_function(env, "hello", -1, on_call, NULL, &fn);
   assert(e == 0);
 
   js_value_t *global;
