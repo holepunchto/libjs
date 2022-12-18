@@ -1556,18 +1556,41 @@ js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
 
 extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
-  auto local = to_local(value);
+  auto local = to_local<Int32>(value);
 
-  *result = local.As<Int32>()->Value();
+  *result = local->Value();
 
   return 0;
 }
 
 extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
-  auto local = to_local(value);
+  auto local = to_local<Uint32>(value);
 
-  *result = local.As<Uint32>()->Value();
+  *result = local->Value();
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result) {
+  auto local = to_local<String>(value);
+
+  if (str == nullptr) {
+    *result = local->Utf8Length(env->isolate);
+  } else if (len != 0) {
+    int written = local->WriteUtf8(
+      env->isolate,
+      str,
+      len - 1,
+      nullptr,
+      String::REPLACE_INVALID_UTF8 | String::NO_NULL_TERMINATION
+    );
+
+    str[written] = '\0';
+  } else if (result != nullptr) {
+    *result = 0;
+  }
 
   return 0;
 }

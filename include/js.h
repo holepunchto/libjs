@@ -244,6 +244,9 @@ int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result);
 
 int
+js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result);
+
+int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result);
 
 int
