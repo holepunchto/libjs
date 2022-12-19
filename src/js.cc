@@ -648,22 +648,37 @@ struct js_env_s {
         modules() {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
+    prepare.data = this;
 
     uv_check_init(loop, &check);
     uv_check_start(&check, on_check);
+    check.data = this;
 
     // The check handle should not on its own keep the loop alive; it's simply
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
-
-    prepare.data = this;
-    check.data = this;
   }
 
   inline uint64_t
   now () {
     return uv_now(loop);
+  }
+
+  inline void
+  enter () {
+    auto context = to_local(this->context);
+
+    isolate->Enter();
+    context->Enter();
+  }
+
+  inline void
+  exit () {
+    auto context = to_local(this->context);
+
+    context->Exit();
+    isolate->Exit();
   }
 
   inline void
@@ -891,6 +906,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   auto env = new js_env_s(loop, platform, isolate, allocator);
 
+  env->enter();
+
   auto context = to_local(env->context);
 
   context->SetAlignedPointerInEmbedderData(js_context_environment, env);
@@ -902,6 +919,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
 extern "C" int
 js_destroy_env (js_env_t *env) {
+  env->exit();
+
   env->isolate->Dispose();
 
   env->platform->foreground.erase(env->isolate);
