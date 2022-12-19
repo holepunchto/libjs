@@ -693,8 +693,6 @@ private:
   run_microtasks () {
     auto context = to_local(this->context);
 
-    Context::Scope scope(context);
-
     isolate->PerformMicrotaskCheckpoint();
   }
 
@@ -987,15 +985,9 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
 
   ScriptCompiler::Source v8_source(local.As<String>());
 
-  Context::Scope scope(context);
-
-  env->isolate->Enter();
-
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
   *result = from_local(compiled->Run(context).ToLocalChecked());
-
-  env->isolate->Exit();
 
   return 0;
 }
@@ -1021,13 +1013,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
 
   ScriptCompiler::Source v8_source(local.As<String>(), origin);
 
-  Context::Scope scope(context);
-
-  env->isolate->Enter();
-
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
-
-  env->isolate->Exit();
 
   auto module = new js_module_t(compiled, data);
 
@@ -1059,18 +1045,12 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const j
 
   std::vector<Local<String>> names(local, local + names_len);
 
-  Context::Scope scope(context);
-
-  env->isolate->Enter();
-
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
     String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
     names,
     on_evaluate_synethic_module
   );
-
-  env->isolate->Exit();
 
   auto module = new js_module_t(compiled, data);
 
@@ -1137,13 +1117,7 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
   auto context = to_local(env->context);
 
-  Context::Scope scope(context);
-
-  env->isolate->Enter();
-
   *result = from_local(local->Evaluate(context).ToLocalChecked());
-
-  env->isolate->Exit();
 
   return 0;
 }
@@ -1252,8 +1226,6 @@ js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t 
 extern "C" int
 js_create_object (js_env_t *env, js_value_t **result) {
   auto context = to_local(env->context);
-
-  Context::Scope scope(context);
 
   auto object = Object::New(env->isolate);
 
@@ -1817,8 +1789,6 @@ js_queue_microtask (js_env_t *env, js_task_cb cb, void *data) {
   auto task = new js_task_t(env, cb, data);
 
   auto context = to_local(env->context);
-
-  Context::Scope scope(context);
 
   env->isolate->EnqueueMicrotask(on_microtask, task);
 
