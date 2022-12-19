@@ -1,4 +1,5 @@
 list(APPEND tests
+  atomics-wait-timeout
   call-function
   call-function-throw
   create-function
