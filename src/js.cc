@@ -496,17 +496,16 @@ struct js_platform_s : public Platform {
         trace(new js_tracing_controller_t()) {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
+    prepare.data = this;
 
     uv_check_init(loop, &check);
     uv_check_start(&check, on_check);
+    check.data = this;
 
     // The check handle should not on its own keep the loop alive; it's simply
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
-
-    prepare.data = this;
-    check.data = this;
 
     start_workers();
   }
