@@ -22,6 +22,7 @@
 
 using namespace v8;
 
+typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_callback_s js_callback_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_s js_task_t;
@@ -731,6 +732,24 @@ private:
 
     env->check_liveness();
   }
+};
+
+struct js_env_scope_s {
+  js_env_t *env;
+
+  js_env_scope_s(js_env_t *env)
+      : env(env) {
+    env->enter();
+  }
+
+  js_env_scope_s(const js_env_scope_s &) = delete;
+
+  ~js_env_scope_s() {
+    env->exit();
+  }
+
+  js_env_scope_s &
+  operator=(const js_env_scope_s &) = delete;
 };
 
 struct js_handle_scope_s {
