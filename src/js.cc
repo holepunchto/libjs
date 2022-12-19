@@ -658,6 +658,8 @@ struct js_env_s {
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+
+    to_local(this->context)->Enter();
   }
 
   inline uint64_t
@@ -667,17 +669,11 @@ struct js_env_s {
 
   inline void
   enter () {
-    auto context = to_local(this->context);
-
     isolate->Enter();
-    context->Enter();
   }
 
   inline void
   exit () {
-    auto context = to_local(this->context);
-
-    context->Exit();
     isolate->Exit();
   }
 
