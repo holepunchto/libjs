@@ -53,10 +53,6 @@ main () {
   e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
-  assert(e == 0);
-
   js_value_t *source;
   e = js_create_string_utf8(env, "import { foo } from 'foo.js'", -1, &source);
   assert(e == 0);
@@ -70,9 +66,6 @@ main () {
 
   js_value_t *result;
   e = js_run_module(env, module, &result);
-  assert(e == 0);
-
-  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);

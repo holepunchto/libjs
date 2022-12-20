@@ -17,10 +17,6 @@ main () {
   e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
-  assert(e == 0);
-
   {
     js_value_t *global;
     e = js_get_global(env, &global);
@@ -49,9 +45,6 @@ main () {
 
     assert(value == 42);
   }
-
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

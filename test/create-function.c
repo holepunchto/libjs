@@ -39,10 +39,6 @@ main () {
   e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
-  assert(e == 0);
-
   js_value_t *fn;
   e = js_create_function(env, "hello", -1, on_call, NULL, &fn);
   assert(e == 0);
@@ -67,9 +63,6 @@ main () {
   assert(e == 0);
 
   assert(value == 84);
-
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
