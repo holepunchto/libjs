@@ -143,6 +143,7 @@ struct js_task_runner_s : public TaskRunner {
   std::queue<js_idle_task_handle_t> idle_tasks;
   std::recursive_mutex lock;
   uint32_t outstanding;
+  uint32_t disposable;
   std::condition_variable_any available;
   std::condition_variable_any drained;
 
@@ -154,6 +155,7 @@ struct js_task_runner_s : public TaskRunner {
         idle_tasks(),
         lock(),
         outstanding(0),
+        disposable(0),
         available(),
         drained() {
     uv_timer_init(loop, &timer);
@@ -202,7 +204,13 @@ struct js_task_runner_s : public TaskRunner {
 
     outstanding++;
 
-    task.on_completion = [this] { on_completion(); };
+    // Nested delayed tasks are not allowed to execute JavaScript and should
+    // therefore be safe to dispose if all other tasks have been finished.
+    bool is_disposable = task.nestability == js_task_nested;
+
+    if (is_disposable) disposable++;
+
+    task.on_completion = [this, is_disposable] { on_completion(is_disposable); };
 
     delayed_tasks.push(std::move(task));
   }
@@ -255,11 +263,9 @@ struct js_task_runner_s : public TaskRunner {
 
       if (task.expiry > now()) break;
 
-      auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
+      tasks.push(std::move(const_cast<js_delayed_task_handle_t &>(task)));
 
       delayed_tasks.pop();
-
-      tasks.push(std::move(value));
 
       available.notify_one();
     }
@@ -287,9 +293,11 @@ struct js_task_runner_s : public TaskRunner {
   }
 
 private:
-  void
-  on_completion () {
+  inline void
+  on_completion (bool is_disposable = false) {
     std::scoped_lock guard(lock);
+
+    if (is_disposable) disposable--;
 
     if (--outstanding == 0) {
       drained.notify_all();
@@ -315,6 +323,12 @@ private:
       uint64_t timeout = task.expiry - now();
 
       uv_timer_start(&timer, on_timer, timeout, 0);
+
+      // Don't let the timer keep the loop alive if all outstanding tasks are
+      // disposable.
+      if (outstanding == disposable) {
+        uv_unref(reinterpret_cast<uv_handle_t *>(&timer));
+      }
     }
   }
 
@@ -704,7 +718,7 @@ private:
   check_liveness () {
     tasks->move_expired_tasks();
 
-    if (tasks->empty()) {
+    if (tasks->empty() || tasks->outstanding == tasks->disposable) {
       uv_prepare_stop(&prepare);
     } else {
       uv_prepare_start(&prepare, on_prepare);
@@ -1817,9 +1831,9 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto tasks = env->tasks;
 
   if (delay) {
-    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, env->now() + delay));
+    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, env->now() + delay));
   } else {
-    tasks->push_task(js_task_handle_t(std::move(task), js_task_nested));
+    tasks->push_task(js_task_handle_t(std::move(task), js_task_non_nested));
   }
 
   return 0;
