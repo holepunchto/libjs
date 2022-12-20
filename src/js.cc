@@ -640,6 +640,7 @@ struct js_env_s {
   uv_prepare_t prepare;
   uv_check_t check;
   js_platform_t *platform;
+  js_handle_scope_t *scope;
   std::shared_ptr<js_task_runner_t> tasks;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
@@ -671,6 +672,12 @@ struct js_env_s {
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     to_local(this->context)->Enter();
+
+    js_open_handle_scope(this, &scope);
+  }
+
+  ~js_env_s() {
+    js_close_handle_scope(this, scope);
   }
 
   inline uint64_t
