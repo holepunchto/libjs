@@ -640,10 +640,10 @@ struct js_env_s {
   uv_prepare_t prepare;
   uv_check_t check;
   js_platform_t *platform;
-  js_handle_scope_t *scope;
   std::shared_ptr<js_task_runner_t> tasks;
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
+  HandleScope scope;
   Persistent<Context> context;
   Persistent<Value> exception;
   std::unordered_multimap<int, js_module_s *> modules;
@@ -656,6 +656,7 @@ struct js_env_s {
         tasks(platform->foreground[isolate]),
         isolate(isolate),
         allocator(allocator),
+        scope(isolate),
         context(isolate, Context::New(isolate)),
         modules() {
     uv_prepare_init(loop, &prepare);
@@ -672,12 +673,6 @@ struct js_env_s {
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     to_local(this->context)->Enter();
-
-    js_open_handle_scope(this, &scope);
-  }
-
-  ~js_env_s() {
-    js_close_handle_scope(this, scope);
   }
 
   inline uint64_t
@@ -953,14 +948,18 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
 extern "C" int
 js_destroy_env (js_env_t *env) {
+  auto isolate = env->isolate;
+  auto allocator = env->allocator;
+
   env->exit();
 
-  env->isolate->Dispose();
+  env->platform->foreground.erase(isolate);
 
-  env->platform->foreground.erase(env->isolate);
-
-  delete env->allocator;
   delete env;
+
+  isolate->Dispose();
+
+  delete allocator;
 
   return 0;
 }
