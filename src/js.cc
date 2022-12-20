@@ -157,10 +157,7 @@ struct js_task_runner_s : public TaskRunner {
         available(),
         drained() {
     uv_timer_init(loop, &timer);
-
     timer.data = this;
-
-    adjust_timer();
   }
 
   ~js_task_runner_s() {
@@ -208,8 +205,6 @@ struct js_task_runner_s : public TaskRunner {
     task.on_completion = [this] { on_completion(); };
 
     delayed_tasks.push(std::move(task));
-
-    adjust_timer();
   }
 
   inline void
@@ -243,12 +238,33 @@ struct js_task_runner_s : public TaskRunner {
   }
 
   inline std::optional<js_task_handle_t>
-  pop_task (bool wait) {
+  pop_task_wait () {
     std::unique_lock guard(lock);
 
-    if (tasks.empty() && wait) available.wait(guard);
+    if (tasks.empty()) available.wait(guard);
 
     return pop_task();
+  }
+
+  void
+  move_expired_tasks () {
+    std::scoped_lock guard(lock);
+
+    while (!delayed_tasks.empty()) {
+      js_delayed_task_handle_t const &task = delayed_tasks.top();
+
+      if (task.expiry > now()) break;
+
+      auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
+
+      delayed_tasks.pop();
+
+      tasks.push(std::move(value));
+
+      available.notify_one();
+    }
+
+    adjust_timer();
   }
 
   inline void
@@ -300,27 +316,6 @@ private:
 
       uv_timer_start(&timer, on_timer, timeout, 0);
     }
-  }
-
-  void
-  move_expired_tasks () {
-    std::scoped_lock guard(lock);
-
-    while (!delayed_tasks.empty()) {
-      js_delayed_task_handle_t const &task = delayed_tasks.top();
-
-      if (task.expiry > now()) break;
-
-      auto value = std::move(const_cast<js_delayed_task_handle_t &>(task));
-
-      delayed_tasks.pop();
-
-      tasks.push(std::move(value));
-
-      available.notify_one();
-    }
-
-    adjust_timer();
   }
 
 private: // V8 embedder API
@@ -471,7 +466,7 @@ struct js_worker_s {
 private:
   void
   on_thread () {
-    while (auto task = tasks->pop_task(true)) {
+    while (auto task = tasks->pop_task_wait()) {
       task->run();
     }
   }
@@ -534,6 +529,8 @@ struct js_platform_s : public Platform {
 private:
   inline void
   run_macrotasks () {
+    background->move_expired_tasks();
+
     while (auto task = background->pop_task()) {
       task->run();
     }
@@ -694,6 +691,8 @@ private:
 
   inline void
   run_macrotasks () {
+    tasks->move_expired_tasks();
+
     while (auto task = tasks->pop_task()) {
       task->run();
 
