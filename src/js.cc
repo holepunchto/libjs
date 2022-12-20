@@ -702,6 +702,8 @@ private:
 
   inline void
   check_liveness () {
+    tasks->move_expired_tasks();
+
     if (tasks->empty()) {
       uv_prepare_stop(&prepare);
     } else {
