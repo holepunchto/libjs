@@ -4,6 +4,6 @@ const code = new Uint8Array([
   0x6e, 0x00, 0x00, 0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x2a, 0x0b
 ])
 
-const { instance: { exports } } = new WebAssembly.Instance(new WebAssembly.Module(code))
+const { exports } = new WebAssembly.Instance(new WebAssembly.Module(code))
 
 exports.main()
