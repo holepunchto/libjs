@@ -34,7 +34,7 @@ main () {
   uv_loop_t *loop = uv_default_loop();
 
   js_platform_t *platform;
-  e = js_create_platform(loop, &platform);
+  e = js_create_platform(loop, NULL, &platform);
   assert(e == 0);
 
   js_env_t *env;

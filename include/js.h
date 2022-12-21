@@ -13,6 +13,7 @@ extern "C" {
 #include "js/ffi.h"
 
 typedef struct js_platform_s js_platform_t;
+typedef struct js_platform_options_s js_platform_options_t;
 typedef struct js_env_s js_env_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
@@ -60,14 +61,12 @@ typedef enum {
   js_promise_rejected
 } js_promise_state_t;
 
-int
-js_set_flags_from_string (const char *string, size_t len);
+struct js_platform_options_s {
+  bool expose_garbage_collection;
+};
 
 int
-js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags);
-
-int
-js_create_platform (uv_loop_t *loop, js_platform_t **result);
+js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result);
 
 int
 js_destroy_platform (js_platform_t *platform);

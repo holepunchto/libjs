@@ -487,6 +487,7 @@ private:
 };
 
 struct js_platform_s : public Platform {
+  js_platform_options_t options;
   uv_loop_t *loop;
   uv_prepare_t prepare;
   uv_check_t check;
@@ -495,8 +496,9 @@ struct js_platform_s : public Platform {
   std::vector<std::shared_ptr<js_worker_t>> workers;
   std::unique_ptr<js_tracing_controller_t> trace;
 
-  js_platform_s(uv_loop_t *loop)
-      : loop(loop),
+  js_platform_s(js_platform_options_t options, uv_loop_t *loop)
+      : options(options),
+        loop(loop),
         prepare(),
         check(),
         foreground(),
@@ -870,26 +872,18 @@ get_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_set_flags_from_string (const char *string, size_t len) {
-  if (len == (size_t) -1) {
-    V8::SetFlagsFromString(string);
-  } else {
-    V8::SetFlagsFromString(string, len);
+js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
+  if (options) {
+    auto flags = std::string();
+
+    if (options->expose_garbage_collection) {
+      flags += " --expose-gc";
+    }
+
+    V8::SetFlagsFromString(flags.c_str());
   }
 
-  return 0;
-}
-
-extern "C" int
-js_set_flags_from_command_line (int *argc, char **argv, bool remove_flags) {
-  V8::SetFlagsFromCommandLine(argc, argv, remove_flags);
-
-  return 0;
-}
-
-extern "C" int
-js_create_platform (uv_loop_t *loop, js_platform_t **result) {
-  *result = new js_platform_t(loop);
+  *result = new js_platform_t(options ? *options : js_platform_options_t(), loop);
 
   V8::InitializePlatform(*result);
   V8::Initialize();
@@ -1851,6 +1845,8 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
 
 extern "C" int
 js_request_garbage_collection (js_env_t *env) {
+  if (!env->platform->options.expose_garbage_collection) return -1;
+
   env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
 
   return 0;
