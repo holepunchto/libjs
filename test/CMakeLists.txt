@@ -5,6 +5,7 @@ list(APPEND tests
   call-function-throw
   create-function
   create-function-with-ffi
+  create-reference
   create-reference-weak
   run-macrotask
   run-macrotask-delayed
