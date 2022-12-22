@@ -879,6 +879,10 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
       flags += " --expose-gc";
     }
 
+    if (options->disable_optimizing_compiler) {
+      flags += " --jitless --noexpose-wasm";
+    }
+
     V8::SetFlagsFromString(flags.c_str());
   }
 

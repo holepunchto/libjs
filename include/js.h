@@ -63,6 +63,7 @@ typedef enum {
 
 struct js_platform_options_s {
   bool expose_garbage_collection;
+  bool disable_optimizing_compiler;
 };
 
 int

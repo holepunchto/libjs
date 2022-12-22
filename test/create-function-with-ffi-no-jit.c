@@ -48,8 +48,12 @@ main () {
 
   uv_loop_t *loop = uv_default_loop();
 
+  js_platform_options_t options = {
+    .disable_optimizing_compiler = true,
+  };
+
   js_platform_t *platform;
-  e = js_create_platform(loop, NULL, &platform);
+  e = js_create_platform(loop, &options, &platform);
   assert(e == 0);
 
   js_env_t *env;
@@ -75,8 +79,8 @@ main () {
   e = js_run_script(env, script, &result);
   assert(e == 0);
 
-  assert(slow_calls < 200000);
-  assert(fast_calls > 0);
+  assert(slow_calls == 200000);
+  assert(fast_calls == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
