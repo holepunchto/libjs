@@ -1007,11 +1007,11 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 
 extern "C" int
 js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
-  auto local = to_local(source);
-
   auto context = to_local(env->context);
 
-  ScriptCompiler::Source v8_source(local.As<String>());
+  auto local = to_local<String>(source);
+
+  auto v8_source = ScriptCompiler::Source(local);
 
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
@@ -1041,11 +1041,11 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
 
 extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
-  auto local = to_local(source);
-
   auto context = to_local(env->context);
 
-  ScriptOrigin origin(
+  auto local = to_local<String>(source);
+
+  auto origin = ScriptOrigin(
     env->isolate,
     String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
     0,
@@ -1058,7 +1058,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
     true
   );
 
-  ScriptCompiler::Source v8_source(local.As<String>(), origin);
+  auto v8_source = ScriptCompiler::Source(local, origin);
 
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
@@ -1083,11 +1083,9 @@ on_evaluate_module (Local<Context> context, Local<Module> referrer) {
 
   auto module = get_module(context, referrer);
 
-  auto result = module->evaluate(env, module, module->data);
+  module->evaluate(env, module, module->data);
 
-  if (result == nullptr) return Undefined(env->isolate);
-
-  return to_local(result);
+  return Undefined(env->isolate);
 }
 
 extern "C" int
@@ -1273,7 +1271,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
 extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
-  EscapableHandleScope scope(env->isolate);
+  auto scope = EscapableHandleScope(env->isolate);
 
   auto context = to_local(env->context);
 
@@ -1896,7 +1894,7 @@ extern "C" int
 js_ffi_create_function_info (const js_ffi_type_info_t *return_info, const js_ffi_type_info_t *arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
   auto v8_return_info = return_info->type_info;
 
-  std::vector<CTypeInfo> v8_arg_info;
+  auto v8_arg_info = std::vector<CTypeInfo>();
 
   v8_arg_info.reserve(arg_len);
 

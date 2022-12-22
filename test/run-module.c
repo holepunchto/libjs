@@ -3,7 +3,7 @@
 
 #include "../include/js.h"
 
-static js_value_t *
+static void
 on_module_evaluate (js_env_t *env, js_module_t *module, void *data) {
   int e;
 
@@ -17,8 +17,6 @@ on_module_evaluate (js_env_t *env, js_module_t *module, void *data) {
 
   e = js_set_module_export(env, module, name, value);
   assert(e == 0);
-
-  return NULL;
 }
 
 static js_module_t *

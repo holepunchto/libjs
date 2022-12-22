@@ -25,7 +25,7 @@ typedef struct js_callback_info_s js_callback_info_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
 typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
-typedef js_value_t *(*js_synethic_module_cb)(js_env_t *, js_module_t *module, void *data);
+typedef void (*js_synethic_module_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_task_cb)(js_env_t *, void *data);
 
 typedef enum {
