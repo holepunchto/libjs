@@ -5,7 +5,6 @@
 #include <optional>
 #include <queue>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include <assert.h>
@@ -648,7 +647,7 @@ struct js_env_s {
   HandleScope scope;
   Persistent<Context> context;
   Persistent<Value> exception;
-  std::unordered_multimap<int, js_module_s *> modules;
+  std::multimap<size_t, js_module_t *> modules;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : loop(loop),
