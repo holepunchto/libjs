@@ -24,7 +24,7 @@ typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
-typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
+typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef js_value_t *(*js_synethic_module_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_task_cb)(js_env_t *, void *data);
 
@@ -102,7 +102,7 @@ int
 js_run_script (js_env_t *env, js_value_t *source, js_value_t **result);
 
 int
-js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, void *data, js_module_t **result);
+js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result);
 
 int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, void *data, js_module_t **result);
@@ -112,9 +112,6 @@ js_delete_module (js_env_t *env, js_module_t *module);
 
 int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value);
-
-int
-js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb);
 
 int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result);

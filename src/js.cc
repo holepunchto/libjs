@@ -787,7 +787,7 @@ struct js_escapable_handle_scope_s {
 
 struct js_module_s {
   Local<Module> module;
-  js_module_resolve_cb resolve;
+  js_module_cb resolve;
   js_synethic_module_cb evaluate;
   void *data;
 
@@ -1020,8 +1020,27 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
   return 0;
 }
 
+static MaybeLocal<Module>
+on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> assertions, Local<Module> referrer) {
+  auto env = get_env(context);
+
+  auto module = get_module(context, referrer);
+
+  auto result = module->resolve(
+    env,
+    from_local(specifier),
+    from_local(assertions),
+    module,
+    module->data
+  );
+
+  if (result == nullptr) return MaybeLocal<Module>();
+
+  return result->module;
+}
+
 extern "C" int
-js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, void *data, js_module_t **result) {
+js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
   auto local = to_local(source);
 
   auto context = to_local(env->context);
@@ -1045,7 +1064,13 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
 
   auto module = new js_module_t(compiled, data);
 
+  module->resolve = cb;
+
   env->modules.emplace(compiled->GetIdentityHash(), module);
+
+  auto success = compiled->InstantiateModule(context, on_resolve_module);
+
+  if (!success.FromMaybe(false)) return -1;
 
   *result = module;
 
@@ -1053,7 +1078,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
 }
 
 static MaybeLocal<Value>
-on_evaluate_synethic_module (Local<Context> context, Local<Module> referrer) {
+on_evaluate_module (Local<Context> context, Local<Module> referrer) {
   auto env = get_env(context);
 
   auto module = get_module(context, referrer);
@@ -1071,13 +1096,13 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const j
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
-  std::vector<Local<String>> names(local, local + names_len);
+  auto names = std::vector<Local<String>>(local, local + names_len);
 
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
     String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
     names,
-    on_evaluate_synethic_module
+    on_evaluate_module
   );
 
   auto module = new js_module_t(compiled, data);
@@ -1103,38 +1128,6 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
   auto local = module->module;
 
   auto success = local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value));
-
-  return success.FromMaybe(false) ? 0 : -1;
-}
-
-static MaybeLocal<Module>
-on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> assertions, Local<Module> referrer) {
-  auto env = get_env(context);
-
-  auto module = get_module(context, referrer);
-
-  auto result = module->resolve(
-    env,
-    from_local(specifier),
-    from_local(assertions),
-    module,
-    module->data
-  );
-
-  if (result == nullptr) return MaybeLocal<Module>();
-
-  return result->module;
-}
-
-extern "C" int
-js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb) {
-  auto context = to_local(env->context);
-
-  module->resolve = cb;
-
-  auto local = module->module;
-
-  auto success = local->InstantiateModule(context, on_resolve_module);
 
   return success.FromMaybe(false) ? 0 : -1;
 }
