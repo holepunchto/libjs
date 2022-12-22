@@ -788,7 +788,7 @@ struct js_escapable_handle_scope_s {
 struct js_module_s {
   Local<Module> module;
   js_module_cb resolve;
-  js_synethic_module_cb evaluate;
+  js_synthetic_module_cb evaluate;
   void *data;
 
   js_module_s(Local<Module> module, void *data)
@@ -1093,7 +1093,7 @@ on_evaluate_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synethic_module_cb cb, void *data, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
