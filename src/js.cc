@@ -699,7 +699,6 @@ struct js_env_s {
     platform->drain();
   }
 
-private:
   inline void
   run_microtasks () {
     auto context = to_local(this->context);
@@ -718,6 +717,7 @@ private:
     }
   }
 
+private:
   inline void
   check_liveness () {
     tasks->move_expired_tasks();
@@ -1721,6 +1721,15 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
 
     return 0;
   }
+}
+
+extern "C" int
+js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
+  int err = js_call_function(env, recv, fn, argc, argv, result);
+
+  env->run_microtasks();
+
+  return err;
 }
 
 extern "C" int
