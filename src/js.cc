@@ -829,11 +829,13 @@ struct js_callback_s {
 struct js_finalizer_s {
   Persistent<Value> value;
   js_env_t *env;
+  void *data;
   js_finalize_cb cb;
   void *hint;
 
-  js_finalizer_s(js_env_t *env, Local<Value> value, js_finalize_cb cb, void *hint)
+  js_finalizer_s(js_env_t *env, Local<Value> value, void *data, js_finalize_cb cb, void *hint)
       : value(env->isolate, value),
+        data(data),
         cb(cb),
         hint(hint) {}
 };
@@ -1326,7 +1328,7 @@ on_external_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
 
   auto external = to_local(finalizer->value).As<External>();
 
-  finalizer->cb(finalizer->env, external->Value(), finalizer->hint);
+  finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
 
   finalizer->value.Reset();
 
@@ -1338,7 +1340,7 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
   auto external = External::New(env->isolate, data);
 
   if (finalize_cb) {
-    auto finalizer = new js_finalizer_t(env, external, finalize_cb, finalize_hint);
+    auto finalizer = new js_finalizer_t(env, external, data, finalize_cb, finalize_hint);
 
     finalizer->value.SetWeak(finalizer, on_external_finalize, WeakCallbackType::kParameter);
   }

@@ -3,6 +3,8 @@ list(APPEND tests
   atomics-wait-timeout-notify
   call-function
   call-function-throw
+  create-external
+  create-external-with-finalizer
   create-function
   create-function-with-ffi
   create-function-with-ffi-no-jit
