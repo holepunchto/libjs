@@ -21,7 +21,7 @@ main () {
   e = js_create_external(env, (void *) 42, NULL, NULL, &external);
   assert(e == 0);
 
-  int data;
+  intptr_t data;
   e = js_get_value_external(env, external, (void **) &data);
   assert(e == 0);
 
