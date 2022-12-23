@@ -8,6 +8,8 @@ list(APPEND tests
   create-function
   create-function-with-ffi
   create-function-with-ffi-no-jit
+  create-promise-reject
+  create-promise-resolve
   create-reference
   create-reference-weak
   run-macrotask
