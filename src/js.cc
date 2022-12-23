@@ -23,6 +23,7 @@ using namespace v8;
 
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_callback_s js_callback_t;
+typedef struct js_finalizer_s js_finalizer_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_s js_task_t;
 typedef struct js_task_handle_s js_task_handle_t;
@@ -825,6 +826,18 @@ struct js_callback_s {
         data(data) {}
 };
 
+struct js_finalizer_s {
+  Persistent<Value> value;
+  js_env_t *env;
+  js_finalize_cb cb;
+  void *hint;
+
+  js_finalizer_s(js_env_t *env, Local<Value> value, js_finalize_cb cb, void *hint)
+      : value(env->isolate, value),
+        cb(cb),
+        hint(hint) {}
+};
+
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
 
@@ -1307,6 +1320,34 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
   return 0;
 }
 
+static void
+on_external_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+  auto finalizer = info.GetParameter();
+
+  auto external = to_local(finalizer->value).As<External>();
+
+  finalizer->cb(finalizer->env, external->Value(), finalizer->hint);
+
+  finalizer->value.Reset();
+
+  delete finalizer;
+}
+
+extern "C" int
+js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
+  auto external = External::New(env->isolate, data);
+
+  if (finalize_cb) {
+    auto finalizer = new js_finalizer_t(env, external, finalize_cb, finalize_hint);
+
+    finalizer->value.SetWeak(finalizer, on_external_finalize, WeakCallbackType::kParameter);
+  }
+
+  *result = from_local(external);
+
+  return 0;
+}
+
 extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   auto context = to_local(env->context);
@@ -1609,6 +1650,15 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t le
   } else if (result != nullptr) {
     *result = 0;
   }
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
+  auto local = to_local<External>(value);
+
+  *result = local->Value();
 
   return 0;
 }

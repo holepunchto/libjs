@@ -24,6 +24,7 @@ typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
+typedef void (*js_finalize_cb)(js_env_t *env, void *data, void *finalize_hint);
 typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_task_cb)(js_env_t *, void *data);
@@ -151,6 +152,9 @@ int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result);
 
 int
+js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
+
+int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
 
 int
@@ -242,6 +246,9 @@ js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result);
 
 int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result);
+
+int
+js_get_value_external (js_env_t *env, js_value_t *value, void **result);
 
 int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result);
