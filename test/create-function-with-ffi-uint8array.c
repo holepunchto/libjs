@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -9,8 +10,15 @@ static int fast_calls = 0;
 static int slow_calls = 0;
 
 uint32_t
-on_fast_call (uint32_t arg) {
+on_fast_call (js_ffi_receiver_t *receiver, js_ffi_typedarray_t *array) {
   fast_calls++;
+
+  assert(array->len == 4);
+
+  assert(array->data.u8[0] == 1);
+  assert(array->data.u8[1] == 2);
+  assert(array->data.u8[2] == 3);
+  assert(array->data.u8[3] == 4);
 
   return 42;
 }
@@ -34,12 +42,16 @@ main () {
   e = js_ffi_create_type_info(js_ffi_uint32, &return_info);
   assert(e == 0);
 
-  js_ffi_type_info_t *arg_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, &arg_info);
+  js_ffi_type_info_t *arg_info[2];
+
+  e = js_ffi_create_type_info(js_ffi_receiver, &arg_info[0]);
+  assert(e == 0);
+
+  e = js_ffi_create_type_info(js_ffi_uint8array, &arg_info[1]);
   assert(e == 0);
 
   js_ffi_function_info_t *function_info;
-  e = js_ffi_create_function_info(return_info, (const js_ffi_type_info_t **) &arg_info, 1, &function_info);
+  e = js_ffi_create_function_info(return_info, (const js_ffi_type_info_t **) arg_info, 2, &function_info);
   assert(e == 0);
 
   js_ffi_function_t *ffi;
@@ -68,7 +80,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "let i = 0, j; while (i++ < 200000) j = hello(42)", -1, &script);
+  e = js_create_string_utf8(env, "let i = 0, j; while (i++ < 200000) j = hello(Uint8Array.from([1, 2, 3, 4]))", -1, &script);
   assert(e == 0);
 
   js_value_t *result;

@@ -31,11 +31,11 @@ main () {
   int e;
 
   js_ffi_type_info_t *return_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, js_ffi_scalar, &return_info);
+  e = js_ffi_create_type_info(js_ffi_uint32, &return_info);
   assert(e == 0);
 
   js_ffi_type_info_t *arg_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, js_ffi_scalar, &arg_info);
+  e = js_ffi_create_type_info(js_ffi_uint32, &arg_info);
   assert(e == 0);
 
   js_ffi_function_info_t *function_info;

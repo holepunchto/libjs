@@ -843,8 +843,8 @@ struct js_finalizer_s {
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
 
-  js_ffi_type_info_s(CTypeInfo::Type type, CTypeInfo::SequenceType sequence_type)
-      : type_info(type, sequence_type) {}
+  js_ffi_type_info_s(CTypeInfo::Type type, CTypeInfo::SequenceType sequence_type, CTypeInfo::Flags flags)
+      : type_info(type, sequence_type, flags) {}
 };
 
 struct js_ffi_function_info_s {
@@ -1899,11 +1899,15 @@ js_request_garbage_collection (js_env_t *env) {
 }
 
 extern "C" int
-js_ffi_create_type_info (js_ffi_type_t type, js_ffi_kind_t kind, js_ffi_type_info_t **result) {
+js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
   CTypeInfo::Type v8_type;
-  CTypeInfo::SequenceType v8_sequence_type;
+  CTypeInfo::SequenceType v8_sequence_type = CTypeInfo::SequenceType::kScalar;
+  CTypeInfo::Flags v8_flags = CTypeInfo::Flags::kNone;
 
   switch (type) {
+  case js_ffi_receiver:
+    v8_type = CTypeInfo::Type::kV8Value;
+    break;
   case js_ffi_void:
     v8_type = CTypeInfo::Type::kVoid;
     break;
@@ -1922,24 +1926,13 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_kind_t kind, js_ffi_type_inf
   case js_ffi_float64:
     v8_type = CTypeInfo::Type::kFloat64;
     break;
-  }
-
-  switch (kind) {
-  case js_ffi_scalar:
-    v8_sequence_type = CTypeInfo::SequenceType::kScalar;
-    break;
-  case js_ffi_array:
-    v8_sequence_type = CTypeInfo::SequenceType::kIsSequence;
-    break;
-  case js_ffi_typedarray:
+  case js_ffi_uint8array:
+    v8_type = CTypeInfo::Type::kUint8;
     v8_sequence_type = CTypeInfo::SequenceType::kIsTypedArray;
     break;
-  case js_ffi_arraybuffer:
-    v8_sequence_type = CTypeInfo::SequenceType::kIsArrayBuffer;
-    break;
   }
 
-  auto type_info = new js_ffi_type_info_t(v8_type, v8_sequence_type);
+  auto type_info = new js_ffi_type_info_t(v8_type, v8_sequence_type, v8_flags);
 
   *result = type_info;
 

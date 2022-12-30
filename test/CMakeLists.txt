@@ -8,6 +8,7 @@ list(APPEND tests
   create-function
   create-function-with-ffi
   create-function-with-ffi-no-jit
+  create-function-with-ffi-uint8array
   create-promise-reject
   create-promise-resolve
   create-reference
