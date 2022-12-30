@@ -4,7 +4,7 @@ Simple and ABI stable C bindings to V8 built on libuv. It tightly integrates wit
 
 ## API
 
-See [`includes/js.h`](include/js.h) for the public API.
+See [`include/js.h`](include/js.h) for the public API.
 
 ## License
 
