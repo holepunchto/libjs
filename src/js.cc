@@ -1917,8 +1917,14 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
   case js_ffi_uint32:
     v8_type = CTypeInfo::Type::kUint32;
     break;
+  case js_ffi_uint64:
+    v8_type = CTypeInfo::Type::kUint64;
+    break;
   case js_ffi_int32:
     v8_type = CTypeInfo::Type::kInt32;
+    break;
+  case js_ffi_int64:
+    v8_type = CTypeInfo::Type::kInt64;
     break;
   case js_ffi_float32:
     v8_type = CTypeInfo::Type::kFloat32;
