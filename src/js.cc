@@ -1,5 +1,6 @@
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -30,6 +31,7 @@ typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
 typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
+typedef struct js_task_scope_s js_task_scope_t;
 typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
@@ -39,8 +41,8 @@ typedef enum {
 } js_context_index_t;
 
 typedef enum {
-  js_task_nested,
-  js_task_non_nested,
+  js_task_nestable,
+  js_task_non_nestable,
 } js_task_nestability_t;
 
 template <typename T>
@@ -138,10 +140,11 @@ struct js_idle_task_handle_s {
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
-  std::queue<js_task_handle_t> tasks;
+  std::deque<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::queue<js_idle_task_handle_t> idle_tasks;
   std::recursive_mutex lock;
+  uint32_t depth;
   uint32_t outstanding;
   uint32_t disposable;
   std::condition_variable_any available;
@@ -154,6 +157,7 @@ struct js_task_runner_s : public TaskRunner {
         delayed_tasks(),
         idle_tasks(),
         lock(),
+        depth(0),
         outstanding(0),
         disposable(0),
         available(),
@@ -193,7 +197,7 @@ struct js_task_runner_s : public TaskRunner {
 
     task.on_completion = [this] { on_completion(); };
 
-    tasks.push(std::move(task));
+    tasks.push_back(std::move(task));
 
     available.notify_one();
   }
@@ -204,9 +208,9 @@ struct js_task_runner_s : public TaskRunner {
 
     outstanding++;
 
-    // Nested delayed tasks are not allowed to execute JavaScript and should
+    // Nestable delayed tasks are not allowed to execute JavaScript and should
     // therefore be safe to dispose if all other tasks have been finished.
-    bool is_disposable = task.nestability == js_task_nested;
+    bool is_disposable = task.nestability == js_task_nestable;
 
     if (is_disposable) disposable++;
 
@@ -230,26 +234,35 @@ struct js_task_runner_s : public TaskRunner {
   pop_task () {
     std::scoped_lock guard(lock);
 
-    if (!tasks.empty()) {
-      js_task_handle_t const &task = tasks.front();
+    auto task = tasks.begin();
 
-      auto value = std::move(const_cast<js_task_handle_t &>(task));
-
-      tasks.pop();
-
-      return value;
+    while (task != tasks.end()) {
+      if (depth == 0 || task->nestability == js_task_nestable) break;
+      else task++;
     }
 
-    // TODO: Check if we're idling and return an idle task if available.
+    if (task == tasks.end()) {
+      // TODO: Check if we're idling and return an idle task if available.
 
-    return std::nullopt;
+      return std::nullopt;
+    }
+
+    auto value = std::move(const_cast<js_task_handle_t &>(*task));
+
+    tasks.erase(task);
+
+    return value;
   }
 
   inline std::optional<js_task_handle_t>
   pop_task_wait () {
     std::unique_lock guard(lock);
 
-    if (tasks.empty()) available.wait(guard);
+    auto task = pop_task();
+
+    if (task) return task;
+
+    available.wait(guard);
 
     return pop_task();
   }
@@ -263,7 +276,7 @@ struct js_task_runner_s : public TaskRunner {
 
       if (task.expiry > now()) break;
 
-      tasks.push(std::move(const_cast<js_delayed_task_handle_t &>(task)));
+      tasks.push_back(std::move(const_cast<js_delayed_task_handle_t &>(task)));
 
       delayed_tasks.pop();
 
@@ -335,22 +348,22 @@ private:
 private: // V8 embedder API
   void
   PostTask (std::unique_ptr<Task> task) override {
-    push_task(js_task_handle_t(std::move(task), js_task_nested));
+    push_task(js_task_handle_t(std::move(task), js_task_nestable));
   }
 
   void
   PostNonNestableTask (std::unique_ptr<Task> task) override {
-    push_task(js_task_handle_t(std::move(task), js_task_non_nested));
+    push_task(js_task_handle_t(std::move(task), js_task_non_nestable));
   }
 
   void
   PostDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, now() + (delay * 1000)));
   }
 
   void
   PostNonNestableDelayedTask (std::unique_ptr<Task> task, double delay) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nestable, now() + (delay * 1000)));
   }
 
   void
@@ -372,6 +385,24 @@ private: // V8 embedder API
   NonNestableDelayedTasksEnabled () const override {
     return true;
   }
+};
+
+struct js_task_scope_s {
+  std::shared_ptr<js_task_runner_t> tasks;
+
+  js_task_scope_s(std::shared_ptr<js_task_runner_t> tasks)
+      : tasks(tasks) {
+    tasks->depth++;
+  }
+
+  js_task_scope_s(const js_task_scope_s &) = delete;
+
+  ~js_task_scope_s() {
+    tasks->depth--;
+  }
+
+  js_task_scope_s &
+  operator=(const js_task_scope_s &) = delete;
 };
 
 struct js_job_delegate_s : public JobDelegate {
@@ -608,12 +639,12 @@ private: // V8 embedder API
 
   void
   CallOnWorkerThread (std::unique_ptr<Task> task) override {
-    background->push_task(js_task_handle_t(std::move(task), js_task_nested));
+    background->push_task(js_task_handle_t(std::move(task), js_task_nestable));
   }
 
   void
   CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
-    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nested, now() + (delay * 1000)));
+    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, now() + (delay * 1000)));
   }
 
   std::unique_ptr<JobHandle>
@@ -711,6 +742,8 @@ struct js_env_s {
     tasks->move_expired_tasks();
 
     while (auto task = tasks->pop_task()) {
+      auto scope = js_task_scope_t(tasks);
+
       task->run();
 
       run_microtasks();
@@ -1881,9 +1914,9 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
   auto tasks = env->tasks;
 
   if (delay) {
-    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nested, env->now() + delay));
+    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nestable, env->now() + delay));
   } else {
-    tasks->push_task(js_task_handle_t(std::move(task), js_task_non_nested));
+    tasks->push_task(js_task_handle_t(std::move(task), js_task_non_nestable));
   }
 
   return 0;
