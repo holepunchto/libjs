@@ -1017,6 +1017,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   Isolate::CreateParams params;
   params.array_buffer_allocator = allocator;
+  params.allow_atomics_wait = false;
 
   auto isolate = Isolate::Allocate();
 
