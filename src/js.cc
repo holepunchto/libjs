@@ -1192,7 +1192,7 @@ on_evaluate_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));

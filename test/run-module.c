@@ -28,7 +28,7 @@ on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions,
   assert(e == 0);
 
   js_module_t *module;
-  e = js_create_synthetic_module(env, "synthetic", -1, (const js_value_t **) export_names, 1, on_module_evaluate, NULL, &module);
+  e = js_create_synthetic_module(env, "synthetic", -1, export_names, 1, on_module_evaluate, NULL, &module);
   assert(e == 0);
 
   return module;

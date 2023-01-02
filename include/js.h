@@ -107,7 +107,7 @@ int
 js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result);
 
 int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, const js_value_t *export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result);
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result);
 
 int
 js_delete_module (js_env_t *env, js_module_t *module);
