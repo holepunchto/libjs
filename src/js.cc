@@ -1029,8 +1029,6 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
-  HandleScope scope(isolate);
-
   auto env = new js_env_s(loop, platform, isolate, allocator);
 
   env->enter();
