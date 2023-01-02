@@ -16,7 +16,7 @@ on_fast_call (uint32_t arg) {
 }
 
 js_value_t *
-on_slow_call (js_env_t *env, const js_callback_info_t *info) {
+on_slow_call (js_env_t *env, js_callback_info_t *info) {
   slow_calls++;
 
   js_value_t *result;
@@ -39,7 +39,7 @@ main () {
   assert(e == 0);
 
   js_ffi_function_info_t *function_info;
-  e = js_ffi_create_function_info(return_info, (const js_ffi_type_info_t **) &arg_info, 1, &function_info);
+  e = js_ffi_create_function_info(return_info, &arg_info, 1, &function_info);
   assert(e == 0);
 
   js_ffi_function_t *ffi;

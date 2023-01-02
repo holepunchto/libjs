@@ -1361,7 +1361,7 @@ static void
 on_function_call (const FunctionCallbackInfo<Value> &info) {
   auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
-  auto result = callback->cb(callback->env, reinterpret_cast<const js_callback_info_t *>(&info));
+  auto result = callback->cb(callback->env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
   auto local = to_local(result);
 
@@ -1781,7 +1781,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 }
 
 extern "C" int
-js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
+js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
   auto context = to_local(env->context);
 
   auto local_recv = to_local(recv);
@@ -2031,7 +2031,7 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
 }
 
 extern "C" int
-js_ffi_create_function_info (const js_ffi_type_info_t *return_info, const js_ffi_type_info_t *arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
+js_ffi_create_function_info (const js_ffi_type_info_t *return_info, js_ffi_type_info_t *const arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
   auto v8_return_info = return_info->type_info;
 
   auto v8_arg_info = std::vector<CTypeInfo>();

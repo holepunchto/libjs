@@ -23,7 +23,7 @@ typedef struct js_ref_s js_ref_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
-typedef js_value_t *(*js_function_cb)(js_env_t *, const js_callback_info_t *);
+typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *env, void *data, void *finalize_hint);
 typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
@@ -257,7 +257,7 @@ int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
 
 int
-js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result);
+js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data);

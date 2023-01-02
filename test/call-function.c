@@ -34,7 +34,7 @@ main () {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_call_function(env, global, fn, 1, (const js_value_t **) args, &result);
+  e = js_call_function(env, global, fn, 1, args, &result);
   assert(e == 0);
 
   uint32_t value;
