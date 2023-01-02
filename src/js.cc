@@ -1808,7 +1808,7 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
 }
 
 extern "C" int
-js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result) {
+js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
   int err = js_call_function(env, recv, fn, argc, argv, result);
 
   env->run_microtasks();
