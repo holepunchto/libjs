@@ -260,6 +260,9 @@ int
 js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
+js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, const js_value_t *argv[], js_value_t **result);
+
+int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data);
 
 int
