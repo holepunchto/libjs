@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <string.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -19,7 +18,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "() => { throw 'err' }", -1, &script);
+  e = js_create_string_utf8(env, "(x) => x + 42", -1, &script);
   assert(e == 0);
 
   js_value_t *fn;
@@ -30,19 +29,12 @@ main () {
   e = js_get_global(env, &global);
   assert(e == 0);
 
-  js_value_t *result;
-  e = js_call_function(env, global, fn, 0, NULL, &result);
-  assert(e == -1);
-
-  js_value_t *error;
-  e = js_get_and_clear_last_exception(env, &error);
+  js_value_t *args[1];
+  e = js_create_uint32(env, 42, &args[0]);
   assert(e == 0);
 
-  char value[4];
-  e = js_get_value_string_utf8(env, error, value, 4, NULL);
+  e = js_call_function(env, global, fn, 1, args, NULL);
   assert(e == 0);
-
-  assert(strcmp(value, "err") == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

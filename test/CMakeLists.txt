@@ -2,6 +2,7 @@ list(APPEND tests
   atomics-wait-timeout
   atomics-wait-timeout-notify
   call-function
+  call-function-ignore-return
   call-function-throw
   create-external
   create-external-with-finalizer

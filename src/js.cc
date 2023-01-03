@@ -802,6 +802,11 @@ struct js_env_s {
     }
   }
 
+  inline void
+  set_exception (Local<Value> exception) {
+    this->exception.Reset(isolate, exception);
+  }
+
 private:
   inline void
   check_liveness () {
@@ -1507,6 +1512,21 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
 }
 
 extern "C" int
+js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto error = Exception::Error(to_local<String>(message)).As<Object>();
+
+  auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code));
+
+  if (!success.FromMaybe(false)) return -1;
+
+  *result = from_local(error);
+
+  return 0;
+}
+
+extern "C" int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
   auto local = to_local(value);
 
@@ -1780,10 +1800,10 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 }
 
 extern "C" int
-js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
+js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
   auto context = to_local(env->context);
 
-  auto local_recv = to_local(recv);
+  auto local_receiver = to_local(receiver);
 
   auto local_fn = to_local<Function>(fn);
 
@@ -1791,25 +1811,27 @@ js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, 
 
   auto local = local_fn->Call(
     context,
-    local_recv,
+    local_receiver,
     argc,
     reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
   );
 
   if (try_catch.HasCaught()) {
-    env->exception.Reset(env->isolate, try_catch.Exception());
+    env->set_exception(try_catch.Exception());
 
     return -1;
   } else {
-    *result = from_local(local.ToLocalChecked());
+    if (result != nullptr) {
+      *result = from_local(local.ToLocalChecked());
+    }
 
     return 0;
   }
 }
 
 extern "C" int
-js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  int err = js_call_function(env, recv, fn, argc, argv, result);
+js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  int err = js_call_function(env, receiver, fn, argc, argv, result);
 
   env->run_microtasks();
 
@@ -1943,6 +1965,41 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **d
 extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
   env->isolate->ThrowException(to_local(error));
+
+  return 0;
+}
+
+extern "C" int
+js_throw_error (js_env_t *env, const char *code, const char *message) {
+  auto context = to_local(env->context);
+
+  auto local_code = String::NewFromUtf8(env->isolate, code).ToLocalChecked();
+
+  auto local_message = String::NewFromUtf8(env->isolate, message).ToLocalChecked();
+
+  auto error = Exception::Error(local_message).As<Object>();
+
+  auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local_code);
+
+  if (!success.FromMaybe(false)) return false;
+
+  return 0;
+}
+
+extern "C" int
+js_is_exception_pending (js_env_t *env, bool *result) {
+  *result = !env->exception.IsEmpty();
+
+  return 0;
+}
+
+extern "C" int
+js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
+  if (env->exception.IsEmpty()) return js_get_undefined(env, result);
+
+  *result = from_local(Local<Value>::New(env->isolate, env->exception));
+
+  env->exception.Reset();
 
   return 0;
 }

@@ -170,6 +170,9 @@ int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result);
 
 int
+js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
 
 int
@@ -257,10 +260,10 @@ int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
 
 int
-js_call_function (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
+js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
-js_make_callback (js_env_t *env, js_value_t *recv, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
+js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data);
@@ -276,6 +279,15 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, size_t *len, void **d
 
 int
 js_throw (js_env_t *env, js_value_t *error);
+
+int
+js_throw_error (js_env_t *env, const char *code, const char *message);
+
+int
+js_is_exception_pending (js_env_t *env, bool *result);
+
+int
+js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
 
 int
 js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
