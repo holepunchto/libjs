@@ -19,7 +19,7 @@ on_call (js_env_t *env, void *data) {
   fn_called = true;
 
   js_value_t *err;
-  e = js_create_string_utf8(env, "error", -1, &err);
+  e = js_create_string_utf8(env, "err", -1, &err);
   assert(e == 0);
 
   e = js_throw(env, err);

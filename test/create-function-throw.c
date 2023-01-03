@@ -13,7 +13,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   fn_called = true;
 
   js_value_t *err;
-  e = js_create_string_utf8(env, "error", -1, &err);
+  e = js_create_string_utf8(env, "err", -1, &err);
   assert(e == 0);
 
   e = js_throw(env, err);
@@ -56,6 +56,12 @@ main () {
   assert(e == -1);
 
   assert(fn_called);
+
+  bool has_exception;
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
+
+  assert(has_exception);
 
   js_value_t *error;
   e = js_get_and_clear_last_exception(env, &error);

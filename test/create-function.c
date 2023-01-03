@@ -65,6 +65,12 @@ main () {
 
   assert(fn_called);
 
+  bool has_exception;
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
+
+  assert(!has_exception);
+
   uint32_t value;
   js_get_value_uint32(env, result, &value);
   assert(e == 0);

@@ -58,6 +58,12 @@ main () {
 
   assert(fn_called);
 
+  bool has_exception;
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
+
+  assert(has_exception);
+
   js_value_t *error;
   e = js_get_and_clear_last_exception(env, &error);
   assert(e == 0);
