@@ -2014,6 +2014,8 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     if (!success.FromMaybe(false)) return -1;
   }
 
+  env->isolate->ThrowException(error);
+
   return 0;
 }
 
