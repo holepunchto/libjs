@@ -1217,9 +1217,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
 
   env->modules.emplace(compiled->GetIdentityHash(), module);
 
-  auto success = compiled->InstantiateModule(context, on_resolve_module);
-
-  if (!success.FromMaybe(false)) return -1;
+  compiled->InstantiateModule(context, on_resolve_module).Check();
 
   *result = module;
 
@@ -1288,9 +1286,9 @@ extern "C" int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value) {
   auto local = module->module;
 
-  auto success = local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value));
+  local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value)).Check();
 
-  return success.FromMaybe(false) ? 0 : -1;
+  return 0;
 }
 
 extern "C" int
@@ -1539,13 +1537,12 @@ on_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolu
 
   auto local = to_local(resolution);
 
-  auto status = resolved
-                  ? resolver->Resolve(context, local)
-                  : resolver->Reject(context, local);
+  if (resolved) resolver->Resolve(context, local).Check();
+  else resolver->Reject(context, local).Check();
 
   delete deferred;
 
-  return status.FromMaybe(false) ? 0 : -1;
+  return 0;
 }
 
 extern "C" int
@@ -1597,9 +1594,7 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
   auto error = Exception::Error(to_local<String>(message)).As<Object>();
 
   if (code != nullptr) {
-    auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code));
-
-    if (!success.FromMaybe(false)) return -1;
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
   }
 
   *result = from_local(error);
