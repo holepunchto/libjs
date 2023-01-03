@@ -12,22 +12,15 @@ on_call (js_env_t *env, js_callback_info_t *info) {
 
   fn_called = true;
 
-  js_value_t *argv[1];
-  size_t argc = 1;
-
-  e = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  js_value_t *script;
+  e = js_create_string_utf8(env, "throw 'err'", -1, &script);
   assert(e == 0);
 
-  assert(argc == 2);
+  js_value_t *result;
+  e = js_run_script(env, script, &result);
+  assert(e == -1);
 
-  uint32_t value;
-  e = js_get_value_uint32(env, argv[0], &value);
-  assert(e == 0);
-
-  e = js_create_uint32(env, value * 2, &argv[0]);
-  assert(e == 0);
-
-  return argv[0];
+  return NULL;
 }
 
 int
@@ -56,20 +49,24 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "hello(42, 'foo')", -1, &script);
+  e = js_create_string_utf8(env, "hello()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
   e = js_run_script(env, script, &result);
-  assert(e == 0);
+  assert(e == -1);
 
   assert(fn_called);
 
-  uint32_t value;
-  js_get_value_uint32(env, result, &value);
+  js_value_t *error;
+  e = js_get_and_clear_last_exception(env, &error);
   assert(e == 0);
 
-  assert(value == 84);
+  char value[4];
+  e = js_get_value_string_utf8(env, error, value, 4, NULL);
+  assert(e == 0);
+
+  assert(strcmp(value, "err") == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

@@ -18,18 +18,11 @@ on_call (js_env_t *env, void *data) {
 
   fn_called = true;
 
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
-  assert(e == 0);
-
   js_value_t *err;
   e = js_create_string_utf8(env, "error", -1, &err);
   assert(e == 0);
 
   e = js_throw(env, err);
-  assert(e == 0);
-
-  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 }
 

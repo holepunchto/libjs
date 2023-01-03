@@ -7,6 +7,8 @@ list(APPEND tests
   create-external
   create-external-with-finalizer
   create-function
+  create-function-throw
+  create-function-throw-indirect
   create-function-with-ffi
   create-function-with-ffi-no-jit
   create-function-with-ffi-uint8array
@@ -23,6 +25,7 @@ list(APPEND tests
   run-microtask-throw
   run-module
   run-script
+  run-script-throw
   set-named-property
   wasm
   wasm-async

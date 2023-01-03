@@ -1148,13 +1148,25 @@ extern "C" int
 js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
   auto context = to_local(env->context);
 
-  auto local = to_local<String>(source);
+  auto local_source = to_local<String>(source);
 
-  auto v8_source = ScriptCompiler::Source(local);
+  auto v8_source = ScriptCompiler::Source(local_source);
 
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
-  *result = from_local(compiled->Run(context).ToLocalChecked());
+  TryCatch try_catch(env->isolate);
+
+  auto local = compiled->Run(context);
+
+  if (try_catch.HasCaught()) {
+    env->set_exception(try_catch.Exception());
+
+    return -1;
+  }
+
+  if (result != nullptr) {
+    *result = from_local(local.ToLocalChecked());
+  }
 
   return 0;
 }
@@ -1438,11 +1450,19 @@ static void
 on_function_call (const FunctionCallbackInfo<Value> &info) {
   auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
-  auto result = callback->cb(callback->env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
+  auto env = callback->env;
 
-  auto local = to_local(result);
+  auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
-  info.GetReturnValue().Set(local);
+  if (env->exception.IsEmpty()) {
+    if (result != nullptr) {
+      info.GetReturnValue().Set(to_local(result));
+    }
+  } else {
+    env->isolate->ThrowException(Local<Value>::New(env->isolate, env->exception));
+
+    env->exception.Reset();
+  }
 }
 
 extern "C" int
@@ -1914,13 +1934,13 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t ar
     env->set_exception(try_catch.Exception());
 
     return -1;
-  } else {
-    if (result != nullptr) {
-      *result = from_local(local.ToLocalChecked());
-    }
-
-    return 0;
   }
+
+  if (result != nullptr) {
+    *result = from_local(local.ToLocalChecked());
+  }
+
+  return 0;
 }
 
 extern "C" int
