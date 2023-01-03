@@ -1129,7 +1129,11 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 
 extern "C" int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
-  if (scope->escaped) return -1;
+  if (scope->escaped) {
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Scope has already been escaped")));
+
+    return -1;
+  }
 
   scope->escaped = true;
 
@@ -1352,7 +1356,11 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
 extern "C" int
 js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
-  if (reference->count == 0) return -1;
+  if (reference->count == 0) {
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal("Cannot decrease reference count")));
+
+    return -1;
+  }
 
   reference->count--;
 
@@ -1579,6 +1587,8 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   auto local = to_local<Promise>(promise);
 
   if (local->State() == Promise::PromiseState::kPending) {
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Promise is pending")));
+
     return -1;
   }
 
@@ -2148,7 +2158,11 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
 
 extern "C" int
 js_request_garbage_collection (js_env_t *env) {
-  if (!env->platform->options.expose_garbage_collection) return -1;
+  if (!env->platform->options.expose_garbage_collection) {
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Garbage collection is unavailable")));
+
+    return -1;
+  }
 
   env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
 
