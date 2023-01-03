@@ -74,7 +74,7 @@ set_target_properties(
 target_link_libraries(
   js_static
   PUBLIC
-    uv
+    uv_a
     ${V8}
 )
 
