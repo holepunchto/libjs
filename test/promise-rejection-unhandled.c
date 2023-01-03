@@ -2,6 +2,7 @@
 #include <uv.h>
 
 #include "../include/js.h"
+#include "fixtures/promise-rejection-unhandled.js.h"
 
 int
 main () {
@@ -18,7 +19,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "Promise.reject('err')", -1, &script);
+  e = js_create_string_utf8(env, (char *) promise_rejection_unhandled_js, promise_rejection_unhandled_js_len, &script);
   assert(e == 0);
 
   js_value_t *result;
