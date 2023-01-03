@@ -1544,9 +1544,11 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
 
   auto error = Exception::Error(to_local<String>(message)).As<Object>();
 
-  auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code));
+  if (code != nullptr) {
+    auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code));
 
-  if (!success.FromMaybe(false)) return -1;
+    if (!success.FromMaybe(false)) return -1;
+  }
 
   *result = from_local(error);
 
@@ -2000,15 +2002,17 @@ extern "C" int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   auto context = to_local(env->context);
 
-  auto local_code = String::NewFromUtf8(env->isolate, code).ToLocalChecked();
+  auto local = String::NewFromUtf8(env->isolate, message).ToLocalChecked();
 
-  auto local_message = String::NewFromUtf8(env->isolate, message).ToLocalChecked();
+  auto error = Exception::Error(local).As<Object>();
 
-  auto error = Exception::Error(local_message).As<Object>();
+  if (code != nullptr) {
+    auto local = String::NewFromUtf8(env->isolate, code).ToLocalChecked();
 
-  auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local_code);
+    auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local);
 
-  if (!success.FromMaybe(false)) return false;
+    if (!success.FromMaybe(false)) return -1;
+  }
 
   return 0;
 }
