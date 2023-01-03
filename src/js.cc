@@ -1357,7 +1357,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 extern "C" int
 js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
   if (reference->count == 0) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal("Cannot decrease reference count")));
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Cannot decrease reference count")));
 
     return -1;
   }
