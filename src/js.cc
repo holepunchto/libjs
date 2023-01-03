@@ -1178,11 +1178,25 @@ extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
-  auto local = to_local<String>(source);
+  auto local_source = to_local<String>(source);
+
+  MaybeLocal<String> local_name;
+
+  if (len == size_t(-1)) {
+    local_name = String::NewFromUtf8(env->isolate, name);
+  } else {
+    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+  }
+
+  if (local_name.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
 
   auto origin = ScriptOrigin(
     env->isolate,
-    String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
+    local_name.ToLocalChecked(),
     0,
     0,
     false,
@@ -1193,7 +1207,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
     true
   );
 
-  auto v8_source = ScriptCompiler::Source(local, origin);
+  auto v8_source = ScriptCompiler::Source(local_source, origin);
 
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
@@ -1231,9 +1245,23 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
   auto names = std::vector<Local<String>>(local, local + names_len);
 
+  MaybeLocal<String> local_name;
+
+  if (len == size_t(-1)) {
+    local_name = String::NewFromUtf8(env->isolate, name);
+  } else {
+    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+  }
+
+  if (local_name.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
+
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
-    String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len).ToLocalChecked(),
+    local_name.ToLocalChecked(),
     names,
     on_evaluate_module
   );
@@ -1370,7 +1398,19 @@ js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result) {
 
 extern "C" int
 js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t **result) {
-  auto string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromUtf8(env->isolate, value);
+  } else {
+    string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
+  }
+
+  if (string.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
 
   *result = from_local(string.ToLocalChecked());
 
@@ -1428,7 +1468,19 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
   auto fn = tpl->GetFunction(context).ToLocalChecked();
 
   if (name != nullptr) {
-    auto string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+    MaybeLocal<String> string;
+
+    if (len == size_t(-1)) {
+      string = String::NewFromUtf8(env->isolate, name);
+    } else {
+      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+    }
+
+    if (string.IsEmpty()) {
+      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+      return -1;
+    }
 
     fn->SetName(string.ToLocalChecked());
   }
@@ -1802,11 +1854,15 @@ extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   auto context = to_local(env->context);
 
-  auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
+  auto key = String::NewFromUtf8(env->isolate, name);
 
-  auto target = to_local<Object>(object);
+  if (key.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
 
-  auto local = target->Get(context, key.ToLocalChecked());
+    return -1;
+  }
+
+  auto local = to_local<Object>(object)->Get(context, key.ToLocalChecked());
 
   *result = from_local(local.ToLocalChecked());
 
@@ -1817,13 +1873,17 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   auto context = to_local(env->context);
 
-  auto key = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, -1);
+  auto key = String::NewFromUtf8(env->isolate, name);
+
+  if (key.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
 
   auto local = to_local(value);
 
-  auto target = to_local<Object>(object);
-
-  target->Set(context, key.ToLocalChecked(), local).ToChecked();
+  to_local<Object>(object)->Set(context, key.ToLocalChecked(), local).Check();
 
   return 0;
 }
@@ -2002,16 +2062,26 @@ extern "C" int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   auto context = to_local(env->context);
 
-  auto local = String::NewFromUtf8(env->isolate, message).ToLocalChecked();
+  auto local = String::NewFromUtf8(env->isolate, message);
 
-  auto error = Exception::Error(local).As<Object>();
+  if (local.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
+
+  auto error = Exception::Error(local.ToLocalChecked()).As<Object>();
 
   if (code != nullptr) {
-    auto local = String::NewFromUtf8(env->isolate, code).ToLocalChecked();
+    auto local = String::NewFromUtf8(env->isolate, code);
 
-    auto success = error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local);
+    if (local.IsEmpty()) {
+      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
 
-    if (!success.FromMaybe(false)) return -1;
+      return -1;
+    }
+
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local.ToLocalChecked()).Check();
   }
 
   env->isolate->ThrowException(error);
