@@ -732,6 +732,8 @@ struct js_env_s {
   Persistent<Context> context;
   Persistent<Value> exception;
   std::multimap<size_t, js_module_t *> modules;
+  js_uncaught_exception_cb on_uncaught_exception;
+  void *uncaught_exception_data;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : loop(loop),
@@ -743,7 +745,9 @@ struct js_env_s {
         allocator(allocator),
         scope(isolate),
         context(isolate, Context::New(isolate)),
-        modules() {
+        modules(),
+        on_uncaught_exception(nullptr),
+        uncaught_exception_data(nullptr) {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
     prepare.data = this;
@@ -1016,6 +1020,19 @@ js_get_platform_loop (js_platform_t *platform, uv_loop_t **result) {
   return 0;
 }
 
+static void
+on_uncaught_exception (Local<Message> message, Local<Value> error) {
+  auto isolate = message->GetIsolate();
+
+  auto context = isolate->GetCurrentContext();
+
+  auto env = get_env(context);
+
+  if (env->on_uncaught_exception) {
+    env->on_uncaught_exception(env, from_local(error), env->uncaught_exception_data);
+  }
+}
+
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
@@ -1033,6 +1050,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   Isolate::Initialize(isolate, params);
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
+
+  isolate->AddMessageListener(on_uncaught_exception);
 
   auto env = new js_env_s(loop, platform, isolate, allocator);
 
@@ -1061,6 +1080,14 @@ js_destroy_env (js_env_t *env) {
   isolate->Dispose();
 
   delete allocator;
+
+  return 0;
+}
+
+extern "C" int
+js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data) {
+  env->on_uncaught_exception = cb;
+  env->uncaught_exception_data = data;
 
   return 0;
 }
@@ -2000,6 +2027,15 @@ js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
   *result = from_local(Local<Value>::New(env->isolate, env->exception));
 
   env->exception.Reset();
+
+  return 0;
+}
+
+extern "C" int
+js_fatal_exception (js_env_t *env, js_value_t *error) {
+  auto message = Exception::CreateMessage(env->isolate, to_local(error));
+
+  on_uncaught_exception(message, to_local(error));
 
   return 0;
 }

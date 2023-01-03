@@ -14,6 +14,7 @@ list(APPEND tests
   create-promise-resolve
   create-reference
   create-reference-weak
+  fatal-exception
   run-macrotask
   run-macrotask-delayed
   run-microtask

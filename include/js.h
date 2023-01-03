@@ -24,10 +24,11 @@ typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
-typedef void (*js_finalize_cb)(js_env_t *env, void *data, void *finalize_hint);
+typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
 typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_task_cb)(js_env_t *, void *data);
+typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 
 typedef enum {
   js_undefined,
@@ -81,6 +82,9 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result);
 
 int
 js_destroy_env (js_env_t *env);
+
+int
+js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data);
 
 int
 js_get_env_loop (js_env_t *env, uv_loop_t **result);
@@ -288,6 +292,9 @@ js_is_exception_pending (js_env_t *env, bool *result);
 
 int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
+
+int
+js_fatal_exception (js_env_t *env, js_value_t *error);
 
 int
 js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);

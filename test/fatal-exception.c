@@ -5,32 +5,10 @@
 #include "../include/js.h"
 
 bool uncaught_called = false;
-bool fn_called = false;
 
 static void
 on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
   uncaught_called = true;
-}
-
-static void
-on_call (js_env_t *env, void *data) {
-  int e;
-
-  fn_called = true;
-
-  js_handle_scope_t *scope;
-  e = js_open_handle_scope(env, &scope);
-  assert(e == 0);
-
-  js_value_t *err;
-  e = js_create_string_utf8(env, "error", -1, &err);
-  assert(e == 0);
-
-  e = js_throw(env, err);
-  assert(e == 0);
-
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
 }
 
 int
@@ -50,14 +28,13 @@ main () {
   e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
   assert(e == 0);
 
-  e = js_queue_microtask(env, on_call, NULL);
+  js_value_t *error;
+  e = js_create_string_utf8(env, "err", -1, &error);
   assert(e == 0);
 
-  assert(!fn_called);
+  e = js_fatal_exception(env, error);
+  assert(e == 0);
 
-  uv_run(loop, UV_RUN_DEFAULT);
-
-  assert(fn_called);
   assert(uncaught_called);
 
   e = js_destroy_env(env);
