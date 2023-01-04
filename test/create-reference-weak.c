@@ -33,6 +33,14 @@ main () {
   e = js_create_reference(env, value, 0, &ref);
   assert(e == 0);
 
+  {
+    js_value_t *result;
+    e = js_get_reference_value(env, ref, &result);
+    assert(e == 0);
+
+    assert(result != NULL);
+  }
+
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
@@ -42,11 +50,13 @@ main () {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *result;
-  e = js_get_reference_value(env, ref, &result);
-  assert(e == 0);
+  {
+    js_value_t *result;
+    e = js_get_reference_value(env, ref, &result);
+    assert(e == 0);
 
-  assert(result == NULL);
+    assert(result == NULL);
+  }
 
   e = js_delete_reference(env, ref);
   assert(e == 0);
