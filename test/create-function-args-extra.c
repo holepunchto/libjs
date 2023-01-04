@@ -18,18 +18,15 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   e = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
   assert(e == 0);
 
-  assert(argc == 1);
+  assert(argc == 2);
 
   uint32_t value;
   e = js_get_value_uint32(env, argv[0], &value);
   assert(e == 0);
 
-  assert(value == 42);
+  assert(value == 1);
 
-  e = js_create_uint32(env, value * 2, &argv[0]);
-  assert(e == 0);
-
-  return argv[0];
+  return NULL;
 }
 
 int
@@ -58,7 +55,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "hello(42)", -1, &script);
+  e = js_create_string_utf8(env, "hello(1, 2)", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
@@ -72,12 +69,6 @@ main () {
   assert(e == 0);
 
   assert(!has_exception);
-
-  uint32_t value;
-  js_get_value_uint32(env, result, &value);
-  assert(e == 0);
-
-  assert(value == 84);
 
   e = js_destroy_env(env);
   assert(e == 0);

@@ -1957,8 +1957,20 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
   if (argv != nullptr) {
-    for (size_t i = 0, n = *argc; i < n; i++) {
+    size_t i = 0, n = v8_info.Length() < *argc ? v8_info.Length() : *argc;
+
+    for (; i < n; i++) {
       argv[i] = from_local(v8_info[i]);
+    }
+
+    n = *argc;
+
+    if (i < n) {
+      auto undefined = from_local(Undefined(env->isolate));
+
+      for (; i < n; i++) {
+        argv[i] = undefined;
+      }
     }
   }
 
