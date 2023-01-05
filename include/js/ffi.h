@@ -51,6 +51,9 @@ js_ffi_create_function_info (const js_ffi_type_info_t *return_info, js_ffi_type_
 int
 js_ffi_create_function (const void *fn, const js_ffi_function_info_t *type_info, js_ffi_function_t **result);
 
+int
+js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result);
+
 #ifdef __cplusplus
 }
 #endif
