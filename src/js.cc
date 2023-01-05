@@ -732,8 +732,11 @@ struct js_env_s {
   Persistent<Context> context;
   Persistent<Value> exception;
   std::multimap<size_t, js_module_t *> modules;
+  std::vector<Global<Promise>> unhandled_promises;
   js_uncaught_exception_cb on_uncaught_exception;
   void *uncaught_exception_data;
+  js_unhandled_rejection_cb on_unhandled_rejection;
+  void *unhandled_rejection_data;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
       : loop(loop),
@@ -746,8 +749,11 @@ struct js_env_s {
         scope(isolate),
         context(isolate, Context::New(isolate)),
         modules(),
+        unhandled_promises(),
         on_uncaught_exception(nullptr),
-        uncaught_exception_data(nullptr) {
+        uncaught_exception_data(nullptr),
+        on_unhandled_rejection(nullptr),
+        unhandled_rejection_data(nullptr) {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
     prepare.data = this;
@@ -791,6 +797,14 @@ struct js_env_s {
     auto context = to_local(this->context);
 
     isolate->PerformMicrotaskCheckpoint();
+
+    for (auto &promise : unhandled_promises) {
+      if (on_unhandled_rejection) {
+        on_unhandled_rejection(this, from_local(promise.Get(isolate)), unhandled_rejection_data);
+      }
+    }
+
+    unhandled_promises.clear();
   }
 
   inline void
@@ -1033,6 +1047,39 @@ on_uncaught_exception (Local<Message> message, Local<Value> error) {
   }
 }
 
+static void
+on_promise_reject (PromiseRejectMessage message) {
+  auto promise = message.GetPromise();
+
+  auto isolate = promise->GetIsolate();
+  auto context = isolate->GetCurrentContext();
+
+  auto env = get_env(context);
+
+  switch (message.GetEvent()) {
+  case kPromiseRejectAfterResolved:
+  case kPromiseResolveAfterResolved:
+    return;
+
+  case kPromiseRejectWithNoHandler:
+    env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
+    break;
+
+  case kPromiseHandlerAddedAfterReject:
+    for (auto it = env->unhandled_promises.begin(); it != env->unhandled_promises.end(); it++) {
+      auto unhandled_promise = it->Get(isolate);
+
+      if (unhandled_promise == promise) {
+        *it = std::move(env->unhandled_promises.back());
+
+        env->unhandled_promises.pop_back();
+
+        break;
+      }
+    }
+  }
+}
+
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
@@ -1052,6 +1099,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
   isolate->AddMessageListener(on_uncaught_exception);
+
+  isolate->SetPromiseRejectCallback(on_promise_reject);
 
   auto env = new js_env_s(loop, platform, isolate, allocator);
 
@@ -1088,6 +1137,14 @@ extern "C" int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data) {
   env->on_uncaught_exception = cb;
   env->uncaught_exception_data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data) {
+  env->on_unhandled_rejection = cb;
+  env->unhandled_rejection_data = data;
 
   return 0;
 }

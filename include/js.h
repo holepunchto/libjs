@@ -29,6 +29,7 @@ typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value
 typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_task_cb)(js_env_t *, void *data);
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
+typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *promise, void *data);
 
 typedef enum {
   js_undefined,
@@ -85,6 +86,9 @@ js_destroy_env (js_env_t *env);
 
 int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data);
+
+int
+js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data);
 
 int
 js_get_env_loop (js_env_t *env, uv_loop_t **result);
