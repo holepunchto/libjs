@@ -1524,7 +1524,37 @@ on_function_call (const FunctionCallbackInfo<Value> &info) {
 
 extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
-  return js_create_function_with_ffi(env, name, len, cb, data, nullptr, result);
+  auto scope = EscapableHandleScope(env->isolate);
+
+  auto context = to_local(env->context);
+
+  auto callback = new js_callback_t(env, cb, data);
+
+  auto external = External::New(env->isolate, callback);
+
+  auto fn = Function::New(context, on_function_call, external).ToLocalChecked();
+
+  if (name != nullptr) {
+    MaybeLocal<String> string;
+
+    if (len == size_t(-1)) {
+      string = String::NewFromUtf8(env->isolate, name);
+    } else {
+      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+    }
+
+    if (string.IsEmpty()) {
+      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+      return -1;
+    }
+
+    fn->SetName(string.ToLocalChecked());
+  }
+
+  *result = from_local(scope.Escape(fn));
+
+  return 0;
 }
 
 extern "C" int
@@ -1545,7 +1575,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     0,
     ConstructorBehavior::kThrow,
     SideEffectType::kHasNoSideEffect,
-    ffi ? &ffi->function : nullptr
+    &ffi->function
   );
 
   auto fn = tpl->GetFunction(context).ToLocalChecked();
