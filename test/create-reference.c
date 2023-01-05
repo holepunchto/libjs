@@ -31,6 +31,12 @@ main () {
 
   assert(result != NULL);
 
+  bool is_object;
+  e = js_is_object(env, result, &is_object);
+  assert(e == 0);
+
+  assert(is_object);
+
   e = js_delete_reference(env, ref);
   assert(e == 0);
 

@@ -39,6 +39,12 @@ main () {
     assert(e == 0);
 
     assert(result != NULL);
+
+    bool is_object;
+    e = js_is_object(env, result, &is_object);
+    assert(e == 0);
+
+    assert(is_object);
   }
 
   e = js_close_handle_scope(env, scope);
