@@ -63,7 +63,15 @@ typedef enum {
 } js_promise_state_t;
 
 struct js_platform_options_s {
+  /**
+   * Expose garbage collection APIs, which are otherwise not available as they
+   * negatively impact performance.
+   */
   bool expose_garbage_collection;
+
+  /**
+   * Disable the optimizing compiler, such as TurboFan on V8.
+   */
   bool disable_optimizing_compiler;
 };
 
@@ -82,9 +90,20 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result);
 int
 js_destroy_env (js_env_t *env);
 
+/**
+ * Add a callback for uncaught exceptions. By default, uncaught exceptions are
+ * swallowed and do not affect JavaScript execution.
+ */
 int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data);
 
+/**
+ * Add a callback for unhandled promise rejections. By default, unhandled promise
+ * rejections are swallowed and do not affect JavaScript execution.
+ *
+ * A promise rejection is considered unhandled if the rejection has not been
+ * caught after performing a microtask checkpoint.
+ */
 int
 js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data);
 
@@ -262,14 +281,28 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
 
+/**
+ * Call a JavaScript function from native code.
+ *
+ * This should be used when there is JavaScript already executing on the stack,
+ * such as when the native code making the call was invoked from JavaScript.
+ */
 int
-js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
+js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
+
+/**
+ * Make a callback into JavaScript from native code, only returning to native
+ * code after performing a microtask checkpoint.
+ *
+ * This should be used when there is no JavaScript already executing on the
+ * stack, such as when the native code making the call was invoked as the result
+ * of IO.
+ */
+int
+js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
-js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result);
-
-int
-js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data);
+js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
 
 int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
@@ -292,6 +325,10 @@ js_is_exception_pending (js_env_t *env, bool *result);
 int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
 
+/**
+ * Trigger an uncaught exception. If no uncaught exception handler is installed,
+ * the function has no effect and execution will continue normally.
+ */
 int
 js_fatal_exception (js_env_t *env, js_value_t *error);
 
@@ -301,6 +338,12 @@ js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
 int
 js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay);
 
+/**
+ * Request that the garbage collector be run. This should only be used for
+ * testing as it will negatively impact performance.
+ *
+ * Requires that the `expose_garbage_collection` option is `true`.
+ */
 int
 js_request_garbage_collection (js_env_t *env);
 

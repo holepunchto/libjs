@@ -969,8 +969,8 @@ struct js_ffi_function_info_s {
 struct js_ffi_function_s {
   CFunction function;
 
-  js_ffi_function_s(const void *fn, const CFunctionInfo *function_info)
-      : function(fn, function_info) {}
+  js_ffi_function_s(const void *function, const CFunctionInfo *function_info)
+      : function(function, function_info) {}
 };
 
 static inline js_env_t *
@@ -1532,7 +1532,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto external = External::New(env->isolate, callback);
 
-  auto fn = Function::New(context, on_function_call, external).ToLocalChecked();
+  auto function = Function::New(context, on_function_call, external).ToLocalChecked();
 
   if (name != nullptr) {
     MaybeLocal<String> string;
@@ -1549,10 +1549,10 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
       return -1;
     }
 
-    fn->SetName(string.ToLocalChecked());
+    function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(scope.Escape(fn));
+  *result = from_local(scope.Escape(function));
 
   return 0;
 }
@@ -2001,16 +2001,16 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 }
 
 extern "C" int
-js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
+js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   auto context = to_local(env->context);
 
   auto local_receiver = to_local(receiver);
 
-  auto local_fn = to_local<Function>(fn);
+  auto local_function = to_local<Function>(function);
 
   TryCatch try_catch(env->isolate);
 
-  auto local = local_fn->Call(
+  auto local = local_function->Call(
     context,
     local_receiver,
     argc,
@@ -2031,8 +2031,8 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t ar
 }
 
 extern "C" int
-js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  int err = js_call_function(env, receiver, fn, argc, argv, result);
+js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  int err = js_call_function(env, receiver, function, argc, argv, result);
 
   env->run_microtasks();
 
@@ -2040,7 +2040,7 @@ js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *fn, size_t ar
 }
 
 extern "C" int
-js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **self, void **data) {
+js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data) {
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
   if (argv != nullptr) {
@@ -2065,8 +2065,8 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
     *argc = v8_info.Length();
   }
 
-  if (self != nullptr) {
-    *self = from_local(v8_info.This());
+  if (receiver != nullptr) {
+    *receiver = from_local(v8_info.This());
   }
 
   if (data != nullptr) {
@@ -2328,9 +2328,7 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
     break;
   }
 
-  auto type_info = new js_ffi_type_info_t(v8_type, v8_sequence_type, v8_flags);
-
-  *result = type_info;
+  *result = new js_ffi_type_info_t(v8_type, v8_sequence_type, v8_flags);
 
   return 0;
 }
@@ -2347,20 +2345,16 @@ js_ffi_create_function_info (const js_ffi_type_info_t *return_info, js_ffi_type_
     v8_arg_info.push_back(arg_info[i]->type_info);
   }
 
-  auto function_info = new js_ffi_function_info_t(v8_return_info, std::move(v8_arg_info));
-
-  *result = function_info;
+  *result = new js_ffi_function_info_t(v8_return_info, std::move(v8_arg_info));
 
   return 0;
 }
 
 extern "C" int
-js_ffi_create_function (const void *fn, const js_ffi_function_info_t *type_info, js_ffi_function_t **result) {
+js_ffi_create_function (const void *function, const js_ffi_function_info_t *type_info, js_ffi_function_t **result) {
   auto v8_type_info = &type_info->function_info;
 
-  auto function = new js_ffi_function_t(fn, v8_type_info);
-
-  *result = function;
+  *result = new js_ffi_function_t(function, v8_type_info);
 
   return 0;
 }
