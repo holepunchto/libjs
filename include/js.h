@@ -180,40 +180,37 @@ int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
 
 int
-js_is_array (js_env_t *env, js_value_t *value, bool *result);
-
-int
-js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
-
-int
-js_is_number (js_env_t *env, js_value_t *value, bool *result);
-
-int
-js_is_bigint (js_env_t *env, js_value_t *value, bool *result);
+js_is_undefined (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_null (js_env_t *env, js_value_t *value, bool *result);
 
 int
-js_is_undefined (js_env_t *env, js_value_t *value, bool *result);
-
-int
-js_is_symbol (js_env_t *env, js_value_t *value, bool *result);
-
-int
 js_is_boolean (js_env_t *env, js_value_t *value, bool *result);
 
 int
-js_is_external (js_env_t *env, js_value_t *value, bool *result);
+js_is_number (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_string (js_env_t *env, js_value_t *value, bool *result);
 
 int
-js_is_function (js_env_t *env, js_value_t *value, bool *result);
+js_is_symbol (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_object (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_function (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_array (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_external (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_bigint (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_date (js_env_t *env, js_value_t *value, bool *result);
@@ -222,13 +219,16 @@ int
 js_is_error (js_env_t *env, js_value_t *value, bool *result);
 
 int
+js_is_promise (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
+
+int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result);
-
-int
-js_is_promise (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
@@ -237,10 +237,10 @@ int
 js_get_global (js_env_t *env, js_value_t **result);
 
 int
-js_get_null (js_env_t *env, js_value_t **result);
+js_get_undefined (js_env_t *env, js_value_t **result);
 
 int
-js_get_undefined (js_env_t *env, js_value_t **result);
+js_get_null (js_env_t *env, js_value_t **result);
 
 int
 js_get_boolean (js_env_t *env, bool value, js_value_t **result);

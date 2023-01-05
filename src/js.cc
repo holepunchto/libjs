@@ -1662,29 +1662,8 @@ js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
 }
 
 extern "C" int
-js_is_array (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsArray();
-
-  return 0;
-}
-
-extern "C" int
-js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsArrayBuffer();
-
-  return 0;
-}
-
-extern "C" int
-js_is_number (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsNumber();
-
-  return 0;
-}
-
-extern "C" int
-js_is_bigint (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsBigInt();
+js_is_undefined (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsUndefined();
 
   return 0;
 }
@@ -1697,20 +1676,6 @@ js_is_null (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
-js_is_undefined (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsUndefined();
-
-  return 0;
-}
-
-extern "C" int
-js_is_symbol (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsSymbol();
-
-  return 0;
-}
-
-extern "C" int
 js_is_boolean (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsBoolean();
 
@@ -1718,8 +1683,8 @@ js_is_boolean (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
-js_is_external (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsExternal();
+js_is_number (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsNumber();
 
   return 0;
 }
@@ -1732,8 +1697,8 @@ js_is_string (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
-js_is_function (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsFunction();
+js_is_symbol (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsSymbol();
 
   return 0;
 }
@@ -1741,6 +1706,34 @@ js_is_function (js_env_t *env, js_value_t *value, bool *result) {
 extern "C" int
 js_is_object (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsObject();
+
+  return 0;
+}
+
+extern "C" int
+js_is_function (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsFunction();
+
+  return 0;
+}
+
+extern "C" int
+js_is_array (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsArray();
+
+  return 0;
+}
+
+extern "C" int
+js_is_external (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsExternal();
+
+  return 0;
+}
+
+extern "C" int
+js_is_bigint (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsBigInt();
 
   return 0;
 }
@@ -1760,6 +1753,20 @@ js_is_error (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsPromise();
+
+  return 0;
+}
+
+extern "C" int
+js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsArrayBuffer();
+
+  return 0;
+}
+
+extern "C" int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsTypedArray();
 
@@ -1769,13 +1776,6 @@ js_is_typedarray (js_env_t *env, js_value_t *value, bool *result) {
 extern "C" int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsDataView();
-
-  return 0;
-}
-
-extern "C" int
-js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
-  *result = to_local(value)->IsPromise();
 
   return 0;
 }
@@ -1797,15 +1797,15 @@ js_get_global (js_env_t *env, js_value_t **result) {
 }
 
 extern "C" int
-js_get_null (js_env_t *env, js_value_t **result) {
-  *result = from_local(Null(env->isolate));
+js_get_undefined (js_env_t *env, js_value_t **result) {
+  *result = from_local(Undefined(env->isolate));
 
   return 0;
 }
 
 extern "C" int
-js_get_undefined (js_env_t *env, js_value_t **result) {
-  *result = from_local(Undefined(env->isolate));
+js_get_null (js_env_t *env, js_value_t **result) {
+  *result = from_local(Null(env->isolate));
 
   return 0;
 }
