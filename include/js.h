@@ -296,7 +296,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
  *
  * This should be used when there is no JavaScript already executing on the
  * stack, such as when the native code making the call was invoked as the result
- * of IO.
+ * of I/O.
  */
 int
 js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
