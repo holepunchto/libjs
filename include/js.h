@@ -293,9 +293,6 @@ int
 js_is_array (js_env_t *env, js_value_t *value, bool *result);
 
 int
-js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
-
-int
 js_is_external (js_env_t *env, js_value_t *value, bool *result);
 
 int
@@ -312,6 +309,9 @@ js_is_promise (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
@@ -365,7 +365,7 @@ int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result);
 
 int
-js_get_array_length (js_value_t *env, js_value_t *value, uint32_t *result);
+js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result);
 
 int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);

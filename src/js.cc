@@ -2321,7 +2321,7 @@ js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
 }
 
 extern "C" int
-js_get_array_length (js_value_t *env, js_value_t *value, uint32_t *result) {
+js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
   auto local = to_local<Array>(value);
 
   *result = local->Length();
