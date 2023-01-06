@@ -170,6 +170,15 @@ int
 js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result);
 
 int
+js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
+
+int
+js_unwrap (js_env_t *env, js_value_t *object, void **result);
+
+int
+js_remove_wrap (js_env_t *env, js_value_t *object, void **result);
+
+int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result);
 
 int
@@ -240,6 +249,15 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result);
 
 int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
+
+int
+js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
+
+int
+js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
+
+int
+js_is_detached_arraybuffer (js_env_t *env, js_value_t *arraybuffer, bool *result);
 
 int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
@@ -494,6 +512,9 @@ js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
 
 int
 js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay);
+
+int
+js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result);
 
 /**
  * Request that the garbage collector be run. This should only be used for
