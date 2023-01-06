@@ -1922,7 +1922,7 @@ on_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
 extern "C" int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
 #if defined(V8_ENABLE_SANDBOX)
-  return js_throw_error(env, NULL, "External array buffers are not allowed")
+  return js_throw_error(env, NULL, "External array buffers are not allowed");
 #else
   auto finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
 

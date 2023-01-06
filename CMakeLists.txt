@@ -46,6 +46,7 @@ target_compile_definitions(
   js
   PUBLIC
     V8_COMPRESS_POINTERS=1
+    V8_ENABLE_SANDBOX=1
 )
 
 add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
