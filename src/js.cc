@@ -730,6 +730,7 @@ struct js_env_s {
   ArrayBuffer::Allocator *allocator;
   HandleScope scope;
   Persistent<Context> context;
+  Persistent<Private> wrapper;
   Persistent<Value> exception;
   std::multimap<size_t, js_module_t *> modules;
   std::vector<Global<Promise>> unhandled_promises;
@@ -748,6 +749,8 @@ struct js_env_s {
         allocator(allocator),
         scope(isolate),
         context(isolate, Context::New(isolate)),
+        wrapper(isolate, Private::New(isolate)),
+        exception(),
         modules(),
         unhandled_promises(),
         on_uncaught_exception(nullptr),
@@ -1453,6 +1456,70 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
   } else {
     *result = from_local(reference->value.Get(env->isolate));
   }
+
+  return 0;
+}
+
+static void
+on_wrap_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+  auto finalizer = info.GetParameter();
+
+  auto external = to_local(finalizer->value).As<External>();
+
+  finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+
+  finalizer->value.Reset();
+
+  delete finalizer;
+}
+
+extern "C" int
+js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto external = External::New(env->isolate, data);
+
+  local->SetPrivate(context, to_local(env->wrapper), external);
+
+  if (finalize_cb) {
+    auto finalizer = new js_finalizer_t(env, external, data, finalize_cb, finalize_hint);
+
+    finalizer->value.SetWeak(finalizer, on_wrap_finalize, WeakCallbackType::kParameter);
+
+    if (result) {
+      *result = new js_ref_t(env->isolate, local, 0);
+    }
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_unwrap (js_env_t *env, js_value_t *object, void **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
+
+  *result = external.As<External>()->Value();
+
+  return 0;
+}
+
+extern "C" int
+js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
+
+  local->DeletePrivate(context, to_local(env->wrapper)).Check();
+
+  *result = external.As<External>()->Value();
 
   return 0;
 }
