@@ -2736,6 +2736,13 @@ js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
 }
 
 extern "C" int
+js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result) {
+  *result = env->isolate->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
+
+  return 0;
+}
+
+extern "C" int
 js_request_garbage_collection (js_env_t *env) {
   if (!env->platform->options.expose_garbage_collection) {
     env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Garbage collection is unavailable")));
