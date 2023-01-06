@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -74,6 +75,16 @@ struct js_platform_options_s {
    */
   bool disable_optimizing_compiler;
 };
+
+/**
+ * The identifier of the underlying JavaScript engine.
+ */
+extern const char *js_platform_identifier;
+
+/**
+ * The version of the underlying JavaScript engine.
+ */
+extern const char *js_platform_version;
 
 int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result);
@@ -165,7 +176,22 @@ int
 js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result);
 
 int
+js_create_int64 (js_env_t *env, int64_t value, js_value_t **result);
+
+int
+js_create_double (js_env_t *env, double value, js_value_t **result);
+
+int
+js_create_bigint_int64 (js_env_t *env, int64_t value, js_value_t **result);
+
+int
+js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result);
+
+int
 js_create_string_utf8 (js_env_t *env, const char *str, size_t len, js_value_t **result);
+
+int
+js_create_symbol (js_env_t *env, js_env_t *description, js_value_t **result);
 
 int
 js_create_object (js_env_t *env, js_value_t **result);
@@ -174,7 +200,28 @@ int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
 int
+js_create_array (js_env_t *env, js_value_t **result);
+
+int
+js_create_array_with_length (js_env_t *env, size_t len, js_value_t **result);
+
+int
 js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
+
+int
+js_create_date (js_env_t *env, double time, js_value_t **result);
+
+int
+js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+int
+js_create_type_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+int
+js_create_range_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+int
+js_create_syntax_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
@@ -192,7 +239,13 @@ int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result);
 
 int
-js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
+
+int
+js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
+
+int
+js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
 int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
@@ -264,10 +317,25 @@ int
 js_get_boolean (js_env_t *env, bool value, js_value_t **result);
 
 int
+js_get_value_bool (js_env_t *env, js_value_t *value, bool *result);
+
+int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result);
 
 int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result);
+
+int
+js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result);
+
+int
+js_get_value_double (js_env_t *env, js_value_t *value, double *result);
+
+int
+js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result);
+
+int
+js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result);
 
 int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result);
@@ -276,10 +344,58 @@ int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result);
 
 int
+js_get_value_date (js_env_t *env, js_value_t *value, double *result);
+
+int
+js_get_array_length (js_value_t *env, js_value_t *value, uint32_t *result);
+
+int
+js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);
+
+int
+js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
+
+int
+js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value);
+
+int
+js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
+
+int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result);
 
 int
+js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result);
+
+int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
+
+int
+js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result);
+
+int
+js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result);
+
+int
+js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value);
+
+int
+js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);
+
+int
+js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);
+
+int
+js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
+
+int
+js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
+
+int
+js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
+
+int
+js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
 /**
  * Call a JavaScript function from native code.
@@ -302,22 +418,63 @@ int
 js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
-js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
-
-int
-js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
-
-int
-js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
-
-int
-js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
-
-int
 js_throw (js_env_t *env, js_value_t *error);
 
 int
 js_throw_error (js_env_t *env, const char *code, const char *message);
+
+int
+js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
+
+inline int
+js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  va_list args;
+  va_start(args, message);
+
+  return js_throw_verrorf(env, code, message, args);
+}
+
+int
+js_throw_type_error (js_env_t *env, const char *code, const char *message);
+
+int
+js_throw_type_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
+
+inline int
+js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  va_list args;
+  va_start(args, message);
+
+  return js_throw_type_verrorf(env, code, message, args);
+}
+
+int
+js_throw_range_error (js_env_t *env, const char *code, const char *message);
+
+int
+js_throw_range_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
+
+inline int
+js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  va_list args;
+  va_start(args, message);
+
+  return js_throw_range_verrorf(env, code, message, args);
+}
+
+int
+js_throw_syntax_error (js_env_t *env, const char *code, const char *message);
+
+int
+js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
+
+inline int
+js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  va_list args;
+  va_start(args, message);
+
+  return js_throw_syntax_verrorf(env, code, message, args);
+}
 
 int
 js_is_exception_pending (js_env_t *env, bool *result);

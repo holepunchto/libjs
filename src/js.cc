@@ -21,6 +21,9 @@
 #include "../include/js.h"
 #include "../include/js/ffi.h"
 
+#define JS_TO_STRING_LITERAL(arg) #arg
+#define JS_TO_STRING(arg)         JS_TO_STRING_LITERAL(arg)
+
 using namespace v8;
 
 typedef struct js_env_scope_s js_env_scope_t;
@@ -993,6 +996,10 @@ get_module (Local<Context> context, Local<Module> referrer) {
   return nullptr;
 }
 
+extern "C" const char *js_platform_identifier = "v8";
+
+extern "C" const char *js_platform_version = JS_TO_STRING(V8_MAJOR_VERSION) "." JS_TO_STRING(V8_MINOR_VERSION) "." JS_TO_STRING(V8_BUILD_NUMBER) "." JS_TO_STRING(V8_PATCH_LEVEL);
+
 extern "C" int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
   if (options) {
@@ -1632,6 +1639,21 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
 }
 
 extern "C" int
+js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto error = Exception::Error(to_local<String>(message)).As<Object>();
+
+  if (code != nullptr) {
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
+  }
+
+  *result = from_local(error);
+
+  return 0;
+}
+
+extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   auto context = to_local(env->context);
 
@@ -1700,21 +1722,6 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   }
 
   *result = from_local(local->Result());
-
-  return 0;
-}
-
-extern "C" int
-js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
-  auto context = to_local(env->context);
-
-  auto error = Exception::Error(to_local<String>(message)).As<Object>();
-
-  if (code != nullptr) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
-  }
-
-  *result = from_local(error);
 
   return 0;
 }
@@ -2001,45 +2008,6 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 }
 
 extern "C" int
-js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  auto context = to_local(env->context);
-
-  auto local_receiver = to_local(receiver);
-
-  auto local_function = to_local<Function>(function);
-
-  TryCatch try_catch(env->isolate);
-
-  auto local = local_function->Call(
-    context,
-    local_receiver,
-    argc,
-    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-  );
-
-  if (try_catch.HasCaught()) {
-    env->set_exception(try_catch.Exception());
-
-    return -1;
-  }
-
-  if (result != nullptr) {
-    *result = from_local(local.ToLocalChecked());
-  }
-
-  return 0;
-}
-
-extern "C" int
-js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  int err = js_call_function(env, receiver, function, argc, argv, result);
-
-  env->run_microtasks();
-
-  return err;
-}
-
-extern "C" int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data) {
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
@@ -2173,6 +2141,45 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
   }
 
   return 0;
+}
+
+extern "C" int
+js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local_receiver = to_local(receiver);
+
+  auto local_function = to_local<Function>(function);
+
+  TryCatch try_catch(env->isolate);
+
+  auto local = local_function->Call(
+    context,
+    local_receiver,
+    argc,
+    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  );
+
+  if (try_catch.HasCaught()) {
+    env->set_exception(try_catch.Exception());
+
+    return -1;
+  }
+
+  if (result != nullptr) {
+    *result = from_local(local.ToLocalChecked());
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  int err = js_call_function(env, receiver, function, argc, argv, result);
+
+  env->run_microtasks();
+
+  return err;
 }
 
 extern "C" int
