@@ -257,9 +257,6 @@ int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
 
 int
-js_is_detached_arraybuffer (js_env_t *env, js_value_t *arraybuffer, bool *result);
-
-int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
 int
@@ -294,6 +291,9 @@ js_is_function (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_array (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_external (js_env_t *env, js_value_t *value, bool *result);

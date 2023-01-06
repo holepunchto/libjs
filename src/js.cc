@@ -1843,6 +1843,52 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
   return 0;
 }
 
+static void
+on_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+
+  finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+
+  delete finalizer;
+}
+
+extern "C" int
+js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
+#if defined(V8_ENABLE_SANDBOX)
+  return js_throw_error(env, NULL, "External array buffers are not allowed")
+#else
+  auto finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
+
+  auto store = ArrayBuffer::NewBackingStore(
+    data,
+    len,
+    on_arraybuffer_finalize,
+    finalizer
+  );
+
+  auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
+
+  *result = from_local(arraybuffer);
+
+  return 0;
+#endif
+}
+
+extern "C" int
+js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
+  auto local = to_local<ArrayBuffer>(arraybuffer);
+
+  if (!local->IsDetachable()) {
+    js_throw_error(env, NULL, "Array buffer cannot be detached");
+
+    return -1;
+  }
+
+  local->Detach();
+
+  return 0;
+}
+
 extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   auto local = to_local<ArrayBuffer>(arraybuffer);
@@ -2031,6 +2077,15 @@ js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
 extern "C" int
 js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsArrayBuffer();
+
+  return 0;
+}
+
+extern "C" int
+js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
+  auto local = to_local(value);
+
+  *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->Data() == nullptr;
 
   return 0;
 }
