@@ -1721,11 +1721,12 @@ js_create_date (js_env_t *env, double time, js_value_t **result) {
   return 0;
 }
 
-extern "C" int
+template <Local<Value> Error(Local<String> message)>
+static inline int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   auto context = to_local(env->context);
 
-  auto error = Exception::Error(to_local<String>(message)).As<Object>();
+  auto error = Error(to_local<String>(message)).As<Object>();
 
   if (code != nullptr) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
@@ -1734,51 +1735,26 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
   *result = from_local(error);
 
   return 0;
+}
+
+extern "C" int
+js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  return js_create_error<Exception::Error>(env, code, message, result);
 }
 
 extern "C" int
 js_create_type_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
-  auto context = to_local(env->context);
-
-  auto error = Exception::TypeError(to_local<String>(message)).As<Object>();
-
-  if (code != nullptr) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
-  }
-
-  *result = from_local(error);
-
-  return 0;
+  return js_create_error<Exception::TypeError>(env, code, message, result);
 }
 
 extern "C" int
 js_create_range_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
-  auto context = to_local(env->context);
-
-  auto error = Exception::RangeError(to_local<String>(message)).As<Object>();
-
-  if (code != nullptr) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
-  }
-
-  *result = from_local(error);
-
-  return 0;
+  return js_create_error<Exception::RangeError>(env, code, message, result);
 }
 
 extern "C" int
 js_create_syntax_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
-  auto context = to_local(env->context);
-
-  auto error = Exception::SyntaxError(to_local<String>(message)).As<Object>();
-
-  if (code != nullptr) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
-  }
-
-  *result = from_local(error);
-
-  return 0;
+  return js_create_error<Exception::SyntaxError>(env, code, message, result);
 }
 
 extern "C" int
@@ -2590,12 +2566,17 @@ js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
 extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
-  env->isolate->ThrowException(to_local(error));
+  auto local = to_local(error);
+
+  env->isolate->ThrowException(local);
+
+  env->set_exception(local);
 
   return 0;
 }
 
-extern "C" int
+template <Local<Value> Error(Local<String> message)>
+static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   auto context = to_local(env->context);
 
@@ -2607,7 +2588,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     return -1;
   }
 
-  auto error = Exception::Error(local.ToLocalChecked()).As<Object>();
+  auto error = Error(local.ToLocalChecked()).As<Object>();
 
   if (code != nullptr) {
     auto local = String::NewFromUtf8(env->isolate, code);
@@ -2625,6 +2606,72 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 
   return 0;
 }
+
+template <Local<Value> Error(Local<String> message)>
+static inline int
+js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
+  auto size = vsnprintf(NULL, 0, message, args);
+
+  size += 1 /* NULL */;
+
+  auto formatted = std::vector<char>(size);
+
+  vsnprintf(formatted.data(), size, message, args);
+
+  return js_throw_error(env, code, formatted.data());
+}
+
+extern "C" int
+js_throw_error (js_env_t *env, const char *code, const char *message) {
+  return js_throw_error<Exception::Error>(env, code, message);
+}
+
+extern "C" int
+js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
+  return js_throw_verrorf<Exception::Error>(env, code, message, args);
+}
+
+extern "C" inline int
+js_throw_errorf (js_env_t *env, const char *code, const char *message, ...);
+
+extern "C" int
+js_throw_type_error (js_env_t *env, const char *code, const char *message) {
+  return js_throw_error<Exception::TypeError>(env, code, message);
+}
+
+extern "C" int
+js_throw_type_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
+  return js_throw_verrorf<Exception::TypeError>(env, code, message, args);
+}
+
+extern "C" inline int
+js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...);
+
+extern "C" int
+js_throw_range_error (js_env_t *env, const char *code, const char *message) {
+  return js_throw_error<Exception::RangeError>(env, code, message);
+}
+
+extern "C" int
+js_throw_range_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
+  return js_throw_verrorf<Exception::RangeError>(env, code, message, args);
+}
+
+extern "C" inline int
+js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...);
+
+extern "C" int
+js_throw_syntax_error (js_env_t *env, const char *code, const char *message) {
+  return js_throw_error<Exception::SyntaxError>(env, code, message);
+}
+
+extern "C" int
+js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
+  return js_throw_verrorf<Exception::SyntaxError>(env, code, message, args);
+}
+
+extern "C" inline int
+js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...);
 
 extern "C" int
 js_is_exception_pending (js_env_t *env, bool *result) {
