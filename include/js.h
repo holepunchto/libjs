@@ -191,7 +191,7 @@ int
 js_create_string_utf8 (js_env_t *env, const char *str, size_t len, js_value_t **result);
 
 int
-js_create_symbol (js_env_t *env, js_env_t *description, js_value_t **result);
+js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result);
 
 int
 js_create_object (js_env_t *env, js_value_t **result);
@@ -377,10 +377,10 @@ int
 js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result);
 
 int
-js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value);
+js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);
 
 int
-js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);
+js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value);
 
 int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);

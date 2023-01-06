@@ -1459,18 +1459,54 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
 
 extern "C" int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result) {
-  auto uint = Integer::New(env->isolate, value);
+  auto integer = Integer::New(env->isolate, value);
 
-  *result = from_local(uint);
+  *result = from_local(integer);
 
   return 0;
 }
 
 extern "C" int
 js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result) {
-  auto uint = Integer::NewFromUnsigned(env->isolate, value);
+  auto integer = Integer::NewFromUnsigned(env->isolate, value);
 
-  *result = from_local(uint);
+  *result = from_local(integer);
+
+  return 0;
+}
+
+extern "C" int
+js_create_int64 (js_env_t *env, int64_t value, js_value_t **result) {
+  auto number = Number::New(env->isolate, static_cast<double>(value));
+
+  *result = from_local(number);
+
+  return 0;
+}
+
+extern "C" int
+js_create_double (js_env_t *env, double value, js_value_t **result) {
+  auto number = Number::New(env->isolate, value);
+
+  *result = from_local(number);
+
+  return 0;
+}
+
+extern "C" int
+js_create_bigint_int64 (js_env_t *env, int64_t value, js_value_t **result) {
+  auto bigint = BigInt::New(env->isolate, value);
+
+  *result = from_local(bigint);
+
+  return 0;
+}
+
+extern "C" int
+js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result) {
+  auto bigint = BigInt::NewFromUnsigned(env->isolate, value);
+
+  *result = from_local(bigint);
 
   return 0;
 }
@@ -1492,6 +1528,21 @@ js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t 
   }
 
   *result = from_local(string.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result) {
+  Local<Symbol> symbol;
+
+  if (description == nullptr) {
+    symbol = Symbol::New(env->isolate);
+  } else {
+    symbol = Symbol::New(env->isolate, to_local<String>(description));
+  }
+
+  *result = from_local(symbol);
 
   return 0;
 }
@@ -1607,6 +1658,24 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
   return 0;
 }
 
+extern "C" int
+js_create_array (js_env_t *env, js_value_t **result) {
+  auto array = Array::New(env->isolate);
+
+  *result = from_local(array);
+
+  return 0;
+}
+
+extern "C" int
+js_create_array_with_length (js_env_t *env, size_t len, js_value_t **result) {
+  auto array = Array::New(env->isolate, len);
+
+  *result = from_local(array);
+
+  return 0;
+}
+
 static void
 on_external_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
   auto finalizer = info.GetParameter();
@@ -1636,10 +1705,72 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
 }
 
 extern "C" int
+js_create_date (js_env_t *env, double time, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto date = Date::New(context, time);
+
+  if (date.IsEmpty()) {
+    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Invalid Date")));
+
+    return -1;
+  }
+
+  *result = from_local(date.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   auto context = to_local(env->context);
 
   auto error = Exception::Error(to_local<String>(message)).As<Object>();
+
+  if (code != nullptr) {
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
+  }
+
+  *result = from_local(error);
+
+  return 0;
+}
+
+extern "C" int
+js_create_type_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto error = Exception::TypeError(to_local<String>(message)).As<Object>();
+
+  if (code != nullptr) {
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
+  }
+
+  *result = from_local(error);
+
+  return 0;
+}
+
+extern "C" int
+js_create_range_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto error = Exception::RangeError(to_local<String>(message)).As<Object>();
+
+  if (code != nullptr) {
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
+  }
+
+  *result = from_local(error);
+
+  return 0;
+}
+
+extern "C" int
+js_create_syntax_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto error = Exception::SyntaxError(to_local<String>(message)).As<Object>();
 
   if (code != nullptr) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
@@ -1719,6 +1850,77 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   }
 
   *result = from_local(local->Result());
+
+  return 0;
+}
+
+extern "C" int
+js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
+  auto arraybuffer = ArrayBuffer::New(env->isolate, len);
+
+  if (data != nullptr) {
+    *data = arraybuffer->Data();
+  }
+
+  *result = from_local(arraybuffer);
+
+  return 0;
+}
+
+extern "C" int
+js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
+  auto local = to_local<ArrayBuffer>(arraybuffer);
+
+  Local<TypedArray> typedarray;
+
+  switch (type) {
+  case js_int8_array:
+    typedarray = Int8Array::New(local, offset, len);
+    break;
+  case js_uint8_array:
+    typedarray = Uint8Array::New(local, offset, len);
+    break;
+  case js_uint8_clamped_array:
+    typedarray = Uint8ClampedArray::New(local, offset, len);
+    break;
+  case js_int16_array:
+    typedarray = Int16Array::New(local, offset, len);
+    break;
+  case js_uint16_array:
+    typedarray = Uint16Array::New(local, offset, len);
+    break;
+  case js_int32_array:
+    typedarray = Int32Array::New(local, offset, len);
+    break;
+  case js_uint32_array:
+    typedarray = Uint32Array::New(local, offset, len);
+    break;
+  case js_float32_array:
+    typedarray = Float32Array::New(local, offset, len);
+    break;
+  case js_float64_array:
+    typedarray = Float64Array::New(local, offset, len);
+    break;
+  case js_bigint64_array:
+    typedarray = BigInt64Array::New(local, offset, len);
+    break;
+  case js_biguint64_array:
+    typedarray = BigUint64Array::New(local, offset, len);
+    break;
+  }
+
+  *result = from_local(typedarray);
+
+  return 0;
+}
+
+extern "C" int
+js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
+  auto local = to_local<ArrayBuffer>(arraybuffer);
+
+  auto dataview = DataView::New(local, offset, len);
+
+  *result = from_local(dataview);
 
   return 0;
 }
@@ -1913,6 +2115,15 @@ js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
 }
 
 extern "C" int
+js_get_value_bool (js_env_t *env, js_value_t *value, bool *result) {
+  auto local = to_local<Boolean>(value);
+
+  *result = local->Value();
+
+  return 0;
+}
+
+extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   auto local = to_local<Int32>(value);
 
@@ -1926,6 +2137,42 @@ js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
   auto local = to_local<Uint32>(value);
 
   *result = local->Value();
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
+  auto local = to_local<Number>(value);
+
+  *result = static_cast<int64_t>(local->Value());
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_double (js_env_t *env, js_value_t *value, double *result) {
+  auto local = to_local<Number>(value);
+
+  *result = local->Value();
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
+  auto local = to_local<BigInt>(value);
+
+  *result = local->Int64Value();
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result) {
+  auto local = to_local<BigInt>(value);
+
+  *result = local->Uint64Value();
 
   return 0;
 }
@@ -1967,8 +2214,78 @@ js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
 }
 
 extern "C" int
+js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
+  auto local = to_local<Date>(value);
+
+  *result = local->ValueOf();
+
+  return 0;
+}
+
+extern "C" int
+js_get_array_length (js_value_t *env, js_value_t *value, uint32_t *result) {
+  auto local = to_local<Array>(value);
+
+  *result = local->Length();
+
+  return 0;
+}
+
+extern "C" int
+js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto value = local->Get(context, to_local<String>(key));
+
+  *result = from_local(value.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  *result = local->Has(context, to_local<String>(key)).ToChecked();
+
+  return 0;
+}
+
+extern "C" int
+js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  local->Set(context, to_local<String>(key), to_local(value)).Check();
+
+  return 0;
+}
+
+extern "C" int
+js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto deleted = local->Delete(context, to_local<String>(key)).ToChecked();
+
+  if (result != nullptr) {
+    *result = deleted;
+  }
+
+  return 0;
+}
+
+extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -1978,9 +2295,28 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     return -1;
   }
 
-  auto local = to_local<Object>(object)->Get(context, key.ToLocalChecked());
+  auto value = local->Get(context, key.ToLocalChecked());
 
-  *result = from_local(local.ToLocalChecked());
+  *result = from_local(value.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto key = String::NewFromUtf8(env->isolate, name);
+
+  if (key.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
+
+  *result = local->Has(context, key.ToLocalChecked()).ToChecked();
 
   return 0;
 }
@@ -1989,6 +2325,8 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   auto context = to_local(env->context);
 
+  auto local = to_local<Object>(object);
+
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
@@ -1997,9 +2335,80 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     return -1;
   }
 
-  auto local = to_local(value);
+  local->Set(context, key.ToLocalChecked(), to_local(value)).Check();
 
-  to_local<Object>(object)->Set(context, key.ToLocalChecked(), local).Check();
+  return 0;
+}
+
+extern "C" int
+js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto key = String::NewFromUtf8(env->isolate, name);
+
+  if (key.IsEmpty()) {
+    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+
+    return -1;
+  }
+
+  auto value = local->Delete(context, key.ToLocalChecked()).ToChecked();
+
+  if (result != nullptr) {
+    *result = value;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto value = local->Get(context, index);
+
+  *result = from_local(value.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  *result = local->Has(context, index).ToChecked();
+
+  return 0;
+}
+
+extern "C" int
+js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  local->Set(context, index, to_local(value)).Check();
+
+  return 0;
+}
+
+extern "C" int
+js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto deleted = local->Delete(context, index).ToChecked();
+
+  if (result != nullptr) {
+    *result = deleted;
+  }
 
   return 0;
 }
