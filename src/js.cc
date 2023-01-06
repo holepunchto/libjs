@@ -1090,6 +1090,17 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   params.array_buffer_allocator = allocator;
   params.allow_atomics_wait = false;
 
+  auto constrained_memory = uv_get_constrained_memory();
+  auto total_memory = uv_get_total_memory();
+
+  if (constrained_memory > 0 && constrained_memory < total_memory) {
+    total_memory = constrained_memory;
+  }
+
+  if (total_memory > 0) {
+    params.constraints.ConfigureDefaults(total_memory, 0);
+  }
+
   auto isolate = Isolate::Allocate();
 
   auto tasks = new js_task_runner_t(loop);
