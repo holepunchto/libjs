@@ -823,11 +823,6 @@ struct js_env_s {
     }
   }
 
-  inline void
-  set_exception (Local<Value> exception) {
-    this->exception.Reset(isolate, exception);
-  }
-
 private:
   inline void
   check_liveness () {
@@ -1194,7 +1189,7 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 extern "C" int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
   if (scope->escaped) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Scope has already been escaped")));
+    js_throw_error(env, NULL, "Scope has already been escaped");
 
     return -1;
   }
@@ -1223,7 +1218,7 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
   auto local = compiled->Run(context);
 
   if (try_catch.HasCaught()) {
-    env->set_exception(try_catch.Exception());
+    env->exception.Reset(env->isolate, try_catch.Exception());
 
     return -1;
   }
@@ -1269,7 +1264,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
   }
 
   if (local_name.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -1332,7 +1327,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
   }
 
   if (local_name.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -1433,7 +1428,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 extern "C" int
 js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
   if (reference->count == 0) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Cannot decrease reference count")));
+    js_throw_error(env, NULL, "Cannot decrease reference count");
 
     return -1;
   }
@@ -1589,7 +1584,7 @@ js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t 
   }
 
   if (string.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -1666,7 +1661,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     }
 
     if (string.IsEmpty()) {
-      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+      js_throw_error(env, NULL, "Invalid string length");
 
       return -1;
     }
@@ -1712,7 +1707,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     }
 
     if (string.IsEmpty()) {
-      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+      js_throw_error(env, NULL, "Invalid string length");
 
       return -1;
     }
@@ -1778,7 +1773,7 @@ js_create_date (js_env_t *env, double time, js_value_t **result) {
   auto date = Date::New(context, time);
 
   if (date.IsEmpty()) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Invalid Date")));
+    js_throw_error(env, NULL, "Invalid Date");
 
     return -1;
   }
@@ -1887,7 +1882,7 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   auto local = to_local<Promise>(promise);
 
   if (local->State() == Promise::PromiseState::kPending) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Promise is pending")));
+    js_throw_error(env, NULL, "Promise is pending");
 
     return -1;
   }
@@ -2388,7 +2383,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -2409,7 +2404,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -2428,7 +2423,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -2447,7 +2442,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -2655,7 +2650,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   auto local_function = to_local<Function>(function);
 
-  TryCatch try_catch(env->isolate);
+  auto try_catch = TryCatch(env->isolate);
 
   auto local = local_function->Call(
     context,
@@ -2665,7 +2660,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
   );
 
   if (try_catch.HasCaught()) {
-    env->set_exception(try_catch.Exception());
+    env->exception.Reset(env->isolate, try_catch.Exception());
 
     return -1;
   }
@@ -2692,7 +2687,7 @@ js_throw (js_env_t *env, js_value_t *error) {
 
   env->isolate->ThrowException(local);
 
-  env->set_exception(local);
+  env->exception.Reset(env->isolate, local);
 
   return 0;
 }
@@ -2705,7 +2700,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
   auto local = String::NewFromUtf8(env->isolate, message);
 
   if (local.IsEmpty()) {
-    env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+    js_throw_error(env, NULL, "Invalid string length");
 
     return -1;
   }
@@ -2716,7 +2711,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     auto local = String::NewFromUtf8(env->isolate, code);
 
     if (local.IsEmpty()) {
-      env->set_exception(Exception::RangeError(String::NewFromUtf8Literal(env->isolate, "Invalid string length")));
+      js_throw_error(env, NULL, "Invalid string length");
 
       return -1;
     }
@@ -2724,9 +2719,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local.ToLocalChecked()).Check();
   }
 
-  env->isolate->ThrowException(error);
-
-  return 0;
+  return js_throw(env, from_local(error));
 }
 
 template <Local<Value> Error(Local<String> message)>
@@ -2867,7 +2860,7 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
 extern "C" int
 js_request_garbage_collection (js_env_t *env) {
   if (!env->platform->options.expose_garbage_collection) {
-    env->set_exception(Exception::Error(String::NewFromUtf8Literal(env->isolate, "Garbage collection is unavailable")));
+    js_throw_error(env, NULL, "Garbage collection is unavailable");
 
     return -1;
   }
