@@ -21,9 +21,6 @@
 #include "../include/js.h"
 #include "../include/js/ffi.h"
 
-#define JS_TO_STRING_LITERAL(arg) #arg
-#define JS_TO_STRING(arg)         JS_TO_STRING_LITERAL(arg)
-
 using namespace v8;
 
 typedef struct js_env_scope_s js_env_scope_t;
@@ -998,7 +995,7 @@ get_module (Local<Context> context, Local<Module> referrer) {
 
 extern "C" const char *js_platform_identifier = "v8";
 
-extern "C" const char *js_platform_version = JS_TO_STRING(V8_MAJOR_VERSION) "." JS_TO_STRING(V8_MINOR_VERSION) "." JS_TO_STRING(V8_BUILD_NUMBER) "." JS_TO_STRING(V8_PATCH_LEVEL);
+extern "C" const char *js_platform_version = V8::GetVersion();
 
 extern "C" int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
