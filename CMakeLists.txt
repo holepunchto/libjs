@@ -8,8 +8,17 @@ endif()
 
 project(js C CXX)
 
-find_library(V8 v8 REQUIRED)
-find_path(V8_INCLUDE_DIR v8.h)
+if(NOT DEFINED V8)
+  execute_process(
+    COMMAND v8-prebuilds-paths --lib
+    OUTPUT_VARIABLE V8
+  )
+
+  execute_process(
+    COMMAND v8-prebuilds-paths --include
+    OUTPUT_VARIABLE V8_INCLUDE_DIR
+  )
+endif()
 
 if(NOT TARGET uv)
   add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)

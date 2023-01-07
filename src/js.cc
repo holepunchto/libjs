@@ -2158,7 +2158,7 @@ extern "C" int
 js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   auto local = to_local(value);
 
-  *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->Data() == nullptr;
+  *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->WasDetached();
 
   return 0;
 }
