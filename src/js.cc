@@ -1004,8 +1004,20 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
       flags += " --expose-gc";
     }
 
+    if (options->trace_garbage_collection) {
+      flags += " --trace-gc";
+    }
+
     if (options->disable_optimizing_compiler) {
       flags += " --jitless --noexpose-wasm";
+    } else {
+      if (options->trace_optimizations) {
+        flags += " --trace-opt";
+      }
+
+      if (options->trace_deoptimizations) {
+        flags += " --trace-deopt";
+      }
     }
 
     V8::SetFlagsFromString(flags.c_str());

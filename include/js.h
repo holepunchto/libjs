@@ -71,9 +71,28 @@ struct js_platform_options_s {
   bool expose_garbage_collection;
 
   /**
+   * Trace invocations of the garbage collector.
+   */
+  bool trace_garbage_collection;
+
+  /**
    * Disable the optimizing compiler, such as TurboFan on V8.
    */
   bool disable_optimizing_compiler;
+
+  /**
+   * Trace optimizations made by the optimizing compiler based on type feedback.
+   *
+   * Requires that the optimizing compiler is enabled and supports tracing.
+   */
+  bool trace_optimizations;
+
+  /**
+   * Trace deoptimizations made by the optimizing compiler based on type feddback.
+   *
+   * Requires that the optimizing compiler is enabled and supports tracing.
+   */
+  bool trace_deoptimizations;
 };
 
 /**

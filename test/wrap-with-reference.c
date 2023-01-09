@@ -21,6 +21,7 @@ main () {
 
   js_platform_options_t options = {
     .expose_garbage_collection = true,
+    .trace_garbage_collection = true,
   };
 
   js_platform_t *platform;
