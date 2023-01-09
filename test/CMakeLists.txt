@@ -33,6 +33,7 @@ list(APPEND tests
   queue-microtask-throw
   run-module
   run-script
+  run-script-ignore-return
   run-script-throw
   set-named-property
   wasm
