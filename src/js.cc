@@ -1932,9 +1932,11 @@ static void
 on_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
   auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
 
-  finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+  if (finalizer) {
+    finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
 
-  delete finalizer;
+    delete finalizer;
+  }
 }
 
 extern "C" int
@@ -1942,7 +1944,11 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
 #if defined(V8_ENABLE_SANDBOX)
   return js_throw_error(env, NULL, "External array buffers are not allowed");
 #else
-  auto finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
+  js_finalizer_t *finalizer = nullptr;
+
+  if (finalize_cb) {
+    finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
+  }
 
   auto store = ArrayBuffer::NewBackingStore(
     data,

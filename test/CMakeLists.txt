@@ -6,6 +6,8 @@ list(APPEND tests
   call-function-throw
   create-external
   create-external-with-finalizer
+  create-external-arraybuffer
+  create-external-arraybuffer-with-finalizer
   create-function
   create-function-args-extra
   create-function-args-fewer
