@@ -35,6 +35,10 @@ list(APPEND tests
   set-named-property
   wasm
   wasm-async
+  wrap
+  wrap-with-finalizer
+  wrap-with-reference
+  wrap-remove-with-finalizer
 )
 
 foreach(test IN LISTS tests)

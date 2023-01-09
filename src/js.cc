@@ -1234,7 +1234,7 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
     return -1;
   }
 
-  if (result != nullptr) {
+  if (result) {
     *result = from_local(local.ToLocalChecked());
   }
 
@@ -1402,7 +1402,7 @@ js_set_weak_reference (js_env_t *env, js_ref_t *reference) {
 
 static inline void
 js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
-  reference->value.ClearWeak();
+  reference->value.ClearWeak<js_ref_t>();
 }
 
 extern "C" int
@@ -1418,6 +1418,8 @@ js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t 
 
 extern "C" int
 js_delete_reference (js_env_t *env, js_ref_t *reference) {
+  reference->value.Reset();
+
   delete reference;
 
   return 0;
@@ -1429,7 +1431,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
   if (reference->count == 1) js_clear_weak_reference(env, reference);
 
-  if (result != nullptr) {
+  if (result) {
     *result = reference->count;
   }
 
@@ -1448,7 +1450,7 @@ js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
   if (reference->count == 0) js_set_weak_reference(env, reference);
 
-  if (result != nullptr) {
+  if (result) {
     *result = reference->count;
   }
 
@@ -1472,7 +1474,9 @@ on_wrap_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
 
   auto external = to_local(finalizer->value).As<External>();
 
-  finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+  if (finalizer->cb) {
+    finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+  }
 
   finalizer->value.Reset();
 
@@ -1485,18 +1489,16 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto local = to_local<Object>(object);
 
-  auto external = External::New(env->isolate, data);
+  auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
+
+  auto external = External::New(env->isolate, finalizer);
 
   local->SetPrivate(context, to_local(env->wrapper), external);
 
-  if (finalize_cb) {
-    auto finalizer = new js_finalizer_t(env, external, data, finalize_cb, finalize_hint);
+  finalizer->value.SetWeak(finalizer, on_wrap_finalize, WeakCallbackType::kParameter);
 
-    finalizer->value.SetWeak(finalizer, on_wrap_finalize, WeakCallbackType::kParameter);
-
-    if (result) {
-      *result = new js_ref_t(env->isolate, local, 0);
-    }
+  if (result) {
+    *result = new js_ref_t(env->isolate, local, 0);
   }
 
   return 0;
@@ -1510,7 +1512,9 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
 
-  *result = external.As<External>()->Value();
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
+
+  *result = finalizer->data;
 
   return 0;
 }
@@ -1523,9 +1527,17 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
 
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
+
   local->DeletePrivate(context, to_local(env->wrapper)).Check();
 
-  *result = external.As<External>()->Value();
+  finalizer->value.SetWeak();
+
+  if (result) {
+    *result = finalizer->data;
+  }
+
+  delete finalizer;
 
   return 0;
 }
@@ -1640,7 +1652,7 @@ on_function_call (const FunctionCallbackInfo<Value> &info) {
   auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
   if (env->exception.IsEmpty()) {
-    if (result != nullptr) {
+    if (result) {
       info.GetReturnValue().Set(to_local(result));
     }
   } else {
@@ -1662,7 +1674,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto function = Function::New(context, on_function_call, external).ToLocalChecked();
 
-  if (name != nullptr) {
+  if (name) {
     MaybeLocal<String> string;
 
     if (len == size_t(-1)) {
@@ -1708,7 +1720,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto fn = tpl->GetFunction(context).ToLocalChecked();
 
-  if (name != nullptr) {
+  if (name) {
     MaybeLocal<String> string;
 
     if (len == size_t(-1)) {
@@ -1801,7 +1813,7 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
 
   auto error = Error(to_local<String>(message)).As<Object>();
 
-  if (code != nullptr) {
+  if (code) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
   }
 
@@ -1907,7 +1919,7 @@ extern "C" int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
   auto arraybuffer = ArrayBuffer::New(env->isolate, len);
 
-  if (data != nullptr) {
+  if (data) {
     *data = arraybuffer->Data();
   }
 
@@ -2298,10 +2310,10 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t le
 
     str[len] = '\0';
 
-    if (result != nullptr) {
+    if (result) {
       *result = len;
     }
-  } else if (result != nullptr) {
+  } else if (result) {
     *result = 0;
   }
 
@@ -2378,7 +2390,7 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
 
   auto deleted = local->Delete(context, to_local<String>(key)).ToChecked();
 
-  if (result != nullptr) {
+  if (result) {
     *result = deleted;
   }
 
@@ -2460,7 +2472,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
 
   auto value = local->Delete(context, key.ToLocalChecked()).ToChecked();
 
-  if (result != nullptr) {
+  if (result) {
     *result = value;
   }
 
@@ -2510,7 +2522,7 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
 
   auto deleted = local->Delete(context, index).ToChecked();
 
-  if (result != nullptr) {
+  if (result) {
     *result = deleted;
   }
 
@@ -2521,7 +2533,7 @@ extern "C" int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data) {
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
-  if (argv != nullptr) {
+  if (argv) {
     size_t i = 0, n = v8_info.Length() < *argc ? v8_info.Length() : *argc;
 
     for (; i < n; i++) {
@@ -2539,15 +2551,15 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
     }
   }
 
-  if (argc != nullptr) {
+  if (argc) {
     *argc = v8_info.Length();
   }
 
-  if (receiver != nullptr) {
+  if (receiver) {
     *receiver = from_local(v8_info.This());
   }
 
-  if (data != nullptr) {
+  if (data) {
     *data = reinterpret_cast<js_callback_t *>(v8_info.Data().As<External>()->Value())->data;
   }
 
@@ -2558,11 +2570,11 @@ extern "C" int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   auto local = to_local(arraybuffer).As<ArrayBuffer>();
 
-  if (data != nullptr) {
+  if (data) {
     *data = local->Data();
   }
 
-  if (len != nullptr) {
+  if (len) {
     *len = local->ByteLength();
   }
 
@@ -2573,7 +2585,7 @@ extern "C" int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   auto local = to_local(typedarray).As<TypedArray>();
 
-  if (type != nullptr) {
+  if (type) {
     if (local->IsInt8Array()) {
       *type = js_int8_array;
     } else if (local->IsUint8Array()) {
@@ -2599,25 +2611,25 @@ js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_typ
     }
   }
 
-  if (len != nullptr) {
+  if (len) {
     *len = local->Length();
   }
 
   Local<ArrayBuffer> buffer;
 
-  if (data != nullptr || arraybuffer != nullptr) {
+  if (data || arraybuffer) {
     buffer = local->Buffer();
   }
 
-  if (data != nullptr) {
+  if (data) {
     *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
   }
 
-  if (arraybuffer != nullptr) {
+  if (arraybuffer) {
     *arraybuffer = from_local(buffer);
   }
 
-  if (offset != nullptr) {
+  if (offset) {
     *offset = local->ByteOffset();
   }
 
@@ -2628,25 +2640,25 @@ extern "C" int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   auto local = to_local(dataview).As<DataView>();
 
-  if (len != nullptr) {
+  if (len) {
     *len = local->ByteLength();
   }
 
   Local<ArrayBuffer> buffer;
 
-  if (data != nullptr || arraybuffer != nullptr) {
+  if (data || arraybuffer) {
     buffer = local->Buffer();
   }
 
-  if (data != nullptr) {
+  if (data) {
     *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
   }
 
-  if (arraybuffer != nullptr) {
+  if (arraybuffer) {
     *arraybuffer = from_local(buffer);
   }
 
-  if (offset != nullptr) {
+  if (offset) {
     *offset = local->ByteOffset();
   }
 
@@ -2676,7 +2688,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
     return -1;
   }
 
-  if (result != nullptr) {
+  if (result) {
     *result = from_local(local.ToLocalChecked());
   }
 
@@ -2718,7 +2730,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 
   auto error = Error(local.ToLocalChecked()).As<Object>();
 
-  if (code != nullptr) {
+  if (code) {
     auto local = String::NewFromUtf8(env->isolate, code);
 
     if (local.IsEmpty()) {
