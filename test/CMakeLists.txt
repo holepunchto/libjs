@@ -27,10 +27,10 @@ list(APPEND tests
   get-typedarray-info-uint16array
   promise-rejection
   promise-rejection-unhandled
-  run-macrotask
-  run-macrotask-delayed
-  run-microtask
-  run-microtask-throw
+  queue-macrotask
+  queue-macrotask-delayed
+  queue-microtask
+  queue-microtask-throw
   run-module
   run-script
   run-script-throw
