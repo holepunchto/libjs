@@ -1,4 +1,5 @@
 list(APPEND tests
+  adjust-external-memory
   atomics-wait-timeout
   atomics-wait-timeout-notify
   call-function
