@@ -922,6 +922,7 @@ struct js_deferred_s {
 };
 
 struct js_callback_s {
+  Persistent<External> external;
   js_env_t *env;
   js_function_cb cb;
   void *data;
@@ -1654,6 +1655,15 @@ js_create_object (js_env_t *env, js_value_t **result) {
 }
 
 static void
+on_function_finalize (const WeakCallbackInfo<js_callback_t> &info) {
+  auto callback = info.GetParameter();
+
+  callback->external.Reset();
+
+  delete callback;
+}
+
+static void
 on_function_call (const FunctionCallbackInfo<Value> &info) {
   auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
@@ -1681,6 +1691,10 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
   auto callback = new js_callback_t(env, cb, data);
 
   auto external = External::New(env->isolate, callback);
+
+  callback->external.Reset(env->isolate, external);
+
+  callback->external.SetWeak(callback, on_function_finalize, WeakCallbackType::kParameter);
 
   auto function = Function::New(context, on_function_call, external).ToLocalChecked();
 
@@ -1716,6 +1730,10 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
   auto callback = new js_callback_t(env, cb, data);
 
   auto external = External::New(env->isolate, callback);
+
+  callback->external.Reset(env->isolate, external);
+
+  callback->external.SetWeak(callback, on_function_finalize, WeakCallbackType::kParameter);
 
   auto tpl = FunctionTemplate::New(
     env->isolate,
