@@ -1509,9 +1509,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   finalizer->value.SetWeak(finalizer, on_wrap_finalize, WeakCallbackType::kParameter);
 
-  if (result) {
-    *result = new js_ref_t(env->isolate, local, 0);
-  }
+  if (result) js_create_reference(env, object, 0, result);
 
   return 0;
 }
