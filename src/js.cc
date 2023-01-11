@@ -801,8 +801,8 @@ struct js_env_s {
 
     isolate->PerformMicrotaskCheckpoint();
 
-    for (auto &promise : unhandled_promises) {
-      if (on_unhandled_rejection) {
+    if (on_unhandled_rejection) {
+      for (auto &promise : unhandled_promises) {
         on_unhandled_rejection(this, from_local(promise.Get(isolate)), unhandled_rejection_data);
       }
     }
