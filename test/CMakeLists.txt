@@ -35,6 +35,16 @@ list(APPEND tests
   run-script-ignore-return
   run-script-throw
   set-named-property
+  typeof-bigint
+  typeof-boolean
+  typeof-external
+  typeof-function
+  typeof-null
+  typeof-number
+  typeof-object
+  typeof-string
+  typeof-symbol
+  typeof-undefined
   wasm
   wasm-async
   wrap
