@@ -1229,11 +1229,11 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
 
-    env->exception.Reset(env->isolate, error);
-
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
     }
+
+    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -2726,11 +2726,11 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
 
-    env->exception.Reset(env->isolate, error);
-
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
     }
+
+    env->exception.Reset(env->isolate, error);
 
     return -1;
   }

@@ -9,10 +9,18 @@ bool uncaught_called = false;
 
 static void
 on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+  int e;
+
   uncaught_called = true;
 
+  bool has_exception;
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
+
+  assert(!has_exception);
+
   char value[4];
-  int e = js_get_value_string_utf8(env, error, value, 4, NULL);
+  e = js_get_value_string_utf8(env, error, value, 4, NULL);
   assert(e == 0);
 
   assert(strcmp(value, "err") == 0);
