@@ -39,6 +39,11 @@ main () {
   e = js_create_external_arraybuffer(env, data, 4, on_finalize, NULL, &arraybuffer);
 
 #if defined(V8_ENABLE_SANDBOX)
+  assert(e != 0);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
+#else
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
@@ -47,11 +52,6 @@ main () {
   js_request_garbage_collection(env);
 
   assert(finalize_called);
-#else
-  assert(e != 0);
-
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
 #endif
 
   e = js_destroy_env(env);

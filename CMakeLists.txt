@@ -66,6 +66,12 @@ set_target_properties(
   OUTPUT_NAME js
 )
 
+target_compile_definitions(
+  js_shared
+  PUBLIC
+    $<TARGET_PROPERTY:js,INTERFACE_COMPILE_DEFINITIONS>
+)
+
 target_link_libraries(
   js_shared
   PUBLIC
@@ -79,6 +85,12 @@ set_target_properties(
   js_static
   PROPERTIES
   OUTPUT_NAME js
+)
+
+target_compile_definitions(
+  js_static
+  PUBLIC
+    $<TARGET_PROPERTY:js,INTERFACE_COMPILE_DEFINITIONS>
 )
 
 target_link_libraries(
