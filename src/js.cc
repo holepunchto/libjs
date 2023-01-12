@@ -729,6 +729,7 @@ struct js_env_s {
   Isolate *isolate;
   ArrayBuffer::Allocator *allocator;
   HandleScope scope;
+  uint32_t depth;
   Persistent<Context> context;
   Persistent<Private> wrapper;
   Persistent<Value> exception;
@@ -748,6 +749,7 @@ struct js_env_s {
         isolate(isolate),
         allocator(allocator),
         scope(isolate),
+        depth(0),
         context(isolate, Context::New(isolate)),
         wrapper(isolate, Private::New(isolate)),
         exception(),
@@ -1237,9 +1239,15 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
 
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 
-  TryCatch try_catch(env->isolate);
+  auto try_catch = TryCatch(env->isolate);
+
+  env->depth++;
 
   auto local = compiled->Run(context);
+
+  env->depth--;
+
+  if (env->depth == 0) env->run_microtasks();
 
   if (try_catch.HasCaught()) {
     env->exception.Reset(env->isolate, try_catch.Exception());
@@ -1392,11 +1400,19 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 
 extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
-  auto local = module->module;
-
   auto context = to_local(env->context);
 
-  *result = from_local(local->Evaluate(context).ToLocalChecked());
+  env->depth++;
+
+  auto local = module->module->Evaluate(context).ToLocalChecked();
+
+  env->depth--;
+
+  if (env->depth == 0) env->run_microtasks();
+
+  if (result) {
+    *result = from_local(local);
+  }
 
   return 0;
 }
@@ -1970,7 +1986,9 @@ on_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
 extern "C" int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
 #if defined(V8_ENABLE_SANDBOX)
-  return js_throw_error(env, NULL, "External array buffers are not allowed");
+  js_throw_error(env, NULL, "External array buffers are not allowed");
+
+  return -1;
 #else
   js_finalizer_t *finalizer = nullptr;
 
@@ -2709,12 +2727,18 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   auto try_catch = TryCatch(env->isolate);
 
+  env->depth++;
+
   auto local = local_function->Call(
     context,
     local_receiver,
     argc,
     reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
   );
+
+  env->depth--;
+
+  if (env->depth == 0) env->run_microtasks();
 
   if (try_catch.HasCaught()) {
     env->exception.Reset(env->isolate, try_catch.Exception());
@@ -2727,15 +2751,6 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
   }
 
   return 0;
-}
-
-extern "C" int
-js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  int err = js_call_function(env, receiver, function, argc, argv, result);
-
-  env->run_microtasks();
-
-  return err;
 }
 
 extern "C" int

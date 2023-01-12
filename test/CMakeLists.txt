@@ -5,6 +5,7 @@ list(APPEND tests
   call-function
   call-function-ignore-return
   call-function-microtask
+  call-function-microtask-nested
   call-function-throw
   create-external
   create-external-with-finalizer
@@ -27,7 +28,6 @@ list(APPEND tests
   get-dataview-info
   get-typedarray-info-uint8array
   get-typedarray-info-uint16array
-  make-callback
   promise-rejection
   promise-rejection-unhandled
   queue-macrotask

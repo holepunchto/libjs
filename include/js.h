@@ -437,22 +437,16 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
 /**
  * Call a JavaScript function from native code.
  *
- * This should be used when there is JavaScript already executing on the stack,
- * such as when the native code making the call was invoked from JavaScript.
+ * When there is no JavaScript already executing on the stack, such as when the
+ * native code making the call was invoked as the result of I/O, a microtask
+ * checkpoint is performed before returning to native code.
+ *
+ * If there is JavaScript already executing on the stack, such as when the
+ * native code making the call was invoked from JavaScript, no microtask
+ * checkpoint is performed before returning to native code.
  */
 int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
-
-/**
- * Make a callback into JavaScript from native code, only returning to native
- * code after performing a microtask checkpoint.
- *
- * This should be used when there is no JavaScript already executing on the
- * stack, such as when the native code making the call was invoked as the result
- * of I/O.
- */
-int
-js_make_callback (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
 js_throw (js_env_t *env, js_value_t *error);

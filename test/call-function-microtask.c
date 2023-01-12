@@ -48,19 +48,9 @@ main () {
 
   assert(value == 42);
 
-  {
-    js_value_t *property;
-    e = js_get_named_property(env, global, "value", &property);
-    assert(e == 0);
-
-    uint32_t value;
-    e = js_get_value_uint32(env, property, &value);
-    assert(e == 0);
-
-    assert(value == 42);
-  }
-
-  uv_run(loop, UV_RUN_DEFAULT);
+  // The call to `js_call_function()` happened without JavaScript already
+  // executing on the stack and so a microtask checkpoint was performed before
+  // returning.
 
   {
     js_value_t *property;

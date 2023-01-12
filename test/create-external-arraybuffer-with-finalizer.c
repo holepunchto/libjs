@@ -13,7 +13,6 @@ on_finalize (js_env_t *env, void *data, void *finalize_hint) {
 
 int
 main () {
-#if !defined(V8_ENABLE_SANDBOX)
   int e;
 
   uv_loop_t *loop = uv_default_loop();
@@ -38,6 +37,8 @@ main () {
 
   js_value_t *arraybuffer;
   e = js_create_external_arraybuffer(env, data, 4, on_finalize, NULL, &arraybuffer);
+
+#if defined(V8_ENABLE_SANDBOX)
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
@@ -46,11 +47,16 @@ main () {
   js_request_garbage_collection(env);
 
   assert(finalize_called);
+#else
+  assert(e != 0);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
+#endif
 
   e = js_destroy_env(env);
   assert(e == 0);
 
   e = js_destroy_platform(platform);
   assert(e == 0);
-#endif
 }

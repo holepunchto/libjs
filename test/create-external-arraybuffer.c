@@ -5,7 +5,6 @@
 
 int
 main () {
-#if !defined(V8_ENABLE_SANDBOX)
   int e;
 
   uv_loop_t *loop = uv_default_loop();
@@ -22,6 +21,8 @@ main () {
 
   js_value_t *arraybuffer;
   e = js_create_external_arraybuffer(env, data, 4, NULL, NULL, &arraybuffer);
+
+#if defined(V8_ENABLE_SANDBOX)
   assert(e == 0);
 
   js_value_t *global;
@@ -39,11 +40,13 @@ main () {
   assert(e == 0);
 
   assert(data[0] == 42);
+#else
+  assert(e != 0);
+#endif
 
   e = js_destroy_env(env);
   assert(e == 0);
 
   e = js_destroy_platform(platform);
   assert(e == 0);
-#endif
 }
