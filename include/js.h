@@ -26,7 +26,6 @@ typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
 typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
-typedef void (*js_task_cb)(js_env_t *, void *data);
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *promise, void *data);
 

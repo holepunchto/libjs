@@ -27,7 +27,6 @@ typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_callback_s js_callback_t;
 typedef struct js_finalizer_s js_finalizer_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
-typedef struct js_task_s js_task_t;
 typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
 typedef struct js_idle_task_handle_s js_idle_task_handle_t;
@@ -67,28 +66,6 @@ from_local (Local<T> local) {
 
 struct js_tracing_controller_s : public TracingController {
 private: // V8 embedder API
-};
-
-struct js_task_s : public Task {
-  js_env_t *env;
-  js_task_cb cb;
-  void *data;
-
-  js_task_s(js_env_t *env, js_task_cb cb, void *data)
-      : env(env),
-        cb(cb),
-        data(data) {}
-
-  inline void
-  run () {
-    cb(env, data);
-  }
-
-private: // V8 embedder API
-  void
-  Run () override {
-    run();
-  }
 };
 
 using js_task_completion_cb = std::function<void()>;
