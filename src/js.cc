@@ -1250,7 +1250,13 @@ js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
   if (env->depth == 0) env->run_microtasks();
 
   if (try_catch.HasCaught()) {
-    env->exception.Reset(env->isolate, try_catch.Exception());
+    auto error = try_catch.Exception();
+
+    env->exception.Reset(env->isolate, error);
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
 
     return -1;
   }
@@ -2741,7 +2747,13 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
   if (env->depth == 0) env->run_microtasks();
 
   if (try_catch.HasCaught()) {
-    env->exception.Reset(env->isolate, try_catch.Exception());
+    auto error = try_catch.Exception();
+
+    env->exception.Reset(env->isolate, error);
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
 
     return -1;
   }

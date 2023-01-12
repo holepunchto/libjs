@@ -1,7 +1,22 @@
 #include <assert.h>
+#include <stdbool.h>
+#include <string.h>
 #include <uv.h>
 
 #include "../include/js.h"
+
+bool uncaught_called = false;
+
+static void
+on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+  uncaught_called = true;
+
+  char value[4];
+  int e = js_get_value_string_utf8(env, error, value, 4, NULL);
+  assert(e == 0);
+
+  assert(strcmp(value, "err") == 0);
+}
 
 int
 main () {
@@ -17,6 +32,9 @@ main () {
   e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
+  e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
+  assert(e == 0);
+
   js_value_t *script;
   e = js_create_string_utf8(env, "throw 'err'", -1, &script);
   assert(e == 0);
@@ -25,15 +43,7 @@ main () {
   e = js_run_script(env, script, &result);
   assert(e == -1);
 
-  js_value_t *error;
-  e = js_get_and_clear_last_exception(env, &error);
-  assert(e == 0);
-
-  char value[4];
-  e = js_get_value_string_utf8(env, error, value, 4, NULL);
-  assert(e == 0);
-
-  assert(strcmp(value, "err") == 0);
+  assert(uncaught_called);
 
   e = js_destroy_env(env);
   assert(e == 0);
