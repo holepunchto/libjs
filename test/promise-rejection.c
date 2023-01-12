@@ -37,8 +37,6 @@ main () {
   e = js_run_script(env, script, &result);
   assert(e == 0);
 
-  uv_run(loop, UV_RUN_DEFAULT);
-
   assert(!unhandled_called);
 
   e = js_destroy_env(env);
