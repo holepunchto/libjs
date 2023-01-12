@@ -521,12 +521,6 @@ int
 js_fatal_exception (js_env_t *env, js_value_t *error);
 
 int
-js_queue_microtask (js_env_t *env, js_task_cb cb, void *data);
-
-int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay);
-
-int
 js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result);
 
 /**

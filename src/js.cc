@@ -2887,41 +2887,6 @@ js_fatal_exception (js_env_t *env, js_value_t *error) {
   return 0;
 }
 
-static void
-on_microtask (void *data) {
-  auto task = reinterpret_cast<js_task_t *>(data);
-
-  task->cb(task->env, task->data);
-
-  delete task;
-}
-
-extern "C" int
-js_queue_microtask (js_env_t *env, js_task_cb cb, void *data) {
-  auto task = new js_task_t(env, cb, data);
-
-  auto context = to_local(env->context);
-
-  env->isolate->EnqueueMicrotask(on_microtask, task);
-
-  return 0;
-}
-
-extern "C" int
-js_queue_macrotask (js_env_t *env, js_task_cb cb, void *data, uint64_t delay) {
-  auto task = std::make_unique<js_task_t>(env, cb, data);
-
-  auto tasks = env->tasks;
-
-  if (delay) {
-    tasks->push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nestable, env->now() + delay));
-  } else {
-    tasks->push_task(js_task_handle_t(std::move(task), js_task_non_nestable));
-  }
-
-  return 0;
-}
-
 extern "C" int
 js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result) {
   int64_t bytes = env->isolate->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
