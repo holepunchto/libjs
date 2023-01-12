@@ -1484,8 +1484,6 @@ static void
 on_wrap_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
   auto finalizer = info.GetParameter();
 
-  auto external = to_local(finalizer->value).As<External>();
-
   if (finalizer->cb) {
     finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
   }
@@ -1548,6 +1546,34 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
   }
 
   delete finalizer;
+
+  return 0;
+}
+
+static void
+on_finalizer_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+  auto finalizer = info.GetParameter();
+
+  if (finalizer->cb) {
+    finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+  }
+
+  finalizer->value.Reset();
+
+  delete finalizer;
+}
+
+int
+js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
+
+  finalizer->value.SetWeak(finalizer, on_finalizer_finalize, WeakCallbackType::kParameter);
+
+  if (result) js_create_reference(env, object, 0, result);
 
   return 0;
 }

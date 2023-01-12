@@ -197,6 +197,9 @@ int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result);
 
 int
+js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
+
+int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result);
 
 int
