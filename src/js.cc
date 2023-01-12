@@ -1563,7 +1563,7 @@ on_finalizer_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
   delete finalizer;
 }
 
-int
+extern "C" int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   auto context = to_local(env->context);
 
