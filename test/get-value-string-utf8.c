@@ -28,7 +28,7 @@ main () {
   assert(e == 0);
 
   assert(strcmp(value, "hello") == 0);
-  assert(written == 6);
+  assert(written == 5);
 
   e = js_destroy_env(env);
   assert(e == 0);

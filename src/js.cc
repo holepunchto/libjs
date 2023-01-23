@@ -2361,16 +2361,20 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t le
   if (str == nullptr) {
     *result = local->Utf8Length(env->isolate);
   } else if (len != 0) {
-    len = local->WriteUtf8(
+    int written = local->WriteUtf8(
       env->isolate,
       str,
       len,
       nullptr,
-      String::REPLACE_INVALID_UTF8
+      String::REPLACE_INVALID_UTF8 | String::NO_NULL_TERMINATION
     );
 
+    if (written < len) {
+      str[written] = '\0';
+    }
+
     if (result) {
-      *result = len;
+      *result = written;
     }
   } else if (result) {
     *result = 0;
