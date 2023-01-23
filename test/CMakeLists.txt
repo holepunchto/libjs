@@ -29,6 +29,8 @@ list(APPEND tests
   get-dataview-info
   get-typedarray-info-uint8array
   get-typedarray-info-uint16array
+  get-value-string-utf8
+  get-value-string-utf8-no-null
   promise-rejection
   promise-rejection-unhandled
   run-module

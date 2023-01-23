@@ -2364,12 +2364,10 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t le
     len = local->WriteUtf8(
       env->isolate,
       str,
-      len - 1,
+      len,
       nullptr,
-      String::REPLACE_INVALID_UTF8 | String::NO_NULL_TERMINATION
+      String::REPLACE_INVALID_UTF8
     );
-
-    str[len] = '\0';
 
     if (result) {
       *result = len;
