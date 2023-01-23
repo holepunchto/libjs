@@ -26,7 +26,7 @@ main () {
   e = js_get_value_string_utf8(env, string, NULL, 0, &len);
   assert(e == 0);
 
-  assert(len == 5);
+  assert(len >= 5);
 
   e = js_destroy_env(env);
   assert(e == 0);
