@@ -547,42 +547,46 @@ private:
 };
 
 struct js_allocator_s : public ArrayBuffer::Allocator {
+private:
   js_allocator_s() {
-    init();
+    mem_thread_init();
   }
 
+public:
   ~js_allocator_s() {
-    // TODO: Currently segfaults, figure out why
-    // destroy();
+    mem_thread_destroy();
   }
 
   static std::shared_ptr<js_allocator_t>
   shared () {
-    static auto instance = std::shared_ptr<js_allocator_t>(new js_allocator_t());
+    // Each thread gets its own RAII managed allocator instance to ensure that
+    // a heap is initialized and destroyed once for every thread even if several
+    // environments exists within a given thread.
+    thread_local static auto instance = std::make_shared<js_allocator_t>();
+
     return instance;
   }
 
-  inline void *
+  static inline void *
   alloc (size_t size) {
     return mem_calloc(1, size);
   }
 
-  inline void *
+  static inline void *
   alloc_unsafe (size_t size) {
     return mem_alloc(size);
   }
 
-  inline void
+  static inline void
   free (void *ptr, size_t size) {
     mem_free(ptr);
   }
 
-  inline void *
+  static inline void *
   realloc (void *ptr, size_t old_size, size_t new_size) {
     return mem_realloc(ptr, new_size);
   }
 
-private:
 #ifdef V8_ENABLE_SANDBOX
   static int
   init () {
@@ -1112,6 +1116,8 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
   V8::InitializePlatform(platform);
   V8::Initialize();
 
+  js_allocator_t::init();
+
   *result = platform;
 
   return 0;
@@ -1119,6 +1125,8 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
 
 extern "C" int
 js_destroy_platform (js_platform_t *platform) {
+  js_allocator_t::destroy();
+
   V8::Dispose();
   V8::DisposePlatform();
 
