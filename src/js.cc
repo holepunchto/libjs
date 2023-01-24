@@ -547,47 +547,13 @@ private:
 };
 
 struct js_allocator_s : public ArrayBuffer::Allocator {
-private:
-#ifdef V8_ENABLE_SANDBOX
   js_allocator_s() {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    mem_config_t config;
-    config.map = map;
-    config.unmap = unmap;
-    config.page_size = sandbox->allocation_granularity();
-
-    mem_init(&config);
+    init();
   }
 
-  static void *
-  map (size_t size, size_t *offset) {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    auto alignment = sandbox->allocation_granularity();
-
-    auto address = sandbox->AllocatePages(VirtualAddressSpace::kNoHint, size, alignment, PagePermissions::kReadWrite);
-
-    return reinterpret_cast<void *>(address);
-  }
-
-  static void
-  unmap (void *ptr, size_t size, size_t offset, size_t release) {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    auto address = reinterpret_cast<VirtualAddressSpace::Address>(ptr);
-
-    if (release) sandbox->FreePages(address, release);
-  }
-#else
-  js_allocator_s() {
-    mem_init(NULL);
-  }
-#endif
-
-public:
   ~js_allocator_s() {
-    // mem_destroy();
+    // TODO: Currently segfaults, figure out why
+    // destroy();
   }
 
   static std::shared_ptr<js_allocator_t>
@@ -614,6 +580,52 @@ public:
   inline void *
   realloc (void *ptr, size_t old_size, size_t new_size) {
     return mem_realloc(ptr, new_size);
+  }
+
+private:
+#ifdef V8_ENABLE_SANDBOX
+  static int
+  init () {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    mem_config_t config = {
+      .map = map,
+      .unmap = unmap,
+      .page_size = sandbox->allocation_granularity(),
+    };
+
+    return mem_init(&config);
+  }
+
+  static void *
+  map (size_t size, size_t *offset) {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    auto alignment = sandbox->allocation_granularity();
+
+    auto address = sandbox->AllocatePages(VirtualAddressSpace::kNoHint, size, alignment, PagePermissions::kReadWrite);
+
+    return reinterpret_cast<void *>(address);
+  }
+
+  static void
+  unmap (void *ptr, size_t size, size_t offset, size_t release) {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    auto address = reinterpret_cast<VirtualAddressSpace::Address>(ptr);
+
+    if (release) sandbox->FreePages(address, release);
+  }
+#else
+  static int
+  init () {
+    return mem_init(NULL);
+  }
+#endif
+
+  static int
+  destroy () {
+    return mem_destroy();
   }
 
 private: // V8 embedder API
