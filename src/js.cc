@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <assert.h>
+#include <mem.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -36,6 +37,7 @@ typedef struct js_job_state_s js_job_state_t;
 typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
+typedef struct js_allocator_s js_allocator_t;
 
 typedef enum {
   js_context_environment = 1,
@@ -544,6 +546,114 @@ private:
   }
 };
 
+struct js_allocator_s : public ArrayBuffer::Allocator {
+private:
+  js_allocator_s() {
+    mem_thread_init();
+  }
+
+public:
+  ~js_allocator_s() {
+    mem_thread_destroy();
+  }
+
+  static std::shared_ptr<js_allocator_t>
+  shared () {
+    // Each thread gets its own RAII managed allocator instance to ensure that
+    // a heap is initialized and destroyed once for every thread even if several
+    // environments exists within a given thread.
+    thread_local static auto instance = std::make_shared<js_allocator_t>();
+
+    return instance;
+  }
+
+  static inline void *
+  alloc (size_t size) {
+    return mem_calloc(1, size);
+  }
+
+  static inline void *
+  alloc_unsafe (size_t size) {
+    return mem_alloc(size);
+  }
+
+  static inline void
+  free (void *ptr, size_t size) {
+    mem_free(ptr);
+  }
+
+  static inline void *
+  realloc (void *ptr, size_t old_size, size_t new_size) {
+    return mem_realloc(ptr, new_size);
+  }
+
+#ifdef V8_ENABLE_SANDBOX
+  static int
+  init () {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    mem_config_t config = {
+      .map = map,
+      .unmap = unmap,
+      .page_size = sandbox->allocation_granularity(),
+    };
+
+    return mem_init(&config);
+  }
+
+  static void *
+  map (size_t size, size_t *offset) {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    auto alignment = sandbox->allocation_granularity();
+
+    auto address = sandbox->AllocatePages(VirtualAddressSpace::kNoHint, size, alignment, PagePermissions::kReadWrite);
+
+    return reinterpret_cast<void *>(address);
+  }
+
+  static void
+  unmap (void *ptr, size_t size, size_t offset, size_t release) {
+    auto sandbox = V8::GetSandboxAddressSpace();
+
+    auto address = reinterpret_cast<VirtualAddressSpace::Address>(ptr);
+
+    if (release) sandbox->FreePages(address, release);
+  }
+#else
+  static int
+  init () {
+    return mem_init(NULL);
+  }
+#endif
+
+  static int
+  destroy () {
+    return mem_destroy();
+  }
+
+private: // V8 embedder API
+  void *
+  Allocate (size_t length) override {
+    return alloc(length);
+  }
+
+  void *
+  AllocateUninitialized (size_t length) override {
+    return alloc_unsafe(length);
+  }
+
+  void
+  Free (void *data, size_t length) override {
+    free(data, length);
+  }
+
+  void *
+  Reallocate (void *data, size_t old_length, size_t new_length) override {
+    return realloc(data, old_length, new_length);
+  }
+};
+
 struct js_platform_s : public Platform {
   js_platform_options_t options;
   uv_loop_t *loop;
@@ -704,7 +814,6 @@ struct js_env_s {
   js_platform_t *platform;
   std::shared_ptr<js_task_runner_t> tasks;
   Isolate *isolate;
-  ArrayBuffer::Allocator *allocator;
   HandleScope scope;
   uint32_t depth;
   Persistent<Context> context;
@@ -717,14 +826,13 @@ struct js_env_s {
   js_unhandled_rejection_cb on_unhandled_rejection;
   void *unhandled_rejection_data;
 
-  js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, ArrayBuffer::Allocator *allocator)
+  js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
         prepare(),
         check(),
         platform(platform),
         tasks(platform->foreground[isolate]),
         isolate(isolate),
-        allocator(allocator),
         scope(isolate),
         depth(0),
         context(isolate, Context::New(isolate)),
@@ -1003,16 +1111,22 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
     V8::SetFlagsFromString(flags.c_str());
   }
 
-  *result = new js_platform_t(options ? *options : js_platform_options_t(), loop);
+  auto platform = new js_platform_t(options ? *options : js_platform_options_t(), loop);
 
-  V8::InitializePlatform(*result);
+  V8::InitializePlatform(platform);
   V8::Initialize();
+
+  js_allocator_t::init();
+
+  *result = platform;
 
   return 0;
 }
 
 extern "C" int
 js_destroy_platform (js_platform_t *platform) {
+  js_allocator_t::destroy();
+
   V8::Dispose();
   V8::DisposePlatform();
 
@@ -1076,10 +1190,8 @@ on_promise_reject (PromiseRejectMessage message) {
 
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
-  auto allocator = ArrayBuffer::Allocator::NewDefaultAllocator();
-
   Isolate::CreateParams params;
-  params.array_buffer_allocator = allocator;
+  params.array_buffer_allocator_shared = js_allocator_t::shared();
   params.allow_atomics_wait = false;
 
   auto constrained_memory = uv_get_constrained_memory();
@@ -1107,7 +1219,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   isolate->SetPromiseRejectCallback(on_promise_reject);
 
-  auto env = new js_env_s(loop, platform, isolate, allocator);
+  auto env = new js_env_s(loop, platform, isolate);
 
   env->enter();
 
@@ -1123,7 +1235,6 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 extern "C" int
 js_destroy_env (js_env_t *env) {
   auto isolate = env->isolate;
-  auto allocator = env->allocator;
 
   env->exit();
 
@@ -1132,8 +1243,6 @@ js_destroy_env (js_env_t *env) {
   delete env;
 
   isolate->Dispose();
-
-  delete allocator;
 
   return 0;
 }

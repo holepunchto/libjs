@@ -20,6 +20,10 @@ if(NOT DEFINED V8)
   )
 endif()
 
+if(NOT TARGET mem)
+  add_subdirectory(vendor/libmem EXCLUDE_FROM_ALL)
+endif()
+
 if(NOT TARGET uv)
   add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)
 endif()
@@ -49,6 +53,14 @@ target_include_directories(
     include
     $<TARGET_PROPERTY:uv,INCLUDE_DIRECTORIES>
     ${V8_INCLUDE_DIR}
+  PRIVATE
+    $<TARGET_PROPERTY:mem,INCLUDE_DIRECTORIES>
+)
+
+target_compile_options(
+  js
+  PUBLIC
+    -fno-rtti
 )
 
 target_compile_definitions(
@@ -58,7 +70,7 @@ target_compile_definitions(
     V8_ENABLE_SANDBOX
 )
 
-add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
+add_library(js_shared SHARED $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
 
 set_target_properties(
   js_shared
@@ -79,7 +91,7 @@ target_link_libraries(
     ${V8}
 )
 
-add_library(js_static STATIC $<TARGET_OBJECTS:js>)
+add_library(js_static STATIC $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
 
 set_target_properties(
   js_static

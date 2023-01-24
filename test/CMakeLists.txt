@@ -34,6 +34,7 @@ list(APPEND tests
   get-value-string-utf8
   get-value-string-utf8-length
   get-value-string-utf8-no-null
+  many-allocs
   promise-rejection
   promise-rejection-unhandled
   run-module
