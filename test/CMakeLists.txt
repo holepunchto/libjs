@@ -19,6 +19,7 @@ list(APPEND tests
   create-function-throw-indirect
   create-function-with-ffi
   create-function-with-ffi-no-jit
+  create-function-with-ffi-receiver
   create-function-with-ffi-string
   create-function-with-ffi-uint8array
   create-promise-reject
