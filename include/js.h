@@ -462,7 +462,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message);
 int
 js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
 
-inline int
+static inline int
 js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
@@ -476,7 +476,7 @@ js_throw_type_error (js_env_t *env, const char *code, const char *message);
 int
 js_throw_type_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
 
-inline int
+static inline int
 js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
@@ -490,7 +490,7 @@ js_throw_range_error (js_env_t *env, const char *code, const char *message);
 int
 js_throw_range_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
 
-inline int
+static inline int
 js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
@@ -504,7 +504,7 @@ js_throw_syntax_error (js_env_t *env, const char *code, const char *message);
 int
 js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, va_list args);
 
-inline int
+static inline int
 js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
