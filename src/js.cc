@@ -690,10 +690,6 @@ struct js_platform_s : public Platform {
     start_workers();
   }
 
-  ~js_platform_s() {
-    background->terminate();
-  }
-
   inline uint64_t
   now () {
     return uv_now(loop);
@@ -1124,6 +1120,12 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
 
 extern "C" int
 js_destroy_platform (js_platform_t *platform) {
+  platform->background->terminate();
+
+  for (auto &worker : platform->workers) {
+    worker->join();
+  }
+
   js_allocator_t::destroy();
 
   V8::Dispose();
