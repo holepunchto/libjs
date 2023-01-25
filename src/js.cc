@@ -3100,6 +3100,10 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
   case js_ffi_string:
     v8_type = CTypeInfo::Type::kSeqOneByteString;
     break;
+  case js_ffi_arraybuffer:
+    v8_type = CTypeInfo::Type::kUint8;
+    v8_sequence_type = CTypeInfo::SequenceType::kIsArrayBuffer;
+    break;
   case js_ffi_uint8array:
     v8_type = CTypeInfo::Type::kUint8;
     v8_sequence_type = CTypeInfo::SequenceType::kIsTypedArray;

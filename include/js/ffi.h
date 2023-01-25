@@ -17,6 +17,7 @@ typedef struct js_ffi_function_info_s js_ffi_function_info_t;
 typedef struct js_ffi_function_s js_ffi_function_t;
 typedef struct js_ffi_receiver_s js_ffi_receiver_t;
 typedef struct js_ffi_string_s js_ffi_string_t;
+typedef struct js_ffi_arraybuffer_s js_ffi_arraybuffer_t;
 typedef struct js_ffi_typedarray_s js_ffi_typedarray_t;
 
 typedef enum {
@@ -34,6 +35,7 @@ typedef enum {
 
   // Objects
   js_ffi_string,
+  js_ffi_arraybuffer,
 
   // Typed arrays
   js_ffi_uint8array,
@@ -41,6 +43,11 @@ typedef enum {
 
 struct js_ffi_string_s {
   const char *data;
+  uint32_t len;
+};
+
+struct js_ffi_arraybuffer_s {
+  void *data;
   uint32_t len;
 };
 
