@@ -562,7 +562,7 @@ public:
     // Each thread gets its own RAII managed allocator instance to ensure that
     // a heap is initialized and destroyed once for every thread even if several
     // environments exists within a given thread.
-    thread_local static auto instance = std::make_shared<js_allocator_t>();
+    thread_local static auto instance = std::shared_ptr<js_allocator_t>(new js_allocator_t());
 
     return instance;
   }
