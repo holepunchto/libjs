@@ -671,7 +671,7 @@ struct js_platform_s : public Platform {
         check(),
         foreground(),
         background(new js_task_runner_t(loop)),
-        state(new js_job_state_s(uv_available_parallelism() - 1 /* main thread */)),
+        state(new js_job_state_t(uv_available_parallelism() - 1 /* main thread */)),
         workers(),
         trace(new js_tracing_controller_t()) {
     uv_prepare_init(loop, &prepare);
@@ -1220,7 +1220,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
 
   isolate->SetPromiseRejectCallback(on_promise_reject);
 
-  auto env = new js_env_s(loop, platform, isolate);
+  auto env = new js_env_t(loop, platform, isolate);
 
   env->enter();
 
@@ -1273,7 +1273,7 @@ js_get_env_loop (js_env_t *env, uv_loop_t **result) {
 
 extern "C" int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result) {
-  *result = new js_handle_scope_s(env->isolate);
+  *result = new js_handle_scope_t(env->isolate);
 
   return 0;
 }
@@ -1287,7 +1287,7 @@ js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope) {
 
 extern "C" int
 js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **result) {
-  *result = new js_escapable_handle_scope_s(env->isolate);
+  *result = new js_escapable_handle_scope_t(env->isolate);
 
   return 0;
 }
