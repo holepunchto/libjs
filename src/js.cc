@@ -271,7 +271,7 @@ struct js_task_runner_s : public TaskRunner {
   drain () {
     std::unique_lock guard(lock);
 
-    while (outstanding > 0) {
+    while (outstanding > disposable) {
       drained.wait(guard);
     }
   }
@@ -293,7 +293,7 @@ private:
 
     if (is_disposable) disposable--;
 
-    if (--outstanding == 0) {
+    if (--outstanding <= disposable) {
       drained.notify_all();
     }
   }
@@ -719,7 +719,7 @@ private:
 
   inline void
   check_liveness () {
-    if (background->empty()) {
+    if (background->empty() || background->outstanding == background->disposable) {
       uv_prepare_stop(&prepare);
     } else {
       uv_prepare_start(&prepare, on_prepare);
