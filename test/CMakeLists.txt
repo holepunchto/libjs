@@ -26,6 +26,7 @@ list(APPEND tests
   create-promise-resolve
   create-reference
   create-reference-weak
+  create-unsafe-arraybuffer
   fatal-exception
   get-arraybuffer-info
   get-dataview-info

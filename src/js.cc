@@ -560,8 +560,7 @@ public:
   static std::shared_ptr<js_allocator_t>
   shared () {
     // Each thread gets its own RAII managed allocator instance to ensure that
-    // a heap is initialized and destroyed once for every thread even if several
-    // environments exists within a given thread.
+    // a heap is initialized and destroyed once for every thread.
     thread_local static auto instance = std::shared_ptr<js_allocator_t>(new js_allocator_t());
 
     return instance;
@@ -578,7 +577,7 @@ public:
   }
 
   static inline void
-  free (void *ptr, size_t size) {
+  free (void *ptr) {
     mem_free(ptr);
   }
 
@@ -645,7 +644,7 @@ private: // V8 embedder API
 
   void
   Free (void *data, size_t length) override {
-    free(data, length);
+    free(data);
   }
 
   void *
@@ -2091,7 +2090,34 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 }
 
 static void
-on_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
+on_unsafe_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
+  js_allocator_t::shared()->free(data);
+}
+
+extern "C" int
+js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
+  auto data = js_allocator_t::shared()->alloc_unsafe(len);
+
+  auto store = ArrayBuffer::NewBackingStore(
+    data,
+    len,
+    on_unsafe_arraybuffer_finalize,
+    nullptr
+  );
+
+  auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
+
+  if (pdata) {
+    *pdata = data;
+  }
+
+  *result = from_local(arraybuffer);
+
+  return 0;
+}
+
+static void
+on_external_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
   auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
 
   if (finalizer) {
@@ -2117,7 +2143,7 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
   auto store = ArrayBuffer::NewBackingStore(
     data,
     len,
-    on_arraybuffer_finalize,
+    on_external_arraybuffer_finalize,
     finalizer
   );
 

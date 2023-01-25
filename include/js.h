@@ -272,6 +272,9 @@ int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
 
 int
+js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
+
+int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 int
