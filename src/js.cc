@@ -2093,12 +2093,12 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 
 static void
 on_unsafe_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  js_allocator_t::shared()->free(data);
+  js_allocator_t::free(data);
 }
 
 extern "C" int
 js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
-  auto data = js_allocator_t::shared()->alloc_unsafe(len);
+  auto data = js_allocator_t::alloc_unsafe(len);
 
   auto store = ArrayBuffer::NewBackingStore(
     data,
