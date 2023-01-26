@@ -2177,6 +2177,13 @@ js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
 }
 
 extern "C" int
+js_set_arraybuffer_zero_fill_enabled (bool enabled) {
+  js_heap_t::local()->zero_fill = enabled;
+
+  return 0;
+}
+
+extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   auto local = to_local<ArrayBuffer>(arraybuffer);
 
@@ -3054,11 +3061,6 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
   }
 
   return 0;
-}
-
-extern "C" int
-js_set_arraybuffer_zero_fill (bool enabled) {
-  js_heap_t::local()->zero_fill = enabled;
 }
 
 extern "C" int
