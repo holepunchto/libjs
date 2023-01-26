@@ -3,7 +3,7 @@
 
 #include "../include/js.h"
 
-#include "fixtures/many-allocs.js.h"
+#include "fixtures/many-large-allocs.js.h"
 
 int
 main () {
@@ -20,7 +20,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (char *) many_allocs_js, many_allocs_js_len, &script);
+  e = js_create_string_utf8(env, (char *) many_large_allocs_js, many_large_allocs_js_len, &script);
   assert(e == 0);
 
   js_value_t *promise;
