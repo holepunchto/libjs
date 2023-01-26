@@ -280,6 +280,11 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
 int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
 
+/**
+ * Toggle zero-fill of all array buffers allocated on the heap of the calling
+ * thread, if supported. If disabled, `new ArrayBuffer()` is NOT guaranteed to
+ * zero-fill the allocated memory.
+ */
 int
 js_set_arraybuffer_zero_fill_enabled (bool enabled);
 
