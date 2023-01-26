@@ -548,8 +548,11 @@ private:
 };
 
 struct js_heap_s {
+  bool zero_fill;
+
 private:
-  js_heap_s() {
+  js_heap_s()
+      : zero_fill(true) {
     mem_thread_init();
   }
 
@@ -567,7 +570,7 @@ public:
 
   inline void *
   alloc (size_t size) {
-    return mem_calloc(1, size);
+    return zero_fill ? mem_calloc(1, size) : mem_alloc(size);
   }
 
   inline void *
@@ -3051,6 +3054,11 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
   }
 
   return 0;
+}
+
+extern "C" int
+js_set_arraybuffer_zero_fill (bool enabled) {
+  js_heap_t::local()->zero_fill = enabled;
 }
 
 extern "C" int

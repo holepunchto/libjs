@@ -528,6 +528,9 @@ js_fatal_exception (js_env_t *env, js_value_t *error);
 int
 js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result);
 
+int
+js_set_arraybuffer_zero_fill (bool enabled);
+
 /**
  * Request that the garbage collector be run. This should only be used for
  * testing as it will negatively impact performance.
