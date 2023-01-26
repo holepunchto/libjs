@@ -37,6 +37,7 @@ typedef struct js_job_state_s js_job_state_t;
 typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
+typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
 
 typedef enum {
@@ -546,44 +547,42 @@ private:
   }
 };
 
-struct js_allocator_s : public ArrayBuffer::Allocator {
+struct js_heap_s {
 private:
-  js_allocator_s() {
+  js_heap_s() {
     mem_thread_init();
   }
 
 public:
-  ~js_allocator_s() {
+  ~js_heap_s() {
     mem_thread_destroy();
   }
 
-  static std::shared_ptr<js_allocator_t>
-  shared () {
-    // Each thread gets its own RAII managed allocator instance to ensure that
-    // a heap is initialized and destroyed once for every thread.
-    thread_local static auto instance = std::shared_ptr<js_allocator_t>(new js_allocator_t());
+  static std::shared_ptr<js_heap_t>
+  local () {
+    thread_local static auto heap = std::shared_ptr<js_heap_t>(new js_heap_t());
 
-    return instance;
+    return heap;
   }
 
-  static inline void *
+  inline void *
   alloc (size_t size) {
     return mem_calloc(1, size);
   }
 
-  static inline void *
+  inline void *
   alloc_unsafe (size_t size) {
     return mem_alloc(size);
   }
 
-  static inline void
+  inline void
   free (void *ptr) {
     mem_free(ptr);
   }
 
-  static inline void *
-  realloc (void *ptr, size_t old_size, size_t new_size) {
-    return mem_realloc(ptr, new_size);
+  inline void *
+  realloc (void *ptr, size_t size) {
+    return mem_realloc(ptr, size);
   }
 
 #ifdef V8_ENABLE_SANDBOX
@@ -630,26 +629,28 @@ public:
   destroy () {
     return mem_destroy();
   }
+};
 
+struct js_allocator_s : public ArrayBuffer::Allocator {
 private: // V8 embedder API
   void *
   Allocate (size_t length) override {
-    return alloc(length);
+    return js_heap_t::local()->alloc(length);
   }
 
   void *
   AllocateUninitialized (size_t length) override {
-    return alloc_unsafe(length);
+    return js_heap_t::local()->alloc_unsafe(length);
   }
 
   void
   Free (void *data, size_t length) override {
-    free(data);
+    js_heap_t::local()->free(data);
   }
 
   void *
   Reallocate (void *data, size_t old_length, size_t new_length) override {
-    return realloc(data, old_length, new_length);
+    return js_heap_t::local()->realloc(data, new_length);
   }
 };
 
@@ -1111,7 +1112,7 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
   V8::InitializePlatform(platform);
   V8::Initialize();
 
-  js_allocator_t::init();
+  js_heap_t::init();
 
   *result = platform;
 
@@ -1126,7 +1127,7 @@ js_destroy_platform (js_platform_t *platform) {
     worker->join();
   }
 
-  js_allocator_t::destroy();
+  js_heap_t::destroy();
 
   V8::Dispose();
   V8::DisposePlatform();
@@ -1192,7 +1193,7 @@ on_promise_reject (PromiseRejectMessage message) {
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   Isolate::CreateParams params;
-  params.array_buffer_allocator_shared = js_allocator_t::shared();
+  params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
   params.allow_atomics_wait = false;
 
   auto constrained_memory = uv_get_constrained_memory();
@@ -2093,12 +2094,12 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 
 static void
 on_unsafe_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  js_allocator_t::free(data);
+  js_heap_t::local()->free(data);
 }
 
 extern "C" int
 js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
-  auto data = js_allocator_t::alloc_unsafe(len);
+  auto data = js_heap_t::local()->alloc_unsafe(len);
 
   auto store = ArrayBuffer::NewBackingStore(
     data,
