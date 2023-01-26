@@ -1857,8 +1857,6 @@ on_function_call (const FunctionCallbackInfo<Value> &info) {
 
 extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
-  auto scope = EscapableHandleScope(env->isolate);
-
   auto context = to_local(env->context);
 
   auto callback = new js_callback_t(env, cb, data);
@@ -1869,7 +1867,17 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   callback->external.SetWeak(callback, on_function_finalize, WeakCallbackType::kParameter);
 
-  auto function = Function::New(context, on_function_call, external).ToLocalChecked();
+  auto tpl = FunctionTemplate::New(
+    env->isolate,
+    on_function_call,
+    external,
+    Local<Signature>(),
+    0,
+    ConstructorBehavior::kThrow,
+    SideEffectType::kHasSideEffect
+  );
+
+  auto function = tpl->GetFunction(context).ToLocalChecked();
 
   if (name) {
     MaybeLocal<String> string;
@@ -1889,15 +1897,13 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(scope.Escape(function));
+  *result = from_local(function);
 
   return 0;
 }
 
 extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
-  auto scope = EscapableHandleScope(env->isolate);
-
   auto context = to_local(env->context);
 
   auto callback = new js_callback_t(env, cb, data);
@@ -1915,11 +1921,11 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     Local<Signature>(),
     0,
     ConstructorBehavior::kThrow,
-    SideEffectType::kHasNoSideEffect,
+    SideEffectType::kHasSideEffect,
     &ffi->function
   );
 
-  auto fn = tpl->GetFunction(context).ToLocalChecked();
+  auto function = tpl->GetFunction(context).ToLocalChecked();
 
   if (name) {
     MaybeLocal<String> string;
@@ -1936,10 +1942,10 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
       return -1;
     }
 
-    fn->SetName(string.ToLocalChecked());
+    function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(scope.Escape(fn));
+  *result = from_local(function);
 
   return 0;
 }
