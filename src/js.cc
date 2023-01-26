@@ -503,7 +503,7 @@ struct js_job_handle_s : public JobHandle {
 
   void
   cancel () {
-    cancelled = done = true;
+    cancelled = true;
   }
 
 private: // V8 embedder API
