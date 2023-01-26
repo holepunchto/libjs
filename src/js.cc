@@ -1,5 +1,3 @@
-#include <atomic>
-#include <bit>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -18,6 +16,8 @@
 
 #include <v8-fast-api-calls.h>
 #include <v8.h>
+
+#include <libplatform/libplatform.h>
 
 #include "../include/js.h"
 #include "../include/js/ffi.h"
@@ -387,157 +387,6 @@ struct js_task_scope_s {
   operator=(const js_task_scope_s &) = delete;
 };
 
-static const auto js_invalid_task_id = uint8_t(-1);
-
-struct js_job_state_s {
-  uint8_t available_parallelism;
-  std::atomic<uint64_t> task_ids;
-
-  js_job_state_s(uint8_t available_parallelism)
-      : available_parallelism(available_parallelism < 64 ? available_parallelism : 64),
-        task_ids(0) {}
-
-  inline uint8_t
-  acquire_task_id () {
-    uint64_t task_ids = this->task_ids.load(std::memory_order_relaxed);
-
-    uint8_t task_id;
-    bool ok;
-
-    do {
-      task_id = std::countr_one(task_ids);
-
-      ok = this->task_ids.compare_exchange_weak(
-        task_ids,
-        task_ids | (uint64_t(1) << task_id),
-        std::memory_order_acquire,
-        std::memory_order_relaxed
-      );
-    } while (!ok);
-
-    return task_id;
-  }
-
-  inline void
-  release_task_id (uint8_t task_id) {
-    task_ids.fetch_and(~(uint64_t(1) << task_id), std::memory_order_release);
-  }
-};
-
-struct js_job_delegate_s : public JobDelegate {
-  std::shared_ptr<js_job_state_t> state;
-  js_job_handle_t *handle;
-  uint8_t task_id;
-  bool is_joining_thread;
-
-  js_job_delegate_s(std::shared_ptr<js_job_state_t> state, js_job_handle_t *handle, bool is_joining_thread)
-      : state(state),
-        handle(handle),
-        task_id(js_invalid_task_id),
-        is_joining_thread(is_joining_thread) {}
-
-  ~js_job_delegate_s() {
-    if (task_id != js_invalid_task_id) state->release_task_id(task_id);
-  }
-
-private: // V8 embedder API
-  bool
-  ShouldYield () override {
-    return false;
-  }
-
-  void
-  NotifyConcurrencyIncrease () override {}
-
-  uint8_t
-  GetTaskId () override {
-    if (task_id == js_invalid_task_id) task_id = state->acquire_task_id();
-    return task_id;
-  }
-
-  bool
-  IsJoiningThread () const override {
-    return is_joining_thread;
-  }
-};
-
-struct js_job_handle_s : public JobHandle {
-  TaskPriority priority;
-  std::unique_ptr<JobTask> task;
-  std::shared_ptr<js_job_state_t> state;
-  std::atomic<bool> running;
-  std::atomic<bool> done;
-  std::atomic<bool> joined;
-  std::atomic<bool> cancelled;
-
-  js_job_handle_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_job_state_t> state)
-      : priority(priority),
-        task(std::move(task)),
-        state(state),
-        running(false),
-        done(false),
-        joined(false),
-        cancelled(false) {}
-
-  void
-  run () {
-    running = true;
-
-    auto delegate = js_job_delegate_t(state, this, true);
-
-    while (task->GetMaxConcurrency(0) > 0) {
-      task->Run(&delegate);
-    }
-
-    done = true;
-  }
-
-  void
-  join () {
-    joined = true;
-
-    if (running) return;
-
-    run();
-  }
-
-  void
-  cancel () {
-    cancelled = true;
-  }
-
-private: // V8 embedder API
-  void
-  NotifyConcurrencyIncrease () override {
-    run();
-  }
-
-  void
-  Join () override {
-    join();
-  }
-
-  void
-  Cancel () override {
-    cancel();
-  }
-
-  void
-  CancelAndDetach () override {
-    cancel();
-  }
-
-  bool
-  IsActive () override {
-    return !done;
-  }
-
-  bool
-  IsValid () override {
-    return !joined && !cancelled;
-  }
-};
-
 struct js_worker_s {
   std::shared_ptr<js_task_runner_t> tasks;
   std::thread thread;
@@ -698,7 +547,6 @@ struct js_platform_s : public Platform {
   uv_check_t check;
   std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground;
   std::shared_ptr<js_task_runner_t> background;
-  std::shared_ptr<js_job_state_t> state;
   std::vector<std::shared_ptr<js_worker_t>> workers;
   std::unique_ptr<js_tracing_controller_t> trace;
 
@@ -709,7 +557,6 @@ struct js_platform_s : public Platform {
         check(),
         foreground(),
         background(new js_task_runner_t(loop)),
-        state(new js_job_state_t(uv_available_parallelism() - 1 /* main thread */)),
         workers(),
         trace(new js_tracing_controller_t()) {
     uv_prepare_init(loop, &prepare);
@@ -786,7 +633,7 @@ private:
 
   inline void
   start_workers () {
-    workers.reserve(state->available_parallelism);
+    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
 
     while (workers.size() < workers.capacity()) {
       workers.emplace_back(new js_worker_t(background));
@@ -821,7 +668,7 @@ private: // V8 embedder API
 
   std::unique_ptr<JobHandle>
   CreateJob (TaskPriority priority, std::unique_ptr<JobTask> task) override {
-    return std::make_unique<js_job_handle_t>(priority, std::move(task), state);
+    return platform::NewDefaultJobHandle(this, priority, std::move(task), workers.size());
   }
 
   double
