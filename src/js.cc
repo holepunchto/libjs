@@ -466,15 +466,18 @@ struct js_job_handle_s : public JobHandle {
   std::unique_ptr<JobTask> task;
   std::shared_ptr<js_job_state_t> state;
   std::atomic<bool> done;
+  std::atomic<bool> joined;
+  std::atomic<bool> cancelled;
 
   js_job_handle_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_job_state_t> state)
       : priority(priority),
         task(std::move(task)),
         state(state),
-        done(false) {}
+        done(false),
+        joined(false) {}
 
   void
-  join () {
+  run () {
     auto delegate = js_job_delegate_t(state, this, true);
 
     while (task->GetMaxConcurrency(0) > 0) {
@@ -485,14 +488,23 @@ struct js_job_handle_s : public JobHandle {
   }
 
   void
+  join () {
+    joined = true;
+
+    if (done) return;
+
+    run();
+  }
+
+  void
   cancel () {
-    done = true;
+    cancelled = done = true;
   }
 
 private: // V8 embedder API
   void
   NotifyConcurrencyIncrease () override {
-    join();
+    run();
   }
 
   void
@@ -517,7 +529,7 @@ private: // V8 embedder API
 
   bool
   IsValid () override {
-    return !done;
+    return !joined && !cancelled;
   }
 };
 
