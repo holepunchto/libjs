@@ -570,7 +570,13 @@ public:
 
   inline void *
   alloc (size_t size) {
-    return zero_fill ? mem_calloc(1, size) : mem_alloc(size);
+    auto ptr = alloc_unsafe(size);
+
+    if (ptr && zero_fill) {
+      memset(ptr, 0, size);
+    }
+
+    return ptr;
   }
 
   inline void *
@@ -578,14 +584,25 @@ public:
     return mem_alloc(size);
   }
 
-  inline void
-  free (void *ptr) {
-    mem_free(ptr);
+  inline void *
+  realloc (void *ptr, size_t old_size, size_t new_size) {
+    ptr = realloc_unsafe(ptr, old_size);
+
+    if (ptr && zero_fill && new_size > old_size) {
+      memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
+    }
+
+    return ptr;
   }
 
   inline void *
-  realloc (void *ptr, size_t size) {
+  realloc_unsafe (void *ptr, size_t size) {
     return mem_realloc(ptr, size);
+  }
+
+  inline void
+  free (void *ptr) {
+    mem_free(ptr);
   }
 
 #ifdef V8_ENABLE_SANDBOX
@@ -653,7 +670,7 @@ private: // V8 embedder API
 
   void *
   Reallocate (void *data, size_t old_length, size_t new_length) override {
-    return js_heap_t::local()->realloc(data, new_length);
+    return js_heap_t::local()->realloc(data, old_length, new_length);
   }
 };
 
