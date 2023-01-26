@@ -23,8 +23,7 @@ main () {
   e = js_create_string_utf8(env, (char *) many_large_allocs_js, many_large_allocs_js_len, &script);
   assert(e == 0);
 
-  js_value_t *promise;
-  e = js_run_script(env, script, &promise);
+  e = js_run_script(env, script, NULL);
   assert(e == 0);
 
   e = js_destroy_env(env);
