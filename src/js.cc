@@ -465,6 +465,7 @@ struct js_job_handle_s : public JobHandle {
   TaskPriority priority;
   std::unique_ptr<JobTask> task;
   std::shared_ptr<js_job_state_t> state;
+  std::atomic<bool> running;
   std::atomic<bool> done;
   std::atomic<bool> joined;
   std::atomic<bool> cancelled;
@@ -473,11 +474,15 @@ struct js_job_handle_s : public JobHandle {
       : priority(priority),
         task(std::move(task)),
         state(state),
+        running(false),
         done(false),
-        joined(false) {}
+        joined(false),
+        cancelled(false) {}
 
   void
   run () {
+    running = true;
+
     auto delegate = js_job_delegate_t(state, this, true);
 
     while (task->GetMaxConcurrency(0) > 0) {
@@ -491,7 +496,7 @@ struct js_job_handle_s : public JobHandle {
   join () {
     joined = true;
 
-    if (done) return;
+    if (running) return;
 
     run();
   }
