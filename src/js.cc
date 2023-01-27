@@ -1922,6 +1922,8 @@ on_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolu
 
   delete deferred;
 
+  if (env->depth == 0) env->run_microtasks();
+
   return 0;
 }
 

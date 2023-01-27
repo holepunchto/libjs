@@ -41,6 +41,7 @@ list(APPEND tests
   promise-rejection
   promise-rejection-unhandled
   run-module
+  run-module-async
   run-script
   run-script-ignore-return
   run-script-throw
