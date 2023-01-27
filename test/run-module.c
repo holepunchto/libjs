@@ -56,9 +56,15 @@ main () {
   e = js_create_module(env, "test.js", -1, source, on_module_resolve, NULL, &module);
   assert(e == 0);
 
-  js_value_t *result;
-  e = js_run_module(env, module, &result);
+  js_value_t *promise;
+  e = js_run_module(env, module, &promise);
   assert(e == 0);
+
+  js_promise_state_t state;
+  e = js_get_promise_state(env, promise, &state);
+  assert(e == 0);
+
+  assert(state == js_promise_fulfilled);
 
   e = js_destroy_env(env);
   assert(e == 0);
