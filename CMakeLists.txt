@@ -8,7 +8,7 @@ endif()
 
 project(js C CXX)
 
-if(NOT DEFINED V8)
+if(NOT TARGET v8)
   execute_process(
     COMMAND v8-prebuilds-paths --lib
     OUTPUT_VARIABLE V8
@@ -18,21 +18,21 @@ if(NOT DEFINED V8)
     COMMAND v8-prebuilds-paths --include
     OUTPUT_VARIABLE V8_INCLUDE
   )
+
+  add_library(v8 STATIC IMPORTED)
+
+  set_target_properties(
+    v8
+    PROPERTIES
+    IMPORTED_LOCATION ${V8}
+  )
+
+  target_include_directories(
+    v8
+    INTERFACE
+      ${V8_INCLUDE}
+  )
 endif()
-
-add_library(v8 STATIC IMPORTED)
-
-set_target_properties(
-  v8
-  PROPERTIES
-  IMPORTED_LOCATION ${V8}
-)
-
-target_include_directories(
-  v8
-  INTERFACE
-    ${V8_INCLUDE}
-)
 
 if(NOT TARGET mem)
   add_subdirectory(vendor/libmem EXCLUDE_FROM_ALL)
