@@ -16,9 +16,23 @@ if(NOT DEFINED V8)
 
   execute_process(
     COMMAND v8-prebuilds-paths --include
-    OUTPUT_VARIABLE V8_INCLUDE_DIR
+    OUTPUT_VARIABLE V8_INCLUDE
   )
 endif()
+
+add_library(v8 STATIC IMPORTED)
+
+set_target_properties(
+  v8
+  PROPERTIES
+  IMPORTED_LOCATION ${V8}
+)
+
+target_include_directories(
+  v8
+  INTERFACE
+    ${V8_INCLUDE}
+)
 
 if(NOT TARGET mem)
   add_subdirectory(vendor/libmem EXCLUDE_FROM_ALL)
@@ -51,10 +65,10 @@ target_include_directories(
   js
   PUBLIC
     include
-    $<TARGET_PROPERTY:uv,INCLUDE_DIRECTORIES>
-    ${V8_INCLUDE_DIR}
+    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
-    $<TARGET_PROPERTY:mem,INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_options(
@@ -88,7 +102,7 @@ target_link_libraries(
   js_shared
   PUBLIC
     uv
-    ${V8}
+    v8
 )
 
 add_library(js_static STATIC $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
@@ -109,7 +123,7 @@ target_link_libraries(
   js_static
   PUBLIC
     uv_a
-    ${V8}
+    v8
 )
 
 install(TARGETS js_shared js_static)
