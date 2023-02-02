@@ -8,7 +8,7 @@
 bool unhandled_called = false;
 
 static void
-on_unhandled_rejection (js_env_t *env, js_value_t *promise, void *data) {
+on_unhandled_rejection (js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
   unhandled_called = true;
 }
 

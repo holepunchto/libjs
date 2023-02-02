@@ -770,7 +770,14 @@ struct js_env_s {
 
     if (on_unhandled_rejection) {
       for (auto &promise : unhandled_promises) {
-        on_unhandled_rejection(this, from_local(promise.Get(isolate)), unhandled_rejection_data);
+        auto local = promise.Get(isolate);
+
+        on_unhandled_rejection(
+          this,
+          from_local(local->Result()),
+          from_local(local),
+          unhandled_rejection_data
+        );
       }
     }
 
