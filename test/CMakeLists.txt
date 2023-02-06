@@ -20,6 +20,7 @@ list(APPEND tests
   create-function-with-ffi
   create-function-with-ffi-arraybuffer
   create-function-with-ffi-no-jit
+  create-function-with-ffi-pointer
   create-function-with-ffi-receiver
   create-function-with-ffi-string
   create-function-with-ffi-uint8array

@@ -32,6 +32,7 @@ typedef enum {
   js_ffi_int64,
   js_ffi_float32,
   js_ffi_float64,
+  js_ffi_pointer,
 
   // Objects
   js_ffi_string,

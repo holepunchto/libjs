@@ -3006,6 +3006,9 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
   case js_ffi_float64:
     v8_type = CTypeInfo::Type::kFloat64;
     break;
+  case js_ffi_pointer:
+    v8_type = CTypeInfo::Type::kPointer;
+    break;
   case js_ffi_string:
     v8_type = CTypeInfo::Type::kSeqOneByteString;
     break;
