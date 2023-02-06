@@ -9,13 +9,15 @@ endif()
 project(js C CXX)
 
 if(NOT TARGET v8)
+  find_program(v8_prebuilds_paths NAMES v8-prebuilds-paths)
+
   execute_process(
-    COMMAND v8-prebuilds-paths --lib
+    COMMAND ${v8_prebuilds_paths} --lib
     OUTPUT_VARIABLE V8
   )
 
   execute_process(
-    COMMAND v8-prebuilds-paths --include
+    COMMAND ${v8_prebuilds_paths} --include
     OUTPUT_VARIABLE V8_INCLUDE
   )
 
