@@ -1238,7 +1238,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, js_value_t *source, 
     Local<Value>(),
     false,
     false,
-    true
+    false
   );
 
   auto v8_source = ScriptCompiler::Source(local_source, origin);
