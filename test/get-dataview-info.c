@@ -22,7 +22,7 @@ main () {
   assert(e == 0);
 
   js_value_t *dataview;
-  e = js_run_script(env, script, &dataview);
+  e = js_run_script(env, NULL, 0, script, &dataview);
   assert(e == 0);
 
   uint8_t *data;

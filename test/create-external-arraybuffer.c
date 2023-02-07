@@ -38,7 +38,7 @@ main () {
   e = js_create_string_utf8(env, "const view = new Uint8Array(arraybuffer); view[0] = 42", -1, &script);
   assert(e == 0);
 
-  e = js_run_script(env, script, NULL);
+  e = js_run_script(env, NULL, 0, script, NULL);
   assert(e == 0);
 
   assert(data[0] == 42);

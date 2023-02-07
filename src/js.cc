@@ -1209,12 +1209,39 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
-js_run_script (js_env_t *env, js_value_t *source, js_value_t **result) {
+js_run_script (js_env_t *env, const char *file, size_t len, js_value_t *source, js_value_t **result) {
   auto context = to_local(env->context);
 
   auto local_source = to_local<String>(source);
 
-  auto v8_source = ScriptCompiler::Source(local_source);
+  MaybeLocal<String> local_file;
+
+  if (len == size_t(-1)) {
+    local_file = String::NewFromUtf8(env->isolate, file);
+  } else {
+    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
+  }
+
+  if (local_file.IsEmpty()) {
+    js_throw_error(env, NULL, "Invalid string length");
+
+    return -1;
+  }
+
+  auto origin = ScriptOrigin(
+    env->isolate,
+    local_file.ToLocalChecked(),
+    0,
+    0,
+    false,
+    -1,
+    Local<Value>(),
+    false,
+    false,
+    true
+  );
+
+  auto v8_source = ScriptCompiler::Source(local_source, origin);
 
   auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
 

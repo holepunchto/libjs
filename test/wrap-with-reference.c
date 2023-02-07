@@ -41,7 +41,7 @@ main () {
   assert(e == 0);
 
   js_value_t *object;
-  e = js_run_script(env, script, &object);
+  e = js_run_script(env, NULL, 0, script, &object);
   assert(e == 0);
 
   js_ref_t *ref;

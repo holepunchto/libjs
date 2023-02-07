@@ -22,7 +22,7 @@ main () {
   assert(e == 0);
 
   js_value_t *value;
-  e = js_run_script(env, script, &value);
+  e = js_run_script(env, NULL, 0, script, &value);
   assert(e == 0);
 
   js_value_type_t type;

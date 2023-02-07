@@ -13,7 +13,7 @@ uint32_t
 on_fast_call (js_ffi_receiver_t *receiver, void *ptr) {
   fast_calls++;
 
-  assert(ptr == 42);
+  assert((uintptr_t) ptr == 42);
 
   return 42;
 }
@@ -90,7 +90,7 @@ main () {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, script, &result);
+  e = js_run_script(env, NULL, 0, script, &result);
   assert(e == 0);
 
   assert(slow_calls < 200000);

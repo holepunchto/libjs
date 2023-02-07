@@ -22,7 +22,7 @@ main () {
   assert(e == 0);
 
   js_value_t *arraybuffer;
-  e = js_run_script(env, script, &arraybuffer);
+  e = js_run_script(env, NULL, 0, script, &arraybuffer);
   assert(e == 0);
 
   uint8_t *data;

@@ -16,7 +16,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   assert(e == 0);
 
   js_value_t *fn;
-  e = js_run_script(env, script, &fn);
+  e = js_run_script(env, NULL, 0, script, &fn);
   assert(e == 0);
 
   js_value_t *result;
@@ -85,7 +85,7 @@ main () {
   e = js_create_string_utf8(env, "fn()", -1, &script);
   assert(e == 0);
 
-  e = js_run_script(env, script, NULL);
+  e = js_run_script(env, NULL, 0, script, NULL);
   assert(e == 0);
 
   // The call to `js_run_script()` happened without JavaScript already executing

@@ -22,7 +22,7 @@ main () {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, script, NULL);
+  e = js_run_script(env, NULL, 0, script, NULL);
   assert(e == 0);
 
   e = js_destroy_env(env);
