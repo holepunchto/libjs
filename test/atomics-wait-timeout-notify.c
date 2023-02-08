@@ -24,7 +24,7 @@ main () {
   assert(e == 0);
 
   js_value_t *promise;
-  e = js_run_script(env, NULL, 0, script, &promise);
+  e = js_run_script(env, NULL, 0, 0, script, &promise);
   assert(e == 0);
 
   uv_run(loop, UV_RUN_DEFAULT);

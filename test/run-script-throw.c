@@ -48,7 +48,7 @@ main () {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, NULL, 0, script, &result);
+  e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == -1);
 
   assert(uncaught_called);

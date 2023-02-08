@@ -17,7 +17,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, NULL, 0, script, &result);
+  e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == -1);
 
   return NULL;
@@ -53,7 +53,7 @@ main () {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, NULL, 0, script, &result);
+  e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == -1);
 
   assert(fn_called);

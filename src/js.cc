@@ -1209,7 +1209,7 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
-js_run_script (js_env_t *env, const char *file, size_t len, js_value_t *source, js_value_t **result) {
+js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
   auto context = to_local(env->context);
 
   auto local_source = to_local<String>(source);
@@ -1231,7 +1231,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, js_value_t *source, 
   auto origin = ScriptOrigin(
     env->isolate,
     local_file.ToLocalChecked(),
-    0,
+    offset,
     0,
     false,
     -1,
@@ -1294,7 +1294,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
 }
 
 extern "C" int
-js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
+js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local_source = to_local<String>(source);
@@ -1316,7 +1316,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *sourc
   auto origin = ScriptOrigin(
     env->isolate,
     local_name.ToLocalChecked(),
-    0,
+    offset,
     0,
     false,
     -1,

@@ -41,7 +41,7 @@ main () {
   assert(e == 0);
 
   js_value_t *object;
-  e = js_run_script(env, NULL, 0, script, &object);
+  e = js_run_script(env, NULL, 0, 0, script, &object);
   assert(e == 0);
 
   e = js_wrap(env, object, (void *) 42, on_finalize, NULL, NULL);

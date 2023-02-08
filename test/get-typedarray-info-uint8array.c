@@ -22,7 +22,7 @@ main () {
   assert(e == 0);
 
   js_value_t *typedarray;
-  e = js_run_script(env, NULL, 0, script, &typedarray);
+  e = js_run_script(env, NULL, 0, 0, script, &typedarray);
   assert(e == 0);
 
   js_typedarray_type_t type;

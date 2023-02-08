@@ -155,10 +155,10 @@ int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
 int
-js_run_script (js_env_t *env, const char *file, size_t len, js_value_t *source, js_value_t **result);
+js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
 int
-js_create_module (js_env_t *env, const char *name, size_t len, js_value_t *source, js_module_cb cb, void *data, js_module_t **result);
+js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_cb cb, void *data, js_module_t **result);
 
 int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result);
