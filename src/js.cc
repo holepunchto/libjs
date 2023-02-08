@@ -1243,13 +1243,25 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto v8_source = ScriptCompiler::Source(local_source, origin);
 
-  auto compiled = ScriptCompiler::Compile(context, &v8_source).ToLocalChecked();
-
   auto try_catch = TryCatch(env->isolate);
+
+  auto compiled = ScriptCompiler::Compile(context, &v8_source);
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
 
   env->depth++;
 
-  auto local = compiled->Run(context);
+  auto local = compiled.ToLocalChecked()->Run(context);
 
   env->depth--;
 
