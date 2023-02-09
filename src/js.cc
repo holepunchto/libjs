@@ -877,6 +877,7 @@ struct js_module_s {
       : module(isolate, module),
         resolve(nullptr),
         evaluate(nullptr),
+        name(name),
         data(data) {}
 
   ~js_module_s() {
