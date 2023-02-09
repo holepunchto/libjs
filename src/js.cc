@@ -870,13 +870,18 @@ struct js_module_s {
   Global<Module> module;
   js_module_cb resolve;
   js_synthetic_module_cb evaluate;
+  char *name;
   void *data;
 
-  js_module_s(Isolate *isolate, Local<Module> module, void *data)
+  js_module_s(Isolate *isolate, Local<Module> module, char *name, void *data)
       : module(isolate, module),
         resolve(nullptr),
         evaluate(nullptr),
         data(data) {}
+
+  ~js_module_s() {
+    delete name;
+  }
 };
 
 struct js_ref_s {
@@ -1354,7 +1359,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
-  auto module = new js_module_t(env->isolate, compiled, data);
+  auto module = new js_module_t(env->isolate, compiled, strndup(name, len), data);
 
   module->resolve = cb;
 
@@ -1407,7 +1412,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     on_evaluate_module
   );
 
-  auto module = new js_module_t(env->isolate, compiled, data);
+  auto module = new js_module_t(env->isolate, compiled, strndup(name, len), data);
 
   module->evaluate = cb;
 
@@ -1421,6 +1426,13 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 extern "C" int
 js_delete_module (js_env_t *env, js_module_t *module) {
   delete module;
+
+  return 0;
+}
+
+extern "C" int
+js_get_module_name (js_env_t *env, js_module_t *module, const char **result) {
+  *result = module->name;
 
   return 0;
 }
