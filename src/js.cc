@@ -1287,10 +1287,22 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 }
 
 static MaybeLocal<Module>
-on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> assertions, Local<Module> referrer) {
+on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> raw_assertions, Local<Module> referrer) {
   auto env = get_env(context);
 
   auto module = get_module(context, referrer);
+
+  auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
+
+  for (int i = 0; i < raw_assertions->Length(); i += 3) {
+    assertions
+      ->Set(
+        context,
+        raw_assertions->Get(context, i).As<String>(),
+        raw_assertions->Get(context, i + 1).As<Value>()
+      )
+      .ToChecked();
+  }
 
   auto result = module->resolve(
     env,
