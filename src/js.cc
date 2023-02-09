@@ -867,13 +867,13 @@ struct js_escapable_handle_scope_s {
 };
 
 struct js_module_s {
-  Local<Module> module;
+  Global<Module> module;
   js_module_cb resolve;
   js_synthetic_module_cb evaluate;
   void *data;
 
-  js_module_s(Local<Module> module, void *data)
-      : module(module),
+  js_module_s(Isolate *isolate, Local<Module> module, void *data)
+      : module(isolate, module),
         resolve(nullptr),
         evaluate(nullptr),
         data(data) {}
@@ -1314,7 +1314,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
 
   if (result == nullptr) return MaybeLocal<Module>();
 
-  return result->module;
+  return MaybeLocal<Module>(result->module.Get(env->isolate));
 }
 
 extern "C" int
@@ -1354,7 +1354,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
 
-  auto module = new js_module_t(compiled, data);
+  auto module = new js_module_t(env->isolate, compiled, data);
 
   module->resolve = cb;
 
@@ -1407,7 +1407,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     on_evaluate_module
   );
 
-  auto module = new js_module_t(compiled, data);
+  auto module = new js_module_t(env->isolate, compiled, data);
 
   module->evaluate = cb;
 
@@ -1427,7 +1427,7 @@ js_delete_module (js_env_t *env, js_module_t *module) {
 
 extern "C" int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value) {
-  auto local = module->module;
+  auto local = module->module.Get(env->isolate);
 
   local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value)).Check();
 
@@ -1440,7 +1440,7 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
   env->depth++;
 
-  auto local = module->module->Evaluate(context).ToLocalChecked();
+  auto local = module->module.Get(env->isolate)->Evaluate(context).ToLocalChecked();
 
   env->depth--;
 
