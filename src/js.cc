@@ -1358,15 +1358,45 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto v8_source = ScriptCompiler::Source(local_source, origin);
 
-  auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source).ToLocalChecked();
+  auto try_catch = TryCatch(env->isolate);
 
-  auto module = new js_module_t(env->isolate, compiled, strndup(name, len), data);
+  auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source);
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
+
+  auto local = compiled.ToLocalChecked();
+
+  auto module = new js_module_t(env->isolate, local, strndup(name, len), data);
 
   module->resolve = cb;
 
-  env->modules.emplace(compiled->GetIdentityHash(), module);
+  env->modules.emplace(local->GetIdentityHash(), module);
 
-  compiled->InstantiateModule(context, on_resolve_module).Check();
+  auto success = local->InstantiateModule(context, on_resolve_module);
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
+
+  success.Check();
 
   *result = module;
 
@@ -1453,14 +1483,28 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
   env->depth++;
 
-  auto local = module->module.Get(env->isolate)->Evaluate(context).ToLocalChecked();
+  auto try_catch = TryCatch(env->isolate);
+
+  auto local = module->module.Get(env->isolate)->Evaluate(context);
 
   env->depth--;
 
   if (env->depth == 0) env->run_microtasks();
 
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
+
   if (result) {
-    *result = from_local(local);
+    *result = from_local(local.ToLocalChecked());
   }
 
   return 0;

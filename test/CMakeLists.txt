@@ -24,6 +24,7 @@ list(APPEND tests
   create-function-with-ffi-receiver
   create-function-with-ffi-string
   create-function-with-ffi-uint8array
+  create-module-import-missing
   create-promise-reject
   create-promise-resolve
   create-reference
@@ -43,6 +44,7 @@ list(APPEND tests
   promise-rejection-unhandled
   run-module
   run-module-async
+  run-module-throw
   run-script
   run-script-ignore-return
   run-script-throw
