@@ -1269,9 +1269,9 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto local = compiled.ToLocalChecked()->Run(context);
 
-  env->depth--;
+  if (env->depth == 1) env->run_microtasks();
 
-  if (env->depth == 0) env->run_microtasks();
+  env->depth--;
 
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
@@ -1491,9 +1491,9 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
   auto local = module->module.Get(env->isolate)->Evaluate(context);
 
-  env->depth--;
+  if (env->depth == 1) env->run_microtasks();
 
-  if (env->depth == 0) env->run_microtasks();
+  env->depth--;
 
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
@@ -2903,9 +2903,9 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
     reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
   );
 
-  env->depth--;
+  if (env->depth == 1) env->run_microtasks();
 
-  if (env->depth == 0) env->run_microtasks();
+  env->depth--;
 
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
