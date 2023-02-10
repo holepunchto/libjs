@@ -1318,9 +1318,17 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
     module->data
   );
 
-  if (result == nullptr) return MaybeLocal<Module>();
+  if (env->exception.IsEmpty()) {
+    return MaybeLocal<Module>(result->module.Get(env->isolate));
+  }
 
-  return MaybeLocal<Module>(result->module.Get(env->isolate));
+  auto exception = env->exception.Get(env->isolate);
+
+  env->exception.Reset();
+
+  env->isolate->ThrowException(exception);
+
+  return MaybeLocal<Module>();
 }
 
 extern "C" int
