@@ -1382,7 +1382,11 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   env->modules.emplace(local->GetIdentityHash(), module);
 
+  env->depth++;
+
   auto success = local->InstantiateModule(context, on_resolve_module);
+
+  env->depth--;
 
   if (try_catch.HasCaught()) {
     auto error = try_catch.Exception();
