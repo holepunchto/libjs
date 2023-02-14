@@ -1476,6 +1476,9 @@ extern "C" int
 js_instantiate_module (js_env_t *env, js_module_t *module, js_module_cb cb, void *data) {
   auto context = to_local(env->context);
 
+  module->resolve = cb;
+  module->data = data;
+
   env->depth++;
 
   auto try_catch = TryCatch(env->isolate);
