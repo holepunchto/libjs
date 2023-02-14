@@ -978,9 +978,14 @@ extern "C" const char *js_platform_version = V8::GetVersion();
 
 extern "C" int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
-  if (options) {
-    auto flags = std::string();
+  auto flags = std::string();
 
+  // Don't freeze the flags after initialising the platform. This is both not
+  // needed and also ensures that V8 doesn't attempt to call `mprotect()`, which
+  // isn't allowed on iOS in unprivileged processes.
+  flags += "--no-freeze-flags-after-init";
+
+  if (options) {
     if (options->expose_garbage_collection) {
       flags += " --expose-gc";
     }
@@ -990,7 +995,7 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
     }
 
     if (options->disable_optimizing_compiler) {
-      flags += " --jitless --noexpose-wasm";
+      flags += " --jitless --no-expose-wasm";
     } else {
       if (options->trace_optimizations) {
         flags += " --trace-opt";
@@ -1000,9 +1005,9 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
         flags += " --trace-deopt";
       }
     }
-
-    V8::SetFlagsFromString(flags.c_str());
   }
+
+  V8::SetFlagsFromString(flags.c_str());
 
   auto platform = new js_platform_t(options ? *options : js_platform_options_t(), loop);
 
