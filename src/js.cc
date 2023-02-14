@@ -873,7 +873,7 @@ struct js_module_s {
   char *name;
   void *data;
 
-  js_module_s(Isolate *isolate, Local<Module> module, char *name, void *data)
+  js_module_s(Isolate *isolate, Local<Module> module, char *name, void *data = nullptr)
       : module(isolate, module),
         resolve(nullptr),
         evaluate(nullptr),
@@ -1337,7 +1337,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
 }
 
 extern "C" int
-js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_cb cb, void *data, js_module_t **result) {
+js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local_source = to_local<String>(source);
@@ -1389,31 +1389,9 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto local = compiled.ToLocalChecked();
 
-  auto module = new js_module_t(env->isolate, local, strndup(name, len), data);
-
-  module->resolve = cb;
+  auto module = new js_module_t(env->isolate, local, strndup(name, len));
 
   env->modules.emplace(local->GetIdentityHash(), module);
-
-  env->depth++;
-
-  auto success = local->InstantiateModule(context, on_resolve_module);
-
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    }
-
-    env->exception.Reset(env->isolate, error);
-
-    return -1;
-  }
-
-  success.Check();
 
   *result = module;
 
@@ -1490,6 +1468,37 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
   auto local = module->module.Get(env->isolate);
 
   local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value)).Check();
+
+  return 0;
+}
+
+extern "C" int
+js_instantiate_module (js_env_t *env, js_module_t *module, js_module_cb cb, void *data) {
+  auto context = to_local(env->context);
+
+  env->depth++;
+
+  auto try_catch = TryCatch(env->isolate);
+
+  auto local = module->module.Get(env->isolate);
+
+  auto success = local->InstantiateModule(context, on_resolve_module);
+
+  env->depth--;
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
+
+  success.Check();
 
   return 0;
 }

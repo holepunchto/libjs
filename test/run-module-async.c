@@ -55,7 +55,10 @@ main () {
   assert(e == 0);
 
   js_module_t *module;
-  e = js_create_module(env, "test.js", -1, 0, source, on_module_resolve, NULL, &module);
+  e = js_create_module(env, "test.js", -1, 0, source, &module);
+  assert(e == 0);
+
+  e = js_instantiate_module(env, module, on_module_resolve, NULL);
   assert(e == 0);
 
   js_value_t *promise;
