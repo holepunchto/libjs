@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.25)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -9,16 +9,16 @@ endif()
 project(js C CXX)
 
 if(NOT TARGET v8)
-  find_program(v8_prebuilds_paths NAMES v8-prebuilds-paths)
+  find_program(v8_prebuilds NAMES v8-prebuilds)
 
   execute_process(
-    COMMAND ${v8_prebuilds_paths} --lib
-    OUTPUT_VARIABLE V8
+    COMMAND ${v8_prebuilds} paths lib
+    OUTPUT_VARIABLE v8
   )
 
   execute_process(
-    COMMAND ${v8_prebuilds_paths} --include
-    OUTPUT_VARIABLE V8_INCLUDE
+    COMMAND ${v8_prebuilds} paths include
+    OUTPUT_VARIABLE v8_include
   )
 
   add_library(v8 STATIC IMPORTED)
@@ -26,13 +26,13 @@ if(NOT TARGET v8)
   set_target_properties(
     v8
     PROPERTIES
-    IMPORTED_LOCATION ${V8}
+    IMPORTED_LOCATION ${v8}
   )
 
   target_include_directories(
     v8
     INTERFACE
-      ${V8_INCLUDE}
+      ${v8_include}
   )
 endif()
 
