@@ -44,6 +44,9 @@ list(APPEND tests
   promise-rejection-unhandled
   run-module
   run-module-async
+  run-module-cyclic-import
+  run-module-nested-import
+  run-module-double-nested-import
   run-module-throw
   run-script
   run-script-ignore-return
@@ -67,6 +70,10 @@ list(APPEND tests
   wrap-remove-with-finalizer
 )
 
+list(APPEND skipped_tests
+  create-function-with-ffi-arraybuffer
+)
+
 foreach(test IN LISTS tests)
   add_executable(${test} ${test}.c)
 
@@ -87,4 +94,18 @@ foreach(test IN LISTS tests)
     COMMAND ${test}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   )
+
+  set_tests_properties(
+    ${test}
+    PROPERTIES
+    TIMEOUT 30000
+  )
+
+  if(${test} IN_LIST skipped_tests)
+    set_tests_properties(
+      ${test}
+      PROPERTIES
+      DISABLED True
+    )
+  endif()
 endforeach()

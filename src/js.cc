@@ -1324,7 +1324,9 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
   );
 
   if (env->exception.IsEmpty()) {
-    return MaybeLocal<Module>(result->module.Get(env->isolate));
+    if (result->resolve == NULL) result->resolve = module->resolve;
+
+    return result->module.Get(env->isolate);
   }
 
   auto exception = env->exception.Get(env->isolate);
