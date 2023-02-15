@@ -1324,7 +1324,10 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
   );
 
   if (env->exception.IsEmpty()) {
-    if (result->resolve == NULL) result->resolve = module->resolve;
+    if (result->resolve == NULL) {
+      result->resolve = module->resolve;
+      result->data = module->data;
+    }
 
     return result->module.Get(env->isolate);
   }
