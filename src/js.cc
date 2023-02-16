@@ -822,8 +822,6 @@ private:
   on_check (uv_check_t *handle) {
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
-    env->run_microtasks();
-
     if (uv_loop_alive(env->loop)) return;
 
     env->idle();
