@@ -1897,6 +1897,87 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 }
 
 extern "C" int
+js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local_source = to_local<String>(source);
+
+  MaybeLocal<String> local_file;
+
+  if (file_len == size_t(-1)) {
+    local_file = String::NewFromUtf8(env->isolate, file);
+  } else {
+    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, file_len);
+  }
+
+  if (local_file.IsEmpty()) {
+    js_throw_error(env, NULL, "Invalid string length");
+
+    return -1;
+  }
+
+  auto origin = ScriptOrigin(
+    env->isolate,
+    local_file.ToLocalChecked(),
+    offset,
+    0,
+    false,
+    -1,
+    Local<Value>(),
+    false,
+    false,
+    false
+  );
+
+  auto v8_source = ScriptCompiler::Source(local_source, origin);
+
+  auto try_catch = TryCatch(env->isolate);
+
+  auto compiled = ScriptCompiler::CompileFunction(
+    context,
+    &v8_source,
+    args_len,
+    const_cast<Local<String> *>(reinterpret_cast<const Local<String> *>(args))
+  );
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    }
+
+    env->exception.Reset(env->isolate, error);
+
+    return -1;
+  }
+
+  auto function = compiled.ToLocalChecked();
+
+  if (name) {
+    MaybeLocal<String> string;
+
+    if (name_len == size_t(-1)) {
+      string = String::NewFromUtf8(env->isolate, name);
+    } else {
+      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, name_len);
+    }
+
+    if (string.IsEmpty()) {
+      js_throw_error(env, NULL, "Invalid string length");
+
+      return -1;
+    }
+
+    function->SetName(string.ToLocalChecked());
+  }
+
+  *result = from_local(function);
+
+  return 0;
+}
+
+extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
   auto context = to_local(env->context);
 

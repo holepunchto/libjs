@@ -236,6 +236,9 @@ int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
 int
+js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
+
+int
 js_create_array (js_env_t *env, js_value_t **result);
 
 int
