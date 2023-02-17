@@ -30,6 +30,8 @@ list(APPEND tests
   create-reference
   create-reference-weak
   create-unsafe-arraybuffer
+  dynamic-import
+  dynamic-import-without-handler
   fatal-exception
   get-arraybuffer-info
   get-dataview-info

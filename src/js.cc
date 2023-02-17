@@ -705,6 +705,8 @@ struct js_env_s {
   void *uncaught_exception_data;
   js_unhandled_rejection_cb on_unhandled_rejection;
   void *unhandled_rejection_data;
+  js_dynamic_import_cb on_dynamic_import;
+  void *dynamic_import_data;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
@@ -723,7 +725,9 @@ struct js_env_s {
         on_uncaught_exception(nullptr),
         uncaught_exception_data(nullptr),
         on_unhandled_rejection(nullptr),
-        unhandled_rejection_data(nullptr) {
+        unhandled_rejection_data(nullptr),
+        on_dynamic_import(nullptr),
+        dynamic_import_data(nullptr) {
     uv_prepare_init(loop, &prepare);
     uv_prepare_start(&prepare, on_prepare);
     prepare.data = this;
@@ -1090,6 +1094,57 @@ on_promise_reject (PromiseRejectMessage message) {
   }
 }
 
+static MaybeLocal<Promise>
+on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
+  auto env = get_env(context);
+
+  if (env->on_dynamic_import == NULL) {
+    js_throw_error(env, NULL, "Dynamic import() is not supported");
+
+    return MaybeLocal<Promise>();
+  }
+
+  auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
+
+  for (int i = 0; i < raw_assertions->Length(); i += 3) {
+    assertions
+      ->Set(
+        context,
+        raw_assertions->Get(context, i).As<String>(),
+        raw_assertions->Get(context, i + 1).As<Value>()
+      )
+      .Check();
+  }
+
+  auto result = env->on_dynamic_import(
+    env,
+    from_local(specifier),
+    from_local(assertions),
+    from_local(referrer),
+    env->dynamic_import_data
+  );
+
+  if (env->exception.IsEmpty()) {
+    auto module = result->module.Get(env->isolate);
+
+    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+    auto success = resolver->Resolve(context, module->GetModuleNamespace());
+
+    success.Check();
+
+    return resolver->GetPromise();
+  }
+
+  auto exception = env->exception.Get(env->isolate);
+
+  env->exception.Reset();
+
+  env->isolate->ThrowException(exception);
+
+  return MaybeLocal<Promise>();
+}
+
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   Isolate::CreateParams params;
@@ -1120,6 +1175,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
   isolate->AddMessageListener(on_uncaught_exception);
 
   isolate->SetPromiseRejectCallback(on_promise_reject);
+
+  isolate->SetHostImportModuleDynamicallyCallback(on_dynamic_import);
 
   auto env = new js_env_t(loop, platform, isolate);
 
@@ -1161,6 +1218,14 @@ extern "C" int
 js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data) {
   env->on_unhandled_rejection = cb;
   env->unhandled_rejection_data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data) {
+  env->on_dynamic_import = cb;
+  env->dynamic_import_data = data;
 
   return 0;
 }
@@ -1310,7 +1375,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
         raw_assertions->Get(context, i).As<String>(),
         raw_assertions->Get(context, i + 1).As<Value>()
       )
-      .ToChecked();
+      .Check();
   }
 
   auto result = module->resolve(
