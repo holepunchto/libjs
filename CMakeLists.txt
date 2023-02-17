@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
-if(WIN32)
-  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-endif()
-
 project(js C CXX)
 
 if(NOT TARGET v8)
@@ -92,6 +86,7 @@ set_target_properties(
   js_shared
   PROPERTIES
   OUTPUT_NAME js
+  WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 target_compile_definitions(
