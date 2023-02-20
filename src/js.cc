@@ -1532,6 +1532,21 @@ js_get_module_name (js_env_t *env, js_module_t *module, const char **result) {
 }
 
 extern "C" int
+js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result) {
+  auto local = module->module.Get(env->isolate);
+
+  if (local->GetStatus() < Module::Status::kInstantiated) {
+    js_throw_error(env, NULL, "Module must be instantiaed");
+
+    return -1;
+  }
+
+  *result = from_local(local->GetModuleNamespace());
+
+  return 0;
+}
+
+extern "C" int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value) {
   auto local = module->module.Get(env->isolate);
 

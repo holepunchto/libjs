@@ -174,6 +174,9 @@ int
 js_get_module_name (js_env_t *env, js_module_t *module, const char **result);
 
 int
+js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result);
+
+int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value);
 
 int
