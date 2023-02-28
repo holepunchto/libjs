@@ -5,13 +5,13 @@
 
 #include "../include/js.h"
 
-bool uncaught_called = false;
+int uncaught_called = 0;
 
 static void
 on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
   int e;
 
-  uncaught_called = true;
+  uncaught_called++;
 
   bool has_exception;
   e = js_is_exception_pending(env, &has_exception);
@@ -59,7 +59,7 @@ main () {
   e = js_call_function(env, global, fn, 0, NULL, &result);
   assert(e == -1);
 
-  assert(uncaught_called);
+  assert(uncaught_called == 1);
 
   e = js_destroy_env(env);
   assert(e == 0);

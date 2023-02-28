@@ -4,11 +4,11 @@
 
 #include "../include/js.h"
 
-bool uncaught_called = false;
+int uncaught_called = 0;
 
 static void
 on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
-  uncaught_called = true;
+  uncaught_called++;
 }
 
 int
@@ -35,7 +35,7 @@ main () {
   e = js_fatal_exception(env, error);
   assert(e == 0);
 
-  assert(uncaught_called);
+  assert(uncaught_called == 1);
 
   e = js_destroy_env(env);
   assert(e == 0);

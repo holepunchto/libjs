@@ -5,11 +5,16 @@
 #include "../include/js.h"
 #include "fixtures/promise-rejection.js.h"
 
-bool unhandled_called = false;
+int unhandled_called = 0;
+
+static void
+on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+  assert(false);
+}
 
 static void
 on_unhandled_rejection (js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
-  unhandled_called = true;
+  unhandled_called++;
 }
 
 int
@@ -26,6 +31,9 @@ main () {
   e = js_create_env(loop, platform, &env);
   assert(e == 0);
 
+  e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
+  assert(e == 0);
+
   e = js_on_unhandled_rejection(env, on_unhandled_rejection, NULL);
   assert(e == 0);
 
@@ -37,7 +45,7 @@ main () {
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  assert(!unhandled_called);
+  assert(unhandled_called == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
