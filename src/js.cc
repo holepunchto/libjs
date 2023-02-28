@@ -1058,6 +1058,8 @@ on_uncaught_exception (Local<Message> message, Local<Value> error) {
 
   if (env->on_uncaught_exception) {
     env->on_uncaught_exception(env, from_local(error), env->uncaught_exception_data);
+  } else {
+    env->exception.Reset(env->isolate, error);
   }
 }
 
@@ -1326,9 +1328,9 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -1346,9 +1348,9 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -1448,9 +1450,9 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -1577,9 +1579,9 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_cb cb, void
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -1608,9 +1610,9 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -2025,9 +2027,9 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
@@ -3101,9 +3103,9 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
     if (env->depth == 0) {
       on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
     }
-
-    env->exception.Reset(env->isolate, error);
 
     return -1;
   }
