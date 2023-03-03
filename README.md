@@ -26,4 +26,4 @@ The API is designed in a way that minimises its coupling to V8, making it possib
 
 ## License
 
-ISC
+Apache-2.0
