@@ -73,13 +73,6 @@ target_compile_options(
     -fno-rtti
 )
 
-target_compile_definitions(
-  js
-  PUBLIC
-    V8_COMPRESS_POINTERS
-    V8_ENABLE_SANDBOX
-)
-
 add_library(js_shared SHARED $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
 
 set_target_properties(
@@ -87,12 +80,6 @@ set_target_properties(
   PROPERTIES
   OUTPUT_NAME js
   WINDOWS_EXPORT_ALL_SYMBOLS ON
-)
-
-target_compile_definitions(
-  js_shared
-  PUBLIC
-    $<TARGET_PROPERTY:js,INTERFACE_COMPILE_DEFINITIONS>
 )
 
 target_link_libraries(
@@ -108,12 +95,6 @@ set_target_properties(
   js_static
   PROPERTIES
   OUTPUT_NAME js
-)
-
-target_compile_definitions(
-  js_static
-  PUBLIC
-    $<TARGET_PROPERTY:js,INTERFACE_COMPILE_DEFINITIONS>
 )
 
 target_link_libraries(

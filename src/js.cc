@@ -14,6 +14,11 @@
 #include <stdint.h>
 #include <uv.h>
 
+#if defined(__aarch64__) || defined(__x86_64)
+#define V8_COMPRESS_POINTERS
+#define V8_ENABLE_SANDBOX
+#endif
+
 #include <v8-fast-api-calls.h>
 #include <v8.h>
 
