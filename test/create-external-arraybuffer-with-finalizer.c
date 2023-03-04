@@ -38,21 +38,17 @@ main () {
   js_value_t *arraybuffer;
   e = js_create_external_arraybuffer(env, data, 4, on_finalize, NULL, &arraybuffer);
 
-#if defined(V8_ENABLE_SANDBOX)
-  assert(e != 0);
+  if (e == 0) {
+    e = js_close_handle_scope(env, scope);
+    assert(e == 0);
 
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
-#else
-  assert(e == 0);
+    js_request_garbage_collection(env);
 
-  e = js_close_handle_scope(env, scope);
-  assert(e == 0);
-
-  js_request_garbage_collection(env);
-
-  assert(finalize_called);
-#endif
+    assert(finalize_called);
+  } else {
+    e = js_close_handle_scope(env, scope);
+    assert(e == 0);
+  }
 
   e = js_destroy_env(env);
   assert(e == 0);

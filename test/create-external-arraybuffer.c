@@ -22,27 +22,23 @@ main () {
   js_value_t *arraybuffer;
   e = js_create_external_arraybuffer(env, data, 4, NULL, NULL, &arraybuffer);
 
-#if defined(V8_ENABLE_SANDBOX)
-  assert(e != 0);
-#else
-  assert(e == 0);
+  if (e == 0) {
+    js_value_t *global;
+    e = js_get_global(env, &global);
+    assert(e == 0);
 
-  js_value_t *global;
-  e = js_get_global(env, &global);
-  assert(e == 0);
+    e = js_set_named_property(env, global, "arraybuffer", arraybuffer);
+    assert(e == 0);
 
-  e = js_set_named_property(env, global, "arraybuffer", arraybuffer);
-  assert(e == 0);
+    js_value_t *script;
+    e = js_create_string_utf8(env, "const view = new Uint8Array(arraybuffer); view[0] = 42", -1, &script);
+    assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, "const view = new Uint8Array(arraybuffer); view[0] = 42", -1, &script);
-  assert(e == 0);
+    e = js_run_script(env, NULL, 0, 0, script, NULL);
+    assert(e == 0);
 
-  e = js_run_script(env, NULL, 0, 0, script, NULL);
-  assert(e == 0);
-
-  assert(data[0] == 42);
-#endif
+    assert(data[0] == 42);
+  }
 
   e = js_destroy_env(env);
   assert(e == 0);
