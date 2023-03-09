@@ -15,6 +15,17 @@
 #include <uv.h>
 
 #if defined(__aarch64__) || defined(__x86_64)
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if !TARGET_OS_IOS
+#define JS_ENABLE_SANDBOX
+#endif
+#else
+#define JS_ENABLE_SANDBOX
+#endif
+#endif
+
+#if defined(JS_ENABLE_SANDBOX)
 #define V8_COMPRESS_POINTERS
 #define V8_ENABLE_SANDBOX
 #endif
