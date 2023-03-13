@@ -55,6 +55,7 @@ list(APPEND tests
   run-script-ignore-return
   run-script-throw
   set-named-property
+  threads
   typeof-bigint
   typeof-boolean
   typeof-external

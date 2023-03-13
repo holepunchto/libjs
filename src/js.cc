@@ -170,7 +170,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline uint64_t
   now () {
-    return uv_now(loop);
+    return uv_hrtime();
   }
 
   inline bool
@@ -593,7 +593,7 @@ struct js_platform_s : public Platform {
 
   inline uint64_t
   now () {
-    return uv_now(loop);
+    return uv_hrtime();
   }
 
   inline void
@@ -679,7 +679,7 @@ private: // V8 embedder API
 
   void
   CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
-    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, now() + (delay * 1000)));
+    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, background->now() + (delay * 1000)));
   }
 
   std::unique_ptr<JobHandle>
@@ -762,7 +762,7 @@ struct js_env_s {
 
   inline uint64_t
   now () {
-    return uv_now(loop);
+    return uv_hrtime();
   }
 
   inline void
