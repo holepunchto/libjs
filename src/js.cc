@@ -434,29 +434,42 @@ struct js_heap_s {
   mem_heap_t *heap;
   bool zero_fill;
 
+#ifdef JS_ENABLE_SANDBOX
+  VirtualAddressSpace *sandbox;
+  VirtualAddressSpace::Address base;
+#endif
+
 private:
   js_heap_s()
       : arena(nullptr),
         heap(nullptr),
         zero_fill(true) {
 #ifdef JS_ENABLE_SANDBOX
-    auto sandbox = V8::GetSandboxAddressSpace();
+    sandbox = V8::GetSandboxAddressSpace();
 
-    auto address = sandbox->AllocatePages(
+    base = sandbox->AllocatePages(
       VirtualAddressSpace::kNoHint,
       1024 * 1024 * 1024,
       MEM_ARENA_ALIGNMENT,
       PagePermissions::kReadWrite
     );
 
-    mem_arena_init(reinterpret_cast<void *>(address), 1024 * 1024 * 1024, &arena);
+    mem_arena_init(reinterpret_cast<void *>(base), 1024 * 1024 * 1024, &arena);
 #endif
 
     mem_heap_init(arena, &heap);
   }
 
 public:
-  ~js_heap_s() {}
+  ~js_heap_s() {
+#ifdef JS_ENABLE_SANDBOX
+    if (sandbox == nullptr) return;
+
+    sandbox->FreePages(base, 1024 * 1024 * 1024);
+#endif
+
+    mem_heap_destroy(heap);
+  }
 
   static std::shared_ptr<js_heap_t>
   local () {
@@ -1004,6 +1017,8 @@ js_destroy_platform (js_platform_t *platform) {
   for (auto &worker : platform->workers) {
     worker->join();
   }
+
+  js_heap_t::local()->sandbox = nullptr;
 
   V8::Dispose();
   V8::DisposePlatform();
