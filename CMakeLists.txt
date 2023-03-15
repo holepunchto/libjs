@@ -73,7 +73,7 @@ target_compile_options(
     -fno-rtti
 )
 
-add_library(js_shared SHARED $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
+add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
 
 set_target_properties(
   js_shared
@@ -87,9 +87,10 @@ target_link_libraries(
   PUBLIC
     uv
     v8
+    mem_shared
 )
 
-add_library(js_static STATIC $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:mem>)
+add_library(js_static STATIC $<TARGET_OBJECTS:js>)
 
 set_target_properties(
   js_static
@@ -102,6 +103,7 @@ target_link_libraries(
   PUBLIC
     uv_a
     v8
+    mem_static
 )
 
 install(TARGETS js_shared js_static)
