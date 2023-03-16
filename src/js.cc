@@ -14,22 +14,6 @@
 #include <stdint.h>
 #include <uv.h>
 
-#if defined(__aarch64__) || defined(__x86_64)
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#if !TARGET_OS_IOS
-#define JS_ENABLE_SANDBOX
-#endif
-#else
-#define JS_ENABLE_SANDBOX
-#endif
-#endif
-
-#if defined(JS_ENABLE_SANDBOX)
-#define V8_COMPRESS_POINTERS
-#define V8_ENABLE_SANDBOX
-#endif
-
 #include <v8-fast-api-calls.h>
 #include <v8.h>
 
@@ -430,44 +414,18 @@ private:
 };
 
 struct js_heap_s {
-  mem_arena_t *arena;
   mem_heap_t *heap;
   bool zero_fill;
 
-#ifdef JS_ENABLE_SANDBOX
-  VirtualAddressSpace *sandbox;
-  VirtualAddressSpace::Address base;
-#endif
-
 private:
   js_heap_s()
-      : arena(nullptr),
-        heap(nullptr),
+      : heap(nullptr),
         zero_fill(true) {
-#ifdef JS_ENABLE_SANDBOX
-    sandbox = V8::GetSandboxAddressSpace();
-
-    base = sandbox->AllocatePages(
-      VirtualAddressSpace::kNoHint,
-      1024 * 1024 * 1024,
-      MEM_ARENA_ALIGNMENT,
-      PagePermissions::kReadWrite
-    );
-
-    mem_arena_init(reinterpret_cast<void *>(base), 1024 * 1024 * 1024, &arena);
-#endif
-
-    mem_heap_init(arena, &heap);
+    mem_heap_init(NULL, &heap);
   }
 
 public:
   ~js_heap_s() {
-#ifdef JS_ENABLE_SANDBOX
-    if (sandbox == nullptr) return;
-
-    sandbox->FreePages(base, 1024 * 1024 * 1024);
-#endif
-
     mem_heap_destroy(heap);
   }
 
@@ -1017,8 +975,6 @@ js_destroy_platform (js_platform_t *platform) {
   for (auto &worker : platform->workers) {
     worker->join();
   }
-
-  js_heap_t::local()->sandbox = nullptr;
 
   V8::Dispose();
   V8::DisposePlatform();
