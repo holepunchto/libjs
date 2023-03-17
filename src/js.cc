@@ -14,22 +14,6 @@
 #include <stdint.h>
 #include <uv.h>
 
-#if defined(__aarch64__) || defined(__x86_64)
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#if !TARGET_OS_IOS
-#define JS_ENABLE_SANDBOX
-#endif
-#else
-#define JS_ENABLE_SANDBOX
-#endif
-#endif
-
-#if defined(JS_ENABLE_SANDBOX)
-#define V8_COMPRESS_POINTERS
-#define V8_ENABLE_SANDBOX
-#endif
-
 #include <v8-fast-api-calls.h>
 #include <v8.h>
 
@@ -430,17 +414,19 @@ private:
 };
 
 struct js_heap_s {
+  mem_heap_t *heap;
   bool zero_fill;
 
 private:
   js_heap_s()
-      : zero_fill(true) {
-    mem_thread_init();
+      : heap(nullptr),
+        zero_fill(true) {
+    mem_heap_init(NULL, &heap);
   }
 
 public:
   ~js_heap_s() {
-    mem_thread_destroy();
+    mem_heap_destroy(heap);
   }
 
   static std::shared_ptr<js_heap_t>
@@ -452,84 +438,29 @@ public:
 
   inline void *
   alloc (size_t size) {
-    auto ptr = alloc_unsafe(size);
-
-    if (ptr && zero_fill) {
-      memset(ptr, 0, size);
-    }
-
-    return ptr;
+    if (zero_fill) return mem_zalloc(heap, size);
+    return mem_alloc(heap, size);
   }
 
   inline void *
   alloc_unsafe (size_t size) {
-    return mem_alloc(size);
+    return mem_alloc(heap, size);
   }
 
   inline void *
-  realloc (void *ptr, size_t old_size, size_t new_size) {
-    ptr = realloc_unsafe(ptr, old_size);
-
-    if (ptr && zero_fill && new_size > old_size) {
-      memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
-    }
-
-    return ptr;
+  realloc (void *ptr, size_t size) {
+    if (zero_fill) return mem_rezalloc(heap, ptr, size);
+    return mem_realloc(heap, ptr, size);
   }
 
   inline void *
   realloc_unsafe (void *ptr, size_t size) {
-    return mem_realloc(ptr, size);
+    return mem_realloc(heap, ptr, size);
   }
 
   inline void
   free (void *ptr) {
     mem_free(ptr);
-  }
-
-#ifdef V8_ENABLE_SANDBOX
-  static int
-  init () {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    mem_config_t config = {
-      .map = map,
-      .unmap = unmap,
-      .page_size = sandbox->allocation_granularity(),
-    };
-
-    return mem_init(&config);
-  }
-
-  static void *
-  map (size_t size, size_t *offset) {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    auto alignment = sandbox->allocation_granularity();
-
-    auto address = sandbox->AllocatePages(VirtualAddressSpace::kNoHint, size, alignment, PagePermissions::kReadWrite);
-
-    return reinterpret_cast<void *>(address);
-  }
-
-  static void
-  unmap (void *ptr, size_t size, size_t offset, size_t release) {
-    auto sandbox = V8::GetSandboxAddressSpace();
-
-    auto address = reinterpret_cast<VirtualAddressSpace::Address>(ptr);
-
-    if (release) sandbox->FreePages(address, release);
-  }
-#else
-  static int
-  init () {
-    return mem_init(NULL);
-  }
-#endif
-
-  static int
-  destroy () {
-    return mem_destroy();
   }
 };
 
@@ -552,7 +483,7 @@ private: // V8 embedder API
 
   void *
   Reallocate (void *data, size_t old_length, size_t new_length) override {
-    return js_heap_t::local()->realloc(data, old_length, new_length);
+    return js_heap_t::local()->realloc(data, new_length);
   }
 };
 
@@ -1032,8 +963,6 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
   V8::InitializePlatform(platform);
   V8::Initialize();
 
-  js_heap_t::init();
-
   *result = platform;
 
   return 0;
@@ -1046,8 +975,6 @@ js_destroy_platform (js_platform_t *platform) {
   for (auto &worker : platform->workers) {
     worker->join();
   }
-
-  js_heap_t::destroy();
 
   V8::Dispose();
   V8::DisposePlatform();
