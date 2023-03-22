@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <uv.h>
 
 #include <v8-fast-api-calls.h>
@@ -1409,7 +1410,18 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto local = compiled.ToLocalChecked();
 
-  auto module = new js_module_t(env->isolate, local, strndup(name, len));
+  char *module_name;
+
+  if (len == size_t(-1)) {
+    module_name = strdup(name);
+  } else {
+    module_name = new char[len + 1];
+    module_name[len] = '\0';
+
+    memcpy(module_name, name, len);
+  }
+
+  auto module = new js_module_t(env->isolate, local, module_name);
 
   env->modules.emplace(local->GetIdentityHash(), module);
 
@@ -1458,7 +1470,18 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     on_evaluate_module
   );
 
-  auto module = new js_module_t(env->isolate, compiled, strndup(name, len), data);
+  char *module_name;
+
+  if (len == size_t(-1)) {
+    module_name = strdup(name);
+  } else {
+    module_name = new char[len + 1];
+    module_name[len] = '\0';
+
+    memcpy(module_name, name, len);
+  }
+
+  auto module = new js_module_t(env->isolate, compiled, module_name, data);
 
   module->evaluate = cb;
 
