@@ -67,11 +67,19 @@ target_include_directories(
     $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
-target_compile_options(
-  js
-  PUBLIC
-    -fno-rtti
-)
+if(MSVC)
+  target_compile_options(
+    js
+    PUBLIC
+      /GR-
+  )
+else()
+  target_compile_options(
+    js
+    PUBLIC
+      -fno-rtti
+  )
+endif()
 
 add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
 
