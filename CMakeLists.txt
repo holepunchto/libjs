@@ -90,12 +90,23 @@ target_link_libraries(
     mem_shared
 )
 
+if(WIN32)
+  target_link_libraries(
+    js_shared
+    PUBLIC
+      dbghelp.lib
+      winmm.lib
+      ws2_32.lib
+  )
+endif()
+
 add_library(js_static STATIC $<TARGET_OBJECTS:js>)
 
 set_target_properties(
   js_static
   PROPERTIES
   OUTPUT_NAME js
+  PREFIX lib
 )
 
 target_link_libraries(
@@ -105,6 +116,16 @@ target_link_libraries(
     v8
     mem_static
 )
+
+if(WIN32)
+  target_link_libraries(
+    js_static
+    PUBLIC
+      dbghelp.lib
+      winmm.lib
+      ws2_32.lib
+  )
+endif()
 
 install(TARGETS js_shared js_static)
 
