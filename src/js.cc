@@ -234,7 +234,7 @@ struct js_task_runner_s : public TaskRunner {
 
     tasks.erase(task);
 
-    return value;
+    return std::move(value);
   }
 
   inline std::optional<js_task_handle_t>
