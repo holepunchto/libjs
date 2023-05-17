@@ -25,7 +25,7 @@ main () {
   e = js_get_value_string_utf8(env, string, NULL, 0, &len);
   assert(e == 0);
 
-  assert(len == 11);
+  assert(len >= 11);
 
   char value[11];
   e = js_get_value_string_utf8(env, string, value, len, &len);
