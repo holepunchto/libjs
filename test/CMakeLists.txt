@@ -30,9 +30,9 @@ list(APPEND tests
   create-promise-resolve
   create-reference
   create-reference-weak
-  create-unsafe-arraybuffer
   create-string-utf8
   create-string-utf8-with-null
+  create-unsafe-arraybuffer
   dynamic-import
   dynamic-import-without-handler
   fatal-exception
