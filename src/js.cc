@@ -2768,6 +2768,7 @@ js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, siz
     int written = local->Write(
       env->isolate,
       str,
+      0,
       len,
       String::NO_NULL_TERMINATION
     );
