@@ -38,6 +38,10 @@ if(NOT TARGET uv)
   add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)
 endif()
 
+if(NOT TARGET utf)
+  add_subdirectory(vendor/libutf EXCLUDE_FROM_ALL)
+endif()
+
 add_library(js OBJECT)
 
 set_target_properties(
@@ -62,6 +66,7 @@ target_include_directories(
   PUBLIC
     include
     $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
@@ -96,6 +101,7 @@ target_link_libraries(
     uv
     v8
     mem_shared
+    utf_shared
 )
 
 if(WIN32)
@@ -123,6 +129,7 @@ target_link_libraries(
     uv_a
     v8
     mem_static
+    utf_static
 )
 
 if(WIN32)

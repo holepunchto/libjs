@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <utf.h>
 #include <uv.h>
 
 #include <v8-fast-api-calls.h>
@@ -1863,13 +1864,34 @@ js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result) {
 }
 
 extern "C" int
-js_create_string_utf8 (js_env_t *env, const char *value, size_t len, js_value_t **result) {
+js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_t **result) {
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
-    string = String::NewFromUtf8(env->isolate, value);
+    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value));
   } else {
-    string = String::NewFromUtf8(env->isolate, value, NewStringType::kNormal, len);
+    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value), NewStringType::kNormal, len);
+  }
+
+  if (string.IsEmpty()) {
+    js_throw_error(env, NULL, "Invalid string length");
+
+    return -1;
+  }
+
+  *result = from_local(string.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_value_t **result) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromTwoByte(env->isolate, value);
+  } else {
+    string = String::NewFromTwoByte(env->isolate, value, NewStringType::kNormal, len);
   }
 
   if (string.IsEmpty()) {
@@ -2708,7 +2730,7 @@ js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result) 
 }
 
 extern "C" int
-js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result) {
+js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   auto local = to_local<String>(value);
 
   if (str == nullptr) {
@@ -2716,14 +2738,42 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t le
   } else if (len != 0) {
     int written = local->WriteUtf8(
       env->isolate,
-      str,
+      reinterpret_cast<char *>(str),
       len,
       nullptr,
-      String::REPLACE_INVALID_UTF8 | String::NO_NULL_TERMINATION
+      String::NO_NULL_TERMINATION | String::REPLACE_INVALID_UTF8
     );
 
     if (written < len) {
       str[written] = '\0';
+    }
+
+    if (result) {
+      *result = written;
+    }
+  } else if (result) {
+    *result = 0;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
+  auto local = to_local<String>(value);
+
+  if (str == nullptr) {
+    *result = local->Length();
+  } else if (len != 0) {
+    int written = local->Write(
+      env->isolate,
+      str,
+      len,
+      String::NO_NULL_TERMINATION
+    );
+
+    if (written < len) {
+      str[written] = u'\0';
     }
 
     if (result) {

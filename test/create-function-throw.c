@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdbool.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -13,7 +14,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   fn_called = true;
 
   js_value_t *err;
-  e = js_create_string_utf8(env, "err", -1, &err);
+  e = js_create_string_utf8(env, (utf8_t *) "err", -1, &err);
   assert(e == 0);
 
   e = js_throw(env, err);
@@ -48,7 +49,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "hello()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "hello()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
@@ -67,11 +68,11 @@ main () {
   e = js_get_and_clear_last_exception(env, &error);
   assert(e == 0);
 
-  char value[4];
+  utf8_t value[4];
   e = js_get_value_string_utf8(env, error, value, 4, NULL);
   assert(e == 0);
 
-  assert(strcmp(value, "err") == 0);
+  assert(strcmp((char *) value, "err") == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

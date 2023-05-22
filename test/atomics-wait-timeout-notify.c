@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -20,7 +21,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (char *) atomics_wait_timeout_notify_js, atomics_wait_timeout_notify_js_len, &script);
+  e = js_create_string_utf8(env, atomics_wait_timeout_notify_js, atomics_wait_timeout_notify_js_len, &script);
   assert(e == 0);
 
   js_value_t *promise;
@@ -33,11 +34,11 @@ main () {
   e = js_get_promise_result(env, promise, &result);
   assert(e == 0);
 
-  char value[10];
+  utf8_t value[10];
   e = js_get_value_string_utf8(env, result, value, 10, NULL);
   assert(e == 0);
 
-  assert(strcmp(value, "ok") == 0);
+  assert(strcmp((char *) value, "ok") == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

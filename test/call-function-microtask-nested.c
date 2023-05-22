@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -12,7 +13,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "() => { Promise.resolve().then(() => value *= 2); return value }", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "() => { Promise.resolve().then(() => value *= 2); return value }", -1, &script);
   assert(e == 0);
 
   js_value_t *fn;
@@ -82,7 +83,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "fn()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "fn()", -1, &script);
   assert(e == 0);
 
   e = js_run_script(env, NULL, 0, 0, script, NULL);

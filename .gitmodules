@@ -6,3 +6,7 @@
 	path = vendor/libmem
 	url = git@github.com:holepunchto/libmem.git
 	shallow = true
+[submodule "vendor/libutf"]
+	path = vendor/libutf
+	url = git@github.com:holepunchto/libutf.git
+	shallow = true

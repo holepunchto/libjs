@@ -38,7 +38,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (char *) promise_rejection_js, promise_rejection_js_len, &script);
+  e = js_create_string_utf8(env, promise_rejection_js, promise_rejection_js_len, &script);
   assert(e == 0);
 
   js_value_t *result;

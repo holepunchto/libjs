@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <string.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -19,15 +20,15 @@ main () {
   assert(e == 0);
 
   js_value_t *string;
-  e = js_create_string_utf8(env, "hello", -1, &string);
+  e = js_create_string_utf8(env, (utf8_t *) "hello", -1, &string);
   assert(e == 0);
 
-  char value[6];
+  utf8_t value[6];
   size_t written;
   e = js_get_value_string_utf8(env, string, value, 6, &written);
   assert(e == 0);
 
-  assert(strcmp(value, "hello") == 0);
+  assert(strcmp((char *) value, "hello") == 0);
   assert(value[5] == '\0');
   assert(written == 5);
 

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -31,7 +32,7 @@ main () {
     assert(e == 0);
 
     js_value_t *script;
-    e = js_create_string_utf8(env, "const view = new Uint8Array(arraybuffer); view[0] = 42", -1, &script);
+    e = js_create_string_utf8(env, (utf8_t *) "const view = new Uint8Array(arraybuffer); view[0] = 42", -1, &script);
     assert(e == 0);
 
     e = js_run_script(env, NULL, 0, 0, script, NULL);

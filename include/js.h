@@ -9,6 +9,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <utf.h>
 #include <uv.h>
 
 typedef struct js_platform_s js_platform_t;
@@ -234,7 +235,10 @@ int
 js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result);
 
 int
-js_create_string_utf8 (js_env_t *env, const char *str, size_t len, js_value_t **result);
+js_create_string_utf8 (js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
+
+int
+js_create_string_utf16le (js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
 int
 js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result);
@@ -407,7 +411,10 @@ int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result);
 
 int
-js_get_value_string_utf8 (js_env_t *env, js_value_t *value, char *str, size_t len, size_t *result);
+js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result);
+
+int
+js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result);
 
 int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result);

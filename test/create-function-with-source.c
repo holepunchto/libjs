@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdbool.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -20,11 +21,11 @@ main () {
 
   js_value_t *args[1];
 
-  e = js_create_string_utf8(env, "n", -1, &args[0]);
+  e = js_create_string_utf8(env, (utf8_t *) "n", -1, &args[0]);
   assert(e == 0);
 
   js_value_t *source;
-  e = js_create_string_utf8(env, "return n * 2", -1, &source);
+  e = js_create_string_utf8(env, (utf8_t *) "return n * 2", -1, &source);
   assert(e == 0);
 
   js_value_t *fn;
@@ -39,7 +40,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "hello(42)", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "hello(42)", -1, &script);
   assert(e == 0);
 
   js_value_t *result;

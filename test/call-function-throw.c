@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <string.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -19,11 +20,11 @@ on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
 
   assert(!has_exception);
 
-  char value[4];
+  utf8_t value[4];
   e = js_get_value_string_utf8(env, error, value, 4, NULL);
   assert(e == 0);
 
-  assert(strcmp(value, "err") == 0);
+  assert(strcmp((char *) value, "err") == 0);
 }
 
 int
@@ -44,7 +45,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "() => { throw 'err' }", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "() => { throw 'err' }", -1, &script);
   assert(e == 0);
 
   js_value_t *fn;

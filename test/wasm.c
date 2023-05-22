@@ -20,7 +20,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (char *) wasm_sync_js, wasm_sync_js_len, &script);
+  e = js_create_string_utf8(env, wasm_sync_js, wasm_sync_js_len, &script);
   assert(e == 0);
 
   js_value_t *result;

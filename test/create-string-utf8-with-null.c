@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -18,7 +19,7 @@ main () {
   assert(e == 0);
 
   js_value_t *string;
-  e = js_create_string_utf8(env, "hello\0world", 11, &string);
+  e = js_create_string_utf8(env, (utf8_t *) "hello\0world", 11, &string);
   assert(e == 0);
 
   size_t len;
@@ -27,7 +28,7 @@ main () {
 
   assert(len >= 11);
 
-  char value[11];
+  utf8_t value[11];
   e = js_get_value_string_utf8(env, string, value, len, &len);
   assert(e == 0);
 

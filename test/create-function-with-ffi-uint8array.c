@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -84,7 +85,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "let i = 0, j; while (i++ < 200000) j = hello(Uint8Array.from([1, 2, 3, 4]))", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "let i = 0, j; while (i++ < 200000) j = hello(Uint8Array.from([1, 2, 3, 4]))", -1, &script);
   assert(e == 0);
 
   js_value_t *result;

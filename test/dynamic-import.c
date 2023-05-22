@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -8,7 +9,7 @@ on_module_evaluate (js_env_t *env, js_module_t *module, void *data) {
   int e;
 
   js_value_t *name;
-  e = js_create_string_utf8(env, "foo", -1, &name);
+  e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &name);
   assert(e == 0);
 
   js_value_t *value;
@@ -24,7 +25,7 @@ on_import (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_valu
   int e;
 
   js_value_t *export_names[1];
-  e = js_create_string_utf8(env, "foo", -1, &export_names[0]);
+  e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &export_names[0]);
   assert(e == 0);
 
   js_module_t *module;
@@ -55,7 +56,7 @@ main () {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, "const foo = import('foo.js')", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "const foo = import('foo.js')", -1, &script);
   assert(e == 0);
 
   js_value_t *result;

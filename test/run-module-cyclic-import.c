@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -10,19 +11,19 @@ static js_module_t *
 on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
   int e;
 
-  char file[PATH_MAX];
+  utf8_t file[PATH_MAX];
   e = js_get_value_string_utf8(env, specifier, file, PATH_MAX, NULL);
   assert(e == 0);
 
   js_module_t *module = NULL;
 
-  if (strcmp(file, "foo.js") == 0) {
+  if (strcmp((char *) file, "foo.js") == 0) {
     module = foo;
   }
 
-  if (strcmp(file, "bar.js") == 0) {
+  if (strcmp((char *) file, "bar.js") == 0) {
     js_value_t *source;
-    e = js_create_string_utf8(env, "import foo from 'foo.js'; export default 2", -1, &source);
+    e = js_create_string_utf8(env, (utf8_t *) "import foo from 'foo.js'; export default 2", -1, &source);
     assert(e == 0);
 
     e = js_create_module(env, "bar.js", -1, 0, source, &bar);
@@ -51,7 +52,7 @@ main () {
   assert(e == 0);
 
   js_value_t *source;
-  e = js_create_string_utf8(env, "import bar from 'bar.js'; export default 1", -1, &source);
+  e = js_create_string_utf8(env, (utf8_t *) "import bar from 'bar.js'; export default 1", -1, &source);
   assert(e == 0);
 
   e = js_create_module(env, "foo.js", -1, 0, source, &foo);

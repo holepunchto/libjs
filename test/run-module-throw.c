@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -36,7 +37,7 @@ main () {
   assert(e == 0);
 
   js_value_t *source;
-  e = js_create_string_utf8(env, "throw 'err'", -1, &source);
+  e = js_create_string_utf8(env, (utf8_t *) "throw 'err'", -1, &source);
   assert(e == 0);
 
   js_module_t *module;

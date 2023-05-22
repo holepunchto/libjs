@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <stdbool.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -29,7 +29,7 @@ main () {
   assert(e == 0);
 
   js_value_t *error;
-  e = js_create_string_utf8(env, "err", -1, &error);
+  e = js_create_string_utf8(env, (utf8_t *) "err", -1, &error);
   assert(e == 0);
 
   e = js_fatal_exception(env, error);
