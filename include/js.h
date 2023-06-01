@@ -23,6 +23,7 @@ typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
+typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
@@ -304,6 +305,9 @@ int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
 
 int
+js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result);
+
+int
 js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
 
 int
@@ -311,6 +315,27 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
 
 int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
+
+int
+js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result);
+
+int
+js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
+
+int
+js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result);
+
+int
+js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
+
+int
+js_create_external_sharedarraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
+
+int
+js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result);
+
+int
+js_release_arraybuffer_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store);
 
 /**
  * Toggle zero-fill of all array buffers allocated on the heap of the calling
@@ -376,6 +401,9 @@ js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_sharedarraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);

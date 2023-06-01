@@ -907,6 +907,13 @@ struct js_finalizer_s {
         hint(hint) {}
 };
 
+struct js_arraybuffer_backing_store_s {
+  std::shared_ptr<BackingStore> backing_store;
+
+  js_arraybuffer_backing_store_s(std::shared_ptr<BackingStore> backing_store)
+      : backing_store(backing_store) {}
+};
+
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
 
@@ -2326,6 +2333,19 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
   return 0;
 }
 
+extern "C" int
+js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result) {
+  auto arraybuffer = ArrayBuffer::New(env->isolate, backing_store->backing_store);
+
+  if (data) {
+    *data = arraybuffer->Data();
+  }
+
+  *result = from_local(arraybuffer);
+
+  return 0;
+}
+
 static void
 on_unsafe_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
   js_heap_t::local()->free(data);
@@ -2403,6 +2423,123 @@ js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   }
 
   local->Detach();
+
+  return 0;
+}
+
+extern "C" int
+js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result) {
+  auto local = to_local<ArrayBuffer>(arraybuffer);
+
+  *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
+
+  return 0;
+}
+
+extern "C" int
+js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, len);
+
+  if (data) {
+    *data = sharedarraybuffer->Data();
+  }
+
+  *result = from_local(sharedarraybuffer);
+
+  return 0;
+}
+
+extern "C" int
+js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result) {
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, backing_store->backing_store);
+
+  if (data) {
+    *data = sharedarraybuffer->Data();
+  }
+
+  *result = from_local(sharedarraybuffer);
+
+  return 0;
+}
+
+static void
+on_unsafe_sharedarraybuffer_finalize (void *data, size_t len, void *deleter_data) {
+  js_heap_t::local()->free(data);
+}
+
+extern "C" int
+js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
+  auto data = js_heap_t::local()->alloc_unsafe(len);
+
+  auto store = SharedArrayBuffer::NewBackingStore(
+    data,
+    len,
+    on_unsafe_sharedarraybuffer_finalize,
+    nullptr
+  );
+
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
+
+  if (pdata) {
+    *pdata = data;
+  }
+
+  *result = from_local(sharedarraybuffer);
+
+  return 0;
+}
+
+static void
+on_external_sharedarraybuffer_finalize (void *data, size_t len, void *deleter_data) {
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+
+  if (finalizer) {
+    finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
+
+    delete finalizer;
+  }
+}
+
+extern "C" int
+js_create_external_sharedarraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
+#if defined(V8_ENABLE_SANDBOX)
+  js_throw_error(env, NULL, "External shared array buffers are not allowed");
+
+  return -1;
+#else
+  js_finalizer_t *finalizer = nullptr;
+
+  if (finalize_cb) {
+    finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
+  }
+
+  auto store = SharedArrayBuffer::NewBackingStore(
+    data,
+    len,
+    on_external_arraybuffer_finalize,
+    finalizer
+  );
+
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
+
+  *result = from_local(sharedarraybuffer);
+
+  return 0;
+#endif
+}
+
+extern "C" int
+js_get_shared_arraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
+  auto local = to_local<SharedArrayBuffer>(sharedarraybuffer);
+
+  *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
+
+  return 0;
+}
+
+extern "C" int
+js_release_arraybuffer_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store) {
+  delete backing_store;
 
   return 0;
 }
@@ -2611,6 +2748,13 @@ js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   auto local = to_local(value);
 
   *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->WasDetached();
+
+  return 0;
+}
+
+extern "C" int
+js_is_sharedarraybuffer (js_env_t *env, js_value_t *value, bool *result) {
+  *result = to_local(value)->IsSharedArrayBuffer();
 
   return 0;
 }
