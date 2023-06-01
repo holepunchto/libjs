@@ -2529,7 +2529,7 @@ js_create_external_sharedarraybuffer (js_env_t *env, void *data, size_t len, js_
 }
 
 extern "C" int
-js_get_shared_arraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
+js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   auto local = to_local<SharedArrayBuffer>(sharedarraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
