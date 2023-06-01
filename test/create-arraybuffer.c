@@ -1,9 +1,9 @@
+
 #include <assert.h>
+#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
-
-#include "fixtures/wasm-sync.js.h"
 
 int
 main () {
@@ -19,19 +19,9 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, wasm_sync_js, wasm_sync_js_len, &script);
+  js_value_t *arraybuffer;
+  e = js_create_arraybuffer(env, 4096, NULL, &arraybuffer);
   assert(e == 0);
-
-  js_value_t *result;
-  e = js_run_script(env, NULL, 0, 0, script, &result);
-  assert(e == 0);
-
-  uint32_t value;
-  js_get_value_uint32(env, result, &value);
-  assert(e == 0);
-
-  assert(value == 42);
 
   e = js_destroy_env(env);
   assert(e == 0);

@@ -1122,22 +1122,26 @@ on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referr
 }
 
 extern "C" int
-js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result) {
+js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
   std::scoped_lock guard(platform->lock);
 
   Isolate::CreateParams params;
   params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
   params.allow_atomics_wait = false;
 
-  auto constrained_memory = uv_get_constrained_memory();
-  auto total_memory = uv_get_total_memory();
+  if (options && options->memory_limit > 0) {
+    params.constraints.ConfigureDefaultsFromHeapSize(0, options->memory_limit);
+  } else {
+    auto constrained_memory = uv_get_constrained_memory();
+    auto total_memory = uv_get_total_memory();
 
-  if (constrained_memory > 0 && constrained_memory < total_memory) {
-    total_memory = constrained_memory;
-  }
+    if (constrained_memory > 0 && constrained_memory < total_memory) {
+      total_memory = constrained_memory;
+    }
 
-  if (total_memory > 0) {
-    params.constraints.ConfigureDefaults(total_memory, 0);
+    if (total_memory > 0) {
+      params.constraints.ConfigureDefaults(total_memory, 0);
+    }
   }
 
   auto isolate = Isolate::Allocate();

@@ -8,6 +8,7 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  create-arraybuffer
   create-external
   create-external-with-finalizer
   create-external-arraybuffer

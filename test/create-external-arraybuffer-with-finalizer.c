@@ -26,7 +26,7 @@ main () {
   assert(e == 0);
 
   js_env_t *env;
-  e = js_create_env(loop, platform, &env);
+  e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
   js_handle_scope_t *scope;

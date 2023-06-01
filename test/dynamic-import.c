@@ -49,7 +49,7 @@ main () {
   assert(e == 0);
 
   js_env_t *env;
-  e = js_create_env(loop, platform, &env);
+  e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
   e = js_on_dynamic_import(env, on_import, NULL);

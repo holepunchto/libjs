@@ -13,7 +13,7 @@ on_thread (void *data) {
   uv_loop_init(&loop);
 
   js_env_t *env;
-  e = js_create_env(&loop, platform, &env);
+  e = js_create_env(&loop, platform, NULL, &env);
   assert(e == 0);
 
   e = uv_run(&loop, UV_RUN_DEFAULT);
@@ -33,7 +33,7 @@ main () {
   assert(e == 0);
 
   js_env_t *env;
-  e = js_create_env(loop, platform, &env);
+  e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
   uv_thread_t thread;

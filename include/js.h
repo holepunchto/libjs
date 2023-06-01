@@ -15,6 +15,7 @@ extern "C" {
 typedef struct js_platform_s js_platform_t;
 typedef struct js_platform_options_s js_platform_options_t;
 typedef struct js_env_s js_env_t;
+typedef struct js_env_options_s js_env_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_module_s js_module_t;
@@ -96,6 +97,14 @@ struct js_platform_options_s {
   bool trace_deoptimizations;
 };
 
+struct js_env_options_s {
+  /**
+   * The memory limit of the JavaScript heap. By default, the limit will be
+   * inferred based on the amount of physical memory of the device.
+   */
+  size_t memory_limit;
+};
+
 /**
  * The identifier of the underlying JavaScript engine.
  */
@@ -116,7 +125,7 @@ int
 js_get_platform_loop (js_platform_t *platform, uv_loop_t **result);
 
 int
-js_create_env (uv_loop_t *loop, js_platform_t *platform, js_env_t **result);
+js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result);
 
 int
 js_destroy_env (js_env_t *env);
