@@ -9,10 +9,13 @@ list(APPEND tests
   call-function-microtask-nested
   call-function-throw
   create-arraybuffer
+  create-arraybuffer-with-backing-store
   create-external
   create-external-with-finalizer
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
+  create-external-sharedarraybuffer
+  create-external-sharedarraybuffer-with-finalizer
   create-function
   create-function-args-extra
   create-function-args-fewer
@@ -31,6 +34,8 @@ list(APPEND tests
   create-promise-resolve
   create-reference
   create-reference-weak
+  create-sharedarraybuffer
+  create-sharedarraybuffer-with-backing-store
   create-string-utf8
   create-string-utf8-with-null
   create-unsafe-arraybuffer
