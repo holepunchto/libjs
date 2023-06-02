@@ -2497,45 +2497,6 @@ js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_
   return 0;
 }
 
-static void
-on_external_sharedarraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
-
-  if (finalizer) {
-    finalizer->cb(finalizer->env, finalizer->data, finalizer->hint);
-
-    delete finalizer;
-  }
-}
-
-extern "C" int
-js_create_external_sharedarraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
-#if defined(V8_ENABLE_SANDBOX)
-  js_throw_error(env, NULL, "External shared array buffers are not allowed");
-
-  return -1;
-#else
-  js_finalizer_t *finalizer = nullptr;
-
-  if (finalize_cb) {
-    finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
-  }
-
-  auto store = SharedArrayBuffer::NewBackingStore(
-    data,
-    len,
-    on_external_arraybuffer_finalize,
-    finalizer
-  );
-
-  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
-
-  *result = from_local(sharedarraybuffer);
-
-  return 0;
-#endif
-}
-
 extern "C" int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   auto local = to_local<SharedArrayBuffer>(sharedarraybuffer);
