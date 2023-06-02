@@ -2334,11 +2334,15 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 }
 
 extern "C" int
-js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result) {
+js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result) {
   auto arraybuffer = ArrayBuffer::New(env->isolate, backing_store->backing_store);
 
   if (data) {
     *data = arraybuffer->Data();
+  }
+
+  if (len) {
+    *len = arraybuffer->ByteLength();
   }
 
   *result = from_local(arraybuffer);
@@ -2450,11 +2454,15 @@ js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t 
 }
 
 extern "C" int
-js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, js_value_t **result) {
+js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result) {
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, backing_store->backing_store);
 
   if (data) {
     *data = sharedarraybuffer->Data();
+  }
+
+  if (len) {
+    *len = sharedarraybuffer->ByteLength();
   }
 
   *result = from_local(sharedarraybuffer);
