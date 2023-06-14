@@ -535,7 +535,11 @@ js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
 
-  return js_throw_verrorf(env, code, message, args);
+  int err = js_throw_verrorf(env, code, message, args);
+
+  va_end(args);
+
+  return err;
 }
 
 int
@@ -549,7 +553,11 @@ js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...)
   va_list args;
   va_start(args, message);
 
-  return js_throw_type_verrorf(env, code, message, args);
+  int err = js_throw_type_verrorf(env, code, message, args);
+
+  va_end(args);
+
+  return err;
 }
 
 int
@@ -563,7 +571,11 @@ js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...
   va_list args;
   va_start(args, message);
 
-  return js_throw_range_verrorf(env, code, message, args);
+  int err = js_throw_range_verrorf(env, code, message, args);
+
+  va_end(args);
+
+  return err;
 }
 
 int
@@ -577,7 +589,11 @@ js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ..
   va_list args;
   va_start(args, message);
 
-  return js_throw_syntax_verrorf(env, code, message, args);
+  int err = js_throw_syntax_verrorf(env, code, message, args);
+
+  va_end(args);
+
+  return err;
 }
 
 int

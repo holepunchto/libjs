@@ -3335,13 +3335,22 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 template <Local<Value> Error(Local<String> message)>
 static inline int
 js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
-  auto size = vsnprintf(NULL, 0, message, args);
+  va_list args_copy;
+  va_copy(args_copy, args);
+
+  auto size = vsnprintf(NULL, 0, message, args_copy);
+
+  va_end(args_copy);
 
   size += 1 /* NULL */;
 
   auto formatted = std::vector<char>(size);
 
+  va_copy(args_copy, args);
+
   vsnprintf(formatted.data(), size, message, args);
+
+  va_end(args_copy);
 
   return js_throw_error(env, code, formatted.data());
 }

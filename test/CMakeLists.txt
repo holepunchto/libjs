@@ -62,6 +62,8 @@ list(APPEND tests
   run-script-throw
   set-named-property
   threads
+  throw-error
+  throw-error-formatted
   typeof-bigint
   typeof-boolean
   typeof-external
