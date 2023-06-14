@@ -3348,7 +3348,7 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
 
   va_copy(args_copy, args);
 
-  vsnprintf(formatted.data(), size, message, args);
+  vsnprintf(formatted.data(), size, message, args_copy);
 
   va_end(args_copy);
 
