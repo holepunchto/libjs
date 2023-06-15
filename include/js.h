@@ -21,6 +21,7 @@ typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_module_s js_module_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
+typedef struct js_property_descriptor_s js_property_descriptor_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
@@ -66,6 +67,18 @@ typedef enum {
   js_promise_rejected
 } js_promise_state_t;
 
+enum {
+  js_default = 0,
+  js_writable = 1,
+  js_enumerable = 1 << 1,
+  js_configurable = 1 << 2,
+
+  js_static = 1 << 10,
+
+  js_default_method = js_writable | js_configurable,
+  js_default_object_property = js_writable | js_enumerable | js_configurable,
+};
+
 struct js_platform_options_s {
   /**
    * Expose garbage collection APIs, which are otherwise not available as they
@@ -104,6 +117,18 @@ struct js_env_options_s {
    * inferred based on the amount of physical memory of the device.
    */
   size_t memory_limit;
+};
+
+struct js_property_descriptor_s {
+  js_value_t *name;
+
+  js_function_cb method;
+  js_function_cb getter;
+  js_function_cb setter;
+  js_value_t *value;
+
+  int attributes;
+  void *data;
 };
 
 /**
@@ -213,6 +238,12 @@ js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result);
 
 int
 js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result);
+
+int
+js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result);
+
+int
+js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_t const properties[], size_t properties_len);
 
 int
 js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
@@ -350,6 +381,9 @@ js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t o
 
 int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
+
+int
+js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result);
 
 int
 js_is_undefined (js_env_t *env, js_value_t *value, bool *result);
@@ -520,6 +554,9 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
  */
 int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
+
+int
+js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 int
 js_throw (js_env_t *env, js_value_t *error);

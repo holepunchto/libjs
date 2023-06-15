@@ -430,7 +430,7 @@ private:
   js_heap_s()
       : heap(nullptr),
         zero_fill(true) {
-    mem_heap_init(NULL, &heap);
+    mem_heap_init(nullptr, &heap);
   }
 
 public:
@@ -891,6 +891,34 @@ struct js_callback_s {
       : env(env),
         cb(cb),
         data(data) {}
+
+  static void
+  on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
+    auto callback = info.GetParameter();
+
+    callback->external.Reset();
+
+    delete callback;
+  }
+
+  static void
+  on_call (const FunctionCallbackInfo<Value> &info) {
+    auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
+
+    auto env = callback->env;
+
+    auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
+
+    if (env->exception.IsEmpty()) {
+      if (result) {
+        info.GetReturnValue().Set(to_local(result));
+      }
+    } else {
+      env->isolate->ThrowException(Local<Value>::New(env->isolate, env->exception));
+
+      env->exception.Reset();
+    }
+  }
 };
 
 struct js_finalizer_s {
@@ -1081,8 +1109,8 @@ static MaybeLocal<Promise>
 on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
   auto env = get_env(context);
 
-  if (env->on_dynamic_import == NULL) {
-    js_throw_error(env, NULL, "Dynamic import() is not supported");
+  if (env->on_dynamic_import == nullptr) {
+    js_throw_error(env, nullptr, "Dynamic import() is not supported");
 
     return MaybeLocal<Promise>();
   }
@@ -1266,7 +1294,7 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 extern "C" int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
   if (scope->escaped) {
-    js_throw_error(env, NULL, "Scope has already been escaped");
+    js_throw_error(env, nullptr, "Scope has already been escaped");
 
     return -1;
   }
@@ -1295,7 +1323,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
   }
 
   if (local_file.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -1385,7 +1413,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
   );
 
   if (env->exception.IsEmpty()) {
-    if (result->resolve == NULL) {
+    if (result->resolve == nullptr) {
       result->resolve = module->resolve;
       result->data = module->data;
     }
@@ -1417,7 +1445,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
   }
 
   if (local_name.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -1503,7 +1531,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
   }
 
   if (local_name.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -1556,7 +1584,7 @@ js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result
   auto local = module->module.Get(env->isolate);
 
   if (local->GetStatus() < Module::Status::kInstantiated) {
-    js_throw_error(env, NULL, "Module must be instantiaed");
+    js_throw_error(env, nullptr, "Module must be instantiaed");
 
     return -1;
   }
@@ -1695,7 +1723,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 extern "C" int
 js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
   if (reference->count == 0) {
-    js_throw_error(env, NULL, "Cannot decrease reference count");
+    js_throw_error(env, nullptr, "Cannot decrease reference count");
 
     return -1;
   }
@@ -1717,6 +1745,216 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
     *result = nullptr;
   } else {
     *result = from_local(reference->value.Get(env->isolate));
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto callback = new js_callback_t(env, constructor, data);
+
+  auto external = External::New(env->isolate, callback);
+
+  callback->external.Reset(env->isolate, external);
+
+  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+  auto tpl = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+
+  if (name) {
+    MaybeLocal<String> string;
+
+    if (len == size_t(-1)) {
+      string = String::NewFromUtf8(env->isolate, name);
+    } else {
+      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
+    }
+
+    if (string.IsEmpty()) {
+      js_throw_error(env, nullptr, "Invalid string length");
+
+      return -1;
+    }
+
+    tpl->SetClassName(string.ToLocalChecked());
+  }
+
+  std::vector<js_property_descriptor_t> static_properties;
+
+  for (size_t i = 0; i < properties_len; i++) {
+    const js_property_descriptor_t *property = &properties[i];
+
+    if ((property->attributes & js_static) != 0) {
+      static_properties.push_back(*property);
+      continue;
+    }
+
+    int attributes = PropertyAttribute::None;
+
+    if ((property->attributes & js_writable) == 0 && property->getter == nullptr && property->setter == nullptr) {
+      attributes |= PropertyAttribute::ReadOnly;
+    }
+
+    if ((property->attributes & js_enumerable) == 0) {
+      attributes |= PropertyAttribute::DontEnum;
+    }
+
+    if ((property->attributes & js_configurable) == 0) {
+      attributes |= PropertyAttribute::DontDelete;
+    }
+
+    auto name = to_local<Name>(property->name);
+
+    if (property->getter || property->setter) {
+      Local<FunctionTemplate> getter;
+      Local<FunctionTemplate> setter;
+
+      if (property->getter) {
+        auto callback = new js_callback_t(env, property->getter, property->data);
+
+        auto external = External::New(env->isolate, callback);
+
+        callback->external.Reset(env->isolate, external);
+
+        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+        getter = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+      }
+
+      if (property->setter) {
+        auto callback = new js_callback_t(env, property->setter, property->data);
+
+        auto external = External::New(env->isolate, callback);
+
+        callback->external.Reset(env->isolate, external);
+
+        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+        setter = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+      }
+
+      tpl->PrototypeTemplate()->SetAccessorProperty(
+        name,
+        getter,
+        setter,
+        static_cast<PropertyAttribute>(attributes)
+      );
+    } else if (property->method) {
+      auto callback = new js_callback_t(env, property->method, property->data);
+
+      auto external = External::New(env->isolate, callback);
+
+      callback->external.Reset(env->isolate, external);
+
+      callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+      auto method = FunctionTemplate::New(
+        env->isolate,
+        js_callback_t::on_call,
+        external,
+        Signature::New(env->isolate, tpl)
+      );
+
+      tpl->PrototypeTemplate()->Set(
+        name,
+        method,
+        static_cast<PropertyAttribute>(attributes)
+      );
+    } else {
+      auto value = to_local(property->value);
+
+      tpl->PrototypeTemplate()->Set(
+        name,
+        value,
+        static_cast<PropertyAttribute>(attributes)
+      );
+    }
+  }
+
+  auto function = tpl->GetFunction(context).ToLocalChecked();
+
+  *result = from_local(function);
+
+  return js_define_properties(env, *result, static_properties.data(), static_properties.size());
+}
+
+extern "C" int
+js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_t const properties[], size_t properties_len) {
+  if (properties_len == 0) return 0;
+
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  for (size_t i = 0; i < properties_len; i++) {
+    const js_property_descriptor_t *property = &properties[i];
+
+    auto name = to_local<Name>(property->name);
+
+    if (property->getter || property->setter) {
+      Local<Function> getter;
+      Local<Function> setter;
+
+      if (property->getter) {
+        auto callback = new js_callback_t(env, property->getter, property->data);
+
+        auto external = External::New(env->isolate, callback);
+
+        callback->external.Reset(env->isolate, external);
+
+        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+        getter = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+      }
+
+      if (property->setter) {
+        auto callback = new js_callback_t(env, property->setter, property->data);
+
+        auto external = External::New(env->isolate, callback);
+
+        callback->external.Reset(env->isolate, external);
+
+        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+        setter = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+      }
+
+      auto descriptor = PropertyDescriptor(getter, setter);
+
+      descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
+      descriptor.set_configurable((property->attributes & js_configurable) != 0);
+
+      local->DefineProperty(context, name, descriptor).Check();
+    } else if (property->method) {
+      auto callback = new js_callback_t(env, property->method, property->data);
+
+      auto external = External::New(env->isolate, callback);
+
+      callback->external.Reset(env->isolate, external);
+
+      callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+
+      auto method = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+
+      auto descriptor = PropertyDescriptor(method, (property->attributes & js_writable) != 0);
+
+      descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
+      descriptor.set_configurable((property->attributes & js_configurable) != 0);
+
+      local->DefineProperty(context, name, descriptor).Check();
+    } else {
+      auto value = to_local(property->value);
+
+      auto descriptor = PropertyDescriptor(value, (property->attributes & js_writable) != 0);
+
+      descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
+      descriptor.set_configurable((property->attributes & js_configurable) != 0);
+
+      local->DefineProperty(context, name, descriptor).Check();
+    }
   }
 
   return 0;
@@ -1885,7 +2123,7 @@ js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_
   }
 
   if (string.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -1906,7 +2144,7 @@ js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_va
   }
 
   if (string.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -1942,34 +2180,6 @@ js_create_object (js_env_t *env, js_value_t **result) {
   return 0;
 }
 
-static void
-on_function_finalize (const WeakCallbackInfo<js_callback_t> &info) {
-  auto callback = info.GetParameter();
-
-  callback->external.Reset();
-
-  delete callback;
-}
-
-static void
-on_function_call (const FunctionCallbackInfo<Value> &info) {
-  auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
-
-  auto env = callback->env;
-
-  auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
-
-  if (env->exception.IsEmpty()) {
-    if (result) {
-      info.GetReturnValue().Set(to_local(result));
-    }
-  } else {
-    env->isolate->ThrowException(Local<Value>::New(env->isolate, env->exception));
-
-    env->exception.Reset();
-  }
-}
-
 extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   auto context = to_local(env->context);
@@ -1980,17 +2190,9 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   callback->external.Reset(env->isolate, external);
 
-  callback->external.SetWeak(callback, on_function_finalize, WeakCallbackType::kParameter);
+  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
 
-  auto tpl = FunctionTemplate::New(
-    env->isolate,
-    on_function_call,
-    external,
-    Local<Signature>(),
-    0,
-    ConstructorBehavior::kThrow,
-    SideEffectType::kHasSideEffect
-  );
+  auto tpl = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
 
   auto function = tpl->GetFunction(context).ToLocalChecked();
 
@@ -2004,7 +2206,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     }
 
     if (string.IsEmpty()) {
-      js_throw_error(env, NULL, "Invalid string length");
+      js_throw_error(env, nullptr, "Invalid string length");
 
       return -1;
     }
@@ -2032,7 +2234,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
   }
 
   if (local_file.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -2085,7 +2287,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     }
 
     if (string.IsEmpty()) {
-      js_throw_error(env, NULL, "Invalid string length");
+      js_throw_error(env, nullptr, "Invalid string length");
 
       return -1;
     }
@@ -2108,11 +2310,11 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   callback->external.Reset(env->isolate, external);
 
-  callback->external.SetWeak(callback, on_function_finalize, WeakCallbackType::kParameter);
+  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
 
   auto tpl = FunctionTemplate::New(
     env->isolate,
-    on_function_call,
+    js_callback_t::on_call,
     external,
     Local<Signature>(),
     0,
@@ -2133,7 +2335,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     }
 
     if (string.IsEmpty()) {
-      js_throw_error(env, NULL, "Invalid string length");
+      js_throw_error(env, nullptr, "Invalid string length");
 
       return -1;
     }
@@ -2199,7 +2401,7 @@ js_create_date (js_env_t *env, double time, js_value_t **result) {
   auto date = Date::New(context, time);
 
   if (date.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid Date");
+    js_throw_error(env, nullptr, "Invalid Date");
 
     return -1;
   }
@@ -2310,7 +2512,7 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   auto local = to_local<Promise>(promise);
 
   if (local->State() == Promise::PromiseState::kPending) {
-    js_throw_error(env, NULL, "Promise is pending");
+    js_throw_error(env, nullptr, "Promise is pending");
 
     return -1;
   }
@@ -2391,7 +2593,7 @@ on_external_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
 extern "C" int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
 #if defined(V8_ENABLE_SANDBOX)
-  js_throw_error(env, NULL, "External array buffers are not allowed");
+  js_throw_error(env, nullptr, "External array buffers are not allowed");
 
   return -1;
 #else
@@ -2421,7 +2623,7 @@ js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   auto local = to_local<ArrayBuffer>(arraybuffer);
 
   if (!local->IsDetachable()) {
-    js_throw_error(env, NULL, "Array buffer cannot be detached");
+    js_throw_error(env, nullptr, "Array buffer cannot be detached");
 
     return -1;
   }
@@ -2603,6 +2805,15 @@ js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
   } else if (local->IsNull()) {
     *result = js_null;
   }
+
+  return 0;
+}
+
+extern "C" int
+js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result) {
+  auto context = to_local(env->context);
+
+  *result = to_local(object)->InstanceOf(context, to_local<Function>(constructor)).FromJust();
 
   return 0;
 }
@@ -2990,7 +3201,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -3011,7 +3222,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -3030,7 +3241,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -3049,7 +3260,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
   auto key = String::NewFromUtf8(env->isolate, name);
 
   if (key.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -3292,6 +3503,41 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 }
 
 extern "C" int
+js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local_constructor = to_local<Function>(constructor);
+
+  auto try_catch = TryCatch(env->isolate);
+
+  env->depth++;
+
+  auto local = local_constructor->NewInstance(
+    context,
+    argc,
+    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  );
+
+  env->depth--;
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    if (env->depth == 0) {
+      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+    } else {
+      env->exception.Reset(env->isolate, error);
+    }
+
+    return -1;
+  }
+
+  *result = from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
   auto local = to_local(error);
 
@@ -3310,7 +3556,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
   auto local = String::NewFromUtf8(env->isolate, message);
 
   if (local.IsEmpty()) {
-    js_throw_error(env, NULL, "Invalid string length");
+    js_throw_error(env, nullptr, "Invalid string length");
 
     return -1;
   }
@@ -3321,7 +3567,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     auto local = String::NewFromUtf8(env->isolate, code);
 
     if (local.IsEmpty()) {
-      js_throw_error(env, NULL, "Invalid string length");
+      js_throw_error(env, nullptr, "Invalid string length");
 
       return -1;
     }
@@ -3338,7 +3584,7 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
   va_list args_copy;
   va_copy(args_copy, args);
 
-  auto size = vsnprintf(NULL, 0, message, args_copy);
+  auto size = vsnprintf(nullptr, 0, message, args_copy);
 
   va_end(args_copy);
 
@@ -3448,7 +3694,7 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
 extern "C" int
 js_request_garbage_collection (js_env_t *env) {
   if (!env->platform->options.expose_garbage_collection) {
-    js_throw_error(env, NULL, "Garbage collection is unavailable");
+    js_throw_error(env, nullptr, "Garbage collection is unavailable");
 
     return -1;
   }
