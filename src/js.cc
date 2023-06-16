@@ -3143,6 +3143,17 @@ js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
 }
 
 extern "C" int
+js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  *result = from_local(local->GetPrototype());
+
+  return 0;
+}
+
+extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
   auto context = to_local(env->context);
 
@@ -3357,6 +3368,15 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
   if (data) {
     *data = reinterpret_cast<js_callback_t *>(v8_info.Data().As<External>()->Value())->data;
   }
+
+  return 0;
+}
+
+extern "C" int
+js_get_new_target (js_env_t *env, const js_callback_info_t *info, js_value_t **result) {
+  auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
+
+  *result = from_local(v8_info.NewTarget());
 
   return 0;
 }

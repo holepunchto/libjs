@@ -495,6 +495,9 @@ int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result);
 
 int
+js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result);
+
+int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);
 
 int
@@ -532,6 +535,9 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
 
 int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
+
+int
+js_get_new_target (js_env_t *env, const js_callback_info_t *info, js_value_t **result);
 
 int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
