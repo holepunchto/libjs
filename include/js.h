@@ -68,15 +68,10 @@ typedef enum {
 } js_promise_state_t;
 
 enum {
-  js_default = 0,
   js_writable = 1,
   js_enumerable = 1 << 1,
   js_configurable = 1 << 2,
-
   js_static = 1 << 10,
-
-  js_default_method = js_writable | js_configurable,
-  js_default_object_property = js_writable | js_enumerable | js_configurable,
 };
 
 struct js_platform_options_s {
