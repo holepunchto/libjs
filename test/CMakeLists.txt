@@ -38,6 +38,7 @@ list(APPEND tests
   create-string-utf8-with-null
   create-unsafe-arraybuffer
   define-class
+  define-class-with-method
   dynamic-import
   dynamic-import-without-handler
   fatal-exception

@@ -4,13 +4,20 @@
 
 #include "../include/js.h"
 
-static int constructor_called = 0;
-
 static js_value_t *
 on_construct (js_env_t *env, js_callback_info_t *info) {
-  constructor_called++;
-
   return NULL;
+}
+
+static js_value_t *
+on_method (js_env_t *env, js_callback_info_t *info) {
+  int e;
+
+  js_value_t *result;
+  e = js_create_uint32(env, 42, &result);
+  assert(e == 0);
+
+  return result;
 }
 
 int
@@ -27,21 +34,34 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_property_descriptor_t properties[] = {
+    {
+      .name = "foo",
+      .method = on_method,
+    },
+  };
+
   js_value_t *class;
-  e = js_define_class(env, "Foo", -1, on_construct, NULL, NULL, 0, &class);
+  e = js_define_class(env, "Foo", -1, on_construct, NULL, properties, 1, &class);
   assert(e == 0);
 
   js_value_t *instance;
   e = js_new_instance(env, class, 0, NULL, &instance);
   assert(e == 0);
 
-  assert(constructor_called == 1);
-
-  bool result;
-  e = js_instanceof(env, instance, class, &result);
+  js_value_t *method;
+  e = js_get_named_property(env, instance, "foo", &method);
   assert(e == 0);
 
-  assert(result);
+  js_value_t *result;
+  e = js_call_function(env, instance, method, 0, NULL, &result);
+  assert(e == 0);
+
+  uint32_t value;
+  e = js_get_value_uint32(env, result, &value);
+  assert(e == 0);
+
+  assert(value == 42);
 
   e = js_destroy_env(env);
   assert(e == 0);

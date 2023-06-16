@@ -1515,12 +1515,12 @@ on_evaluate_module (Local<Context> context, Local<Module> referrer) {
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
-  auto names = std::vector<Local<String>>(local, local + names_len);
+  auto names = std::vector<Local<String>>(local, local + export_names_len);
 
   MaybeLocal<String> local_name;
 
@@ -1806,7 +1806,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
       attributes |= PropertyAttribute::DontDelete;
     }
 
-    auto name = to_local<Name>(property->name);
+    auto name = String::NewFromUtf8(env->isolate, property->name).ToLocalChecked();
 
     if (property->getter || property->setter) {
       Local<FunctionTemplate> getter;
@@ -1892,7 +1892,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
 
-    auto name = to_local<Name>(property->name);
+    auto name = String::NewFromUtf8(env->isolate, property->name).ToLocalChecked();
 
     if (property->getter || property->setter) {
       Local<Function> getter;
