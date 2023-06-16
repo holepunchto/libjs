@@ -64,7 +64,7 @@ typedef enum {
 typedef enum {
   js_promise_pending,
   js_promise_fulfilled,
-  js_promise_rejected
+  js_promise_rejected,
 } js_promise_state_t;
 
 enum {
