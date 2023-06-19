@@ -39,7 +39,9 @@ list(APPEND tests
   create-unsafe-arraybuffer
   define-class
   define-class-with-value
+  define-class-with-static-value
   define-class-with-method
+  define-class-with-static-method
   dynamic-import
   dynamic-import-without-handler
   fatal-exception
