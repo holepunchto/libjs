@@ -28,8 +28,9 @@ typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
-typedef js_module_t *(*js_module_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
-typedef void (*js_synthetic_module_cb)(js_env_t *, js_module_t *module, void *data);
+typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
+typedef void (*js_module_meta_cb)(js_env_t *, js_module_t *module, js_value_t *meta, void *data);
+typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *data);
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
@@ -202,10 +203,10 @@ int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
 int
-js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_t **result);
+js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
 
 int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_synthetic_module_cb cb, void *data, js_module_t **result);
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result);
 
 int
 js_delete_module (js_env_t *env, js_module_t *module);
@@ -220,7 +221,7 @@ int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value);
 
 int
-js_instantiate_module (js_env_t *env, js_module_t *module, js_module_cb cb, void *data);
+js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data);
 
 int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result);

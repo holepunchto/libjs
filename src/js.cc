@@ -848,17 +848,23 @@ struct js_escapable_handle_scope_s {
 
 struct js_module_s {
   Global<Module> module;
-  js_module_cb resolve;
-  js_synthetic_module_cb evaluate;
+  js_module_resolve_cb resolve;
+  void *resolve_data;
+  js_module_meta_cb meta;
+  void *meta_data;
+  js_module_evaluate_cb evaluate;
+  void *evaluate_data;
   char *name;
-  void *data;
 
-  js_module_s(Isolate *isolate, Local<Module> module, char *name, void *data = nullptr)
+  js_module_s(Isolate *isolate, Local<Module> module, char *name)
       : module(isolate, module),
         resolve(nullptr),
+        resolve_data(nullptr),
+        meta(nullptr),
+        meta_data(nullptr),
         evaluate(nullptr),
-        name(name),
-        data(data) {}
+        evaluate_data(nullptr),
+        name(name) {}
 
   ~js_module_s() {
     delete name;
@@ -1156,6 +1162,30 @@ on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referr
   return MaybeLocal<Promise>();
 }
 
+static void
+on_import_meta (Local<Context> context, Local<Module> local, Local<Object> meta) {
+  auto env = get_env(context);
+
+  auto module = get_module(context, local);
+
+  if (module->meta == nullptr) return;
+
+  module->meta(
+    env,
+    module,
+    from_local(meta),
+    module->meta_data
+  );
+
+  if (env->exception.IsEmpty()) return;
+
+  auto exception = env->exception.Get(env->isolate);
+
+  env->exception.Reset();
+
+  env->isolate->ThrowException(exception);
+}
+
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
   std::scoped_lock guard(platform->lock);
@@ -1194,6 +1224,8 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
   isolate->SetPromiseRejectCallback(on_promise_reject);
 
   isolate->SetHostImportModuleDynamicallyCallback(on_dynamic_import);
+
+  isolate->SetHostInitializeImportMetaObjectCallback(on_import_meta);
 
   auto env = new js_env_t(loop, platform, isolate);
 
@@ -1409,13 +1441,13 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
     from_local(specifier),
     from_local(assertions),
     module,
-    module->data
+    module->resolve_data
   );
 
   if (env->exception.IsEmpty()) {
     if (result->resolve == nullptr) {
       result->resolve = module->resolve;
-      result->data = module->data;
+      result->resolve_data = module->resolve_data;
     }
 
     return result->module.Get(env->isolate);
@@ -1431,7 +1463,7 @@ on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedA
 }
 
 extern "C" int
-js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_t **result) {
+js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local_source = to_local<String>(source);
@@ -1496,6 +1528,9 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto module = new js_module_t(env->isolate, local, module_name);
 
+  module->meta = cb;
+  module->meta_data = data;
+
   env->modules.emplace(local->GetIdentityHash(), module);
 
   *result = module;
@@ -1509,13 +1544,13 @@ on_evaluate_module (Local<Context> context, Local<Module> referrer) {
 
   auto module = get_module(context, referrer);
 
-  module->evaluate(env, module, module->data);
+  module->evaluate(env, module, module->evaluate_data);
 
   return Undefined(env->isolate);
 }
 
 extern "C" int
-js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_synthetic_module_cb cb, void *data, js_module_t **result) {
+js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result) {
   auto context = to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
@@ -1554,9 +1589,10 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     memcpy(module_name, name, len);
   }
 
-  auto module = new js_module_t(env->isolate, compiled, module_name, data);
+  auto module = new js_module_t(env->isolate, compiled, module_name);
 
   module->evaluate = cb;
+  module->evaluate_data = data;
 
   env->modules.emplace(compiled->GetIdentityHash(), module);
 
@@ -1604,11 +1640,11 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 }
 
 extern "C" int
-js_instantiate_module (js_env_t *env, js_module_t *module, js_module_cb cb, void *data) {
+js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
   auto context = to_local(env->context);
 
   module->resolve = cb;
-  module->data = data;
+  module->resolve_data = data;
 
   env->depth++;
 

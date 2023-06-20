@@ -21,7 +21,7 @@ on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions,
   e = js_create_string_utf8(env, (utf8_t *) "export default 42", -1, &source);
   assert(e == 0);
 
-  e = js_create_module(env, "bar.js", -1, 0, source, &bar);
+  e = js_create_module(env, "bar.js", -1, 0, source, NULL, NULL, &bar);
   assert(e == 0);
 
   return bar;
@@ -45,7 +45,7 @@ main () {
   e = js_create_string_utf8(env, (utf8_t *) "import bar from 'bar.js'", -1, &source);
   assert(e == 0);
 
-  e = js_create_module(env, "foo.js", -1, 0, source, &foo);
+  e = js_create_module(env, "foo.js", -1, 0, source, NULL, NULL, &foo);
   assert(e == 0);
 
   e = js_instantiate_module(env, foo, on_module_resolve, NULL);
