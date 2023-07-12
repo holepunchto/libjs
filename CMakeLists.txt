@@ -2,32 +2,10 @@ cmake_minimum_required(VERSION 3.25)
 
 project(js C CXX)
 
+include(cmake/gn/gn.cmake)
+
 if(NOT TARGET v8)
-  find_program(v8_prebuilds NAMES v8-prebuilds)
-
-  execute_process(
-    COMMAND ${v8_prebuilds} paths lib
-    OUTPUT_VARIABLE v8
-  )
-
-  execute_process(
-    COMMAND ${v8_prebuilds} paths include
-    OUTPUT_VARIABLE v8_include
-  )
-
-  add_library(v8 STATIC IMPORTED)
-
-  set_target_properties(
-    v8
-    PROPERTIES
-    IMPORTED_LOCATION ${v8}
-  )
-
-  target_include_directories(
-    v8
-    INTERFACE
-      ${v8_include}
-  )
+  add_gn_library(v8 prebuilds:v8 STATIC)
 endif()
 
 if(NOT TARGET mem)
@@ -86,6 +64,14 @@ else()
   )
 endif()
 
+if(WIN32)
+  list(APPEND link_libraries
+    dbghelp.lib
+    winmm.lib
+    ws2_32.lib
+  )
+endif()
+
 add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
 
 set_target_properties(
@@ -102,17 +88,8 @@ target_link_libraries(
     v8
     mem_shared
     utf_shared
+    ${link_libraries}
 )
-
-if(WIN32)
-  target_link_libraries(
-    js_shared
-    PUBLIC
-      dbghelp.lib
-      winmm.lib
-      ws2_32.lib
-  )
-endif()
 
 add_library(js_static STATIC $<TARGET_OBJECTS:js>)
 
@@ -130,17 +107,8 @@ target_link_libraries(
     v8
     mem_static
     utf_static
+    ${link_libraries}
 )
-
-if(WIN32)
-  target_link_libraries(
-    js_static
-    PUBLIC
-      dbghelp.lib
-      winmm.lib
-      ws2_32.lib
-  )
-endif()
 
 install(TARGETS js_shared js_static)
 

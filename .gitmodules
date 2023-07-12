@@ -1,3 +1,7 @@
+[submodule "cmake/gn"]
+	path = cmake/gn
+	url = git@github.com:holepunchto/cmake-gn.git
+	shallow = true
 [submodule "vendor/libuv"]
 	path = vendor/libuv
 	url = git@github.com:libuv/libuv.git
