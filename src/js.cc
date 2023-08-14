@@ -3559,6 +3559,44 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 }
 
 extern "C" int
+js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local_receiver = to_local(receiver);
+
+  auto local_function = to_local<Function>(function);
+
+  auto try_catch = TryCatch(env->isolate);
+
+  env->depth++;
+
+  auto local = local_function->Call(
+    context,
+    local_receiver,
+    argc,
+    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  );
+
+  env->run_microtasks();
+
+  env->depth--;
+
+  if (try_catch.HasCaught()) {
+    auto error = try_catch.Exception();
+
+    on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+
+    return -1;
+  }
+
+  if (result) {
+    *result = from_local(local.ToLocalChecked());
+  }
+
+  return 0;
+}
+
+extern "C" int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
   auto context = to_local(env->context);
 

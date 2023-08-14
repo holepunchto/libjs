@@ -563,6 +563,16 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
 int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
+/**
+ * Call a JavaScript function from native and perform a microtask checkpoint.
+ *
+ * THIS FUNCTION MUST ONLY BE USED WHEN THERE IS NO JAVASCRIPT ALREADY
+ * EXECUTING ON THE STACK. If in doubt, use `js_call_function()` instead which
+ * automatically performs microtask checkpoints as needed.
+ */
+int
+js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
+
 int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result);
 
