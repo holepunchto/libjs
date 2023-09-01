@@ -74,7 +74,7 @@ main () {
   assert(e == 0);
 
   js_value_t *fn;
-  js_create_function_with_ffi(env, "hello", -1, on_slow_call, NULL, ffi, &fn);
+  e = js_create_function_with_ffi(env, "hello", -1, on_slow_call, NULL, ffi, &fn);
   assert(e == 0);
 
   js_value_t *global;

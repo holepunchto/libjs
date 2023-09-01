@@ -55,14 +55,16 @@ main () {
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
-  js_request_garbage_collection(env);
+  e = js_request_garbage_collection(env);
+  assert(e == 0);
 
   assert(!finalize_called);
 
   e = js_delete_reference(env, ref);
   assert(e == 0);
 
-  js_request_garbage_collection(env);
+  e = js_request_garbage_collection(env);
+  assert(e == 0);
 
   assert(finalize_called);
 

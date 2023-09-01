@@ -6,7 +6,10 @@
 
 static void
 on_module_meta (js_env_t *env, js_module_t *module, js_value_t *meta, void *data) {
-  js_throw_error(env, NULL, "err");
+  int e;
+
+  e = js_throw_error(env, NULL, "err");
+  assert(e == 0);
 }
 
 int
