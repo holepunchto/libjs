@@ -31,6 +31,7 @@ list(APPEND tests
   create-promise-reject
   create-promise-resolve
   create-reference
+  create-reference-multiple
   create-reference-weak
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
