@@ -993,9 +993,9 @@ get_module (Local<Context> context, Local<Module> referrer) {
   return nullptr;
 }
 
-extern "C" const char *js_platform_identifier = "v8";
+static const char *js_platform_identifier = "v8";
 
-extern "C" const char *js_platform_version = V8::GetVersion();
+static const char *js_platform_version = V8::GetVersion();
 
 extern "C" int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
@@ -1052,6 +1052,20 @@ js_destroy_platform (js_platform_t *platform) {
   V8::DisposePlatform();
 
   delete platform;
+
+  return 0;
+}
+
+extern "C" int
+js_get_platform_identifier (js_platform_t *platform, const char **result) {
+  *result = js_platform_identifier;
+
+  return 0;
+}
+
+extern "C" int
+js_get_platform_version (js_platform_t *platform, const char **result) {
+  *result = js_platform_version;
 
   return 0;
 }

@@ -133,21 +133,17 @@ struct js_property_descriptor_s {
   js_value_t *value;
 };
 
-/**
- * The identifier of the underlying JavaScript engine.
- */
-extern const char *js_platform_identifier;
-
-/**
- * The version of the underlying JavaScript engine.
- */
-extern const char *js_platform_version;
-
 int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result);
 
 int
 js_destroy_platform (js_platform_t *platform);
+
+int
+js_get_platform_identifier (js_platform_t *platform, const char **result);
+
+int
+js_get_platform_version (js_platform_t *platform, const char **result);
 
 int
 js_get_platform_loop (js_platform_t *platform, uv_loop_t **result);
