@@ -48,6 +48,8 @@ list(APPEND tests
   fatal-exception
   get-arraybuffer-info
   get-dataview-info
+  get-platform-identifier
+  get-platform-version
   get-typedarray-info-uint8array
   get-typedarray-info-uint16array
   get-value-string-utf8
