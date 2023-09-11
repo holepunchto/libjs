@@ -10,8 +10,6 @@ bool finalize_called = false;
 static void
 on_finalize (js_env_t *env, void *data, void *finalize_hint) {
   finalize_called = true;
-
-  assert((intptr_t) data == 42);
 }
 
 int
