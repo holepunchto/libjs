@@ -414,6 +414,9 @@ int
 js_is_external (js_env_t *env, js_value_t *value, bool *result);
 
 int
+js_is_wrapped (js_env_t *env, js_value_t *value, bool *result);
+
+int
 js_is_bigint (js_env_t *env, js_value_t *value, bool *result);
 
 int

@@ -2939,6 +2939,17 @@ js_is_external (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_wrapped (js_env_t *env, js_value_t *value, bool *result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local(value);
+
+  *result = local->IsObject() && local.As<Object>()->HasPrivate(context, to_local(env->wrapper)).FromMaybe(false);
+
+  return 0;
+}
+
+extern "C" int
 js_is_bigint (js_env_t *env, js_value_t *value, bool *result) {
   *result = to_local(value)->IsBigInt();
 

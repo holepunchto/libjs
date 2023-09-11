@@ -29,6 +29,12 @@ main () {
   e = js_wrap(env, object, (void *) 42, NULL, NULL, NULL);
   assert(e == 0);
 
+  bool is_wrapped;
+  e = js_is_wrapped(env, object, &is_wrapped);
+  assert(e == 0);
+
+  assert(is_wrapped);
+
   intptr_t value;
   e = js_unwrap(env, object, (void **) &value);
   assert(e == 0);
