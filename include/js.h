@@ -495,6 +495,9 @@ int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result);
 
 int
+js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result);
+
+int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);
 
 int

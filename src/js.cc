@@ -3204,6 +3204,36 @@ js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
 }
 
 extern "C" int
+js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local<Object>(object);
+
+  auto mode = KeyCollectionMode::kIncludePrototypes;
+
+  auto property_filter = static_cast<PropertyFilter>(
+    PropertyFilter::ONLY_ENUMERABLE |
+    PropertyFilter::SKIP_SYMBOLS
+  );
+
+  auto index_filter = IndexFilter::kIncludeIndices;
+
+  auto key_conversion = KeyConversionMode::kConvertToString;
+
+  auto names = local->GetPropertyNames(
+    context,
+    mode,
+    property_filter,
+    index_filter,
+    key_conversion
+  );
+
+  *result = from_local(names.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
   auto context = to_local(env->context);
 
