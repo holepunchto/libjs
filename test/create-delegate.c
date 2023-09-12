@@ -38,7 +38,7 @@ has (js_env_t *env, js_value_t *property, void *data) {
   e = js_get_value_string_utf8(env, property, name, 4, NULL);
   assert(e == 0);
 
-  assert(strcmp((char *) name, "bar") == 0);
+  assert(strcmp((char *) name, "foo") == 0);
 
   return true;
 }
@@ -53,7 +53,7 @@ set (js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
   e = js_get_value_string_utf8(env, property, name, 4, NULL);
   assert(e == 0);
 
-  assert(strcmp((char *) name, "baz") == 0);
+  assert(strcmp((char *) name, "foo") == 0);
 
   uint32_t result;
   e = js_get_value_uint32(env, value, &result);
@@ -117,7 +117,7 @@ main () {
     assert(value == 42);
   }
 
-  e = js_create_string_utf8(env, (utf8_t *) "'bar' in delegate", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "'foo' in delegate", -1, &script);
   assert(e == 0);
 
   e = js_run_script(env, NULL, 0, 0, script, &result);
@@ -133,7 +133,7 @@ main () {
     assert(value == true);
   }
 
-  e = js_create_string_utf8(env, (utf8_t *) "delegate.baz = 42", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "delegate.foo = 42", -1, &script);
   assert(e == 0);
 
   e = js_run_script(env, NULL, 0, 0, script, &result);
