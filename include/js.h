@@ -22,12 +22,18 @@ typedef struct js_module_s js_module_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_property_descriptor_s js_property_descriptor_t;
+typedef struct js_delegate_callbacks_s js_delegate_callbacks_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
+typedef js_value_t *(*js_delegate_get_cb)(js_env_t *, js_value_t *property, void *data);
+typedef bool (*js_delegate_has_cb)(js_env_t *, js_value_t *property, void *data);
+typedef bool (*js_delegate_set_cb)(js_env_t *, js_value_t *property, js_value_t *value, void *data);
+typedef bool (*js_delegate_delete_property_cb)(js_env_t *, js_value_t *property, void *data);
+typedef js_value_t *(*js_delegate_own_keys_cb)(js_env_t *, void *data);
 typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
 typedef void (*js_module_meta_cb)(js_env_t *, js_module_t *module, js_value_t *meta, void *data);
 typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *data);
@@ -131,6 +137,14 @@ struct js_property_descriptor_s {
 
   // Value
   js_value_t *value;
+};
+
+struct js_delegate_callbacks_s {
+  js_delegate_get_cb get;
+  js_delegate_has_cb has;
+  js_delegate_set_cb set;
+  js_delegate_delete_property_cb delete_property;
+  js_delegate_own_keys_cb own_keys;
 };
 
 int
@@ -251,6 +265,9 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result);
 
 int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result);
+
+int
+js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
@@ -415,6 +432,9 @@ js_is_external (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_wrapped (js_env_t *env, js_value_t *value, bool *result);
+
+int
+js_is_delegate (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_is_bigint (js_env_t *env, js_value_t *value, bool *result);

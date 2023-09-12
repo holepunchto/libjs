@@ -10,6 +10,7 @@ list(APPEND tests
   call-function-throw
   create-arraybuffer
   create-arraybuffer-with-backing-store
+  create-delegate
   create-external
   create-external-with-finalizer
   create-external-arraybuffer
