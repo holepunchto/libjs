@@ -3251,7 +3251,9 @@ extern "C" int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless) {
   auto local = to_local<BigInt>(value);
 
-  *result = local->Int64Value(lossless);
+  auto n = local->Int64Value(lossless);
+
+  if (result) *result = n;
 
   return 0;
 }
@@ -3260,7 +3262,9 @@ extern "C" int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless) {
   auto local = to_local<BigInt>(value);
 
-  *result = local->Uint64Value(lossless);
+  auto n = local->Uint64Value(lossless);
+
+  if (result) *result = n;
 
   return 0;
 }
