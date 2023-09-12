@@ -668,6 +668,7 @@ struct js_env_s {
   Persistent<Context> context;
   Persistent<Private> wrapper;
   Persistent<Private> delegate;
+  Persistent<Private> type_tag;
   Persistent<Value> exception;
   std::multimap<size_t, js_module_t *> modules;
   std::vector<Global<Promise>> unhandled_promises;
@@ -690,6 +691,7 @@ struct js_env_s {
         context(isolate, Context::New(isolate)),
         wrapper(isolate, Private::New(isolate)),
         delegate(isolate, Private::New(isolate)),
+        type_tag(isolate, Private::New(isolate)),
         exception(),
         modules(),
         unhandled_promises(),
@@ -2233,6 +2235,60 @@ js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb 
   finalizer->value.SetWeak(finalizer, on_finalizer_finalize, WeakCallbackType::kParameter);
 
   if (result) js_create_reference(env, object, 0, result);
+
+  return 0;
+}
+
+extern "C" int
+js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
+  auto context = to_local(env->context);
+
+  auto key = to_local(env->type_tag);
+
+  auto local = to_local<Object>(object);
+
+  if (local->HasPrivate(context, key).FromMaybe(true)) {
+    js_throw_errorf(env, NULL, "Object is already type tagged");
+
+    return -1;
+  }
+
+  auto value = BigInt::NewFromWords(context, 0, 2, reinterpret_cast<const uint64_t *>(tag)).ToLocalChecked();
+
+  local->SetPrivate(context, key, value).Check();
+
+  return 0;
+}
+
+extern "C" int
+js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result) {
+  auto context = to_local(env->context);
+
+  auto key = to_local(env->type_tag);
+
+  auto local = to_local<Object>(object);
+
+  auto value = local->GetPrivate(context, key).ToLocalChecked();
+
+  *result = false;
+
+  if (value->IsBigInt()) {
+    js_type_tag_t existing;
+
+    int sign, size = 2;
+
+    value.As<BigInt>()->ToWordsArray(&sign, &size, reinterpret_cast<uint64_t *>(&existing));
+
+    if (sign != 0) return 0;
+
+    if (size == 2) {
+      *result = (existing.lower == tag->lower && existing.upper == tag->upper);
+    } else if (size == 1) {
+      *result = (existing.lower == tag->lower && 0 == tag->upper);
+    } else if (size == 0) {
+      *result = (0 == tag->lower && 0 == tag->upper);
+    }
+  }
 
   return 0;
 }

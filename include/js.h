@@ -23,6 +23,7 @@ typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_property_descriptor_s js_property_descriptor_t;
 typedef struct js_delegate_callbacks_s js_delegate_callbacks_t;
+typedef struct js_type_tag_s js_type_tag_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
@@ -145,6 +146,11 @@ struct js_delegate_callbacks_s {
   js_delegate_set_cb set;
   js_delegate_delete_property_cb delete_property;
   js_delegate_own_keys_cb own_keys;
+};
+
+struct js_type_tag_s {
+  uint64_t lower;
+  uint64_t upper;
 };
 
 int
@@ -271,6 +277,12 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
 int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
+
+int
+js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag);
+
+int
+js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result);
 
 int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result);
