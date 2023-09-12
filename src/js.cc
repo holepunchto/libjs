@@ -2255,7 +2255,13 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
 
   auto value = BigInt::NewFromWords(context, 0, 2, reinterpret_cast<const uint64_t *>(tag)).ToLocalChecked();
 
-  local->SetPrivate(context, key, value).Check();
+  auto success = local->SetPrivate(context, key, value).FromMaybe(false);
+
+  if (!success) {
+    js_throw_errorf(env, NULL, "Could not add type tag to object");
+
+    return -1;
+  }
 
   return 0;
 }
