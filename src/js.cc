@@ -2107,6 +2107,12 @@ static void
 on_delegate_get (Local<Name> property, const PropertyCallbackInfo<Value> &info) {
   auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
+  if (delegate->callbacks.has) {
+    auto exists = delegate->callbacks.has(delegate->env, from_local(property), delegate->data);
+
+    if (!exists) return;
+  }
+
   if (delegate->callbacks.get) {
     auto result = delegate->callbacks.get(delegate->env, from_local(property), delegate->data);
 
@@ -2124,19 +2130,6 @@ on_delegate_set (Local<Name> property, Local<Value> value, const PropertyCallbac
     auto result = delegate->callbacks.set(delegate->env, from_local(property), from_local(value), delegate->data);
 
     info.GetReturnValue().Set(result);
-  }
-}
-
-static void
-on_delegate_query (Local<Name> property, const PropertyCallbackInfo<Integer> &info) {
-  auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
-
-  if (delegate->callbacks.has) {
-    auto result = delegate->callbacks.has(delegate->env, from_local(property), delegate->data);
-
-    if (result) {
-      info.GetReturnValue().Set(PropertyAttribute::None);
-    }
   }
 }
 
@@ -2192,7 +2185,7 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
   tpl->SetHandler(NamedPropertyHandlerConfiguration(
     on_delegate_get,
     on_delegate_set,
-    on_delegate_query,
+    nullptr,
     on_delegate_delete,
     on_delegate_enumerate,
     external

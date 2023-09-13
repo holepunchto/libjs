@@ -14,6 +14,7 @@ list(APPEND tests
   create-arraybuffer
   create-arraybuffer-with-backing-store
   create-delegate
+  create-delegate-get-without-has
   create-external
   create-external-with-finalizer
   create-external-arraybuffer
