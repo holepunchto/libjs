@@ -3015,6 +3015,72 @@ js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t o
 }
 
 extern "C" int
+js_coerce_to_bool (js_env_t *env, js_value_t *value, js_value_t **result) {
+  auto local = to_local(value);
+
+  *result = from_local(local->ToBoolean(env->isolate));
+
+  return 0;
+}
+
+extern "C" int
+js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local(value);
+
+  auto number = local->ToNumber(context);
+
+  if (number.IsEmpty()) {
+    js_throw_error(env, nullptr, "Cannot coerce value to number");
+
+    return -1;
+  }
+
+  *result = from_local(number.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local(value);
+
+  auto string = local->ToString(context);
+
+  if (string.IsEmpty()) {
+    js_throw_error(env, nullptr, "Cannot coerce value to string");
+
+    return -1;
+  }
+
+  *result = from_local(string.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
+  auto context = to_local(env->context);
+
+  auto local = to_local(value);
+
+  auto object = local->ToObject(context);
+
+  if (object.IsEmpty()) {
+    js_throw_error(env, nullptr, "Cannot coerce value to object");
+
+    return -1;
+  }
+
+  *result = from_local(object.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
   auto local = to_local(value);
 
