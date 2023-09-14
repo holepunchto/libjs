@@ -407,7 +407,7 @@ int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
 int
-js_coerce_to_bool (js_env_t *env, js_value_t *value, js_value_t **result);
+js_coerce_to_boolean (js_env_t *env, js_value_t *value, js_value_t **result);
 
 int
 js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result);

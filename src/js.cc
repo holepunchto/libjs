@@ -3015,7 +3015,7 @@ js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t o
 }
 
 extern "C" int
-js_coerce_to_bool (js_env_t *env, js_value_t *value, js_value_t **result) {
+js_coerce_to_boolean (js_env_t *env, js_value_t *value, js_value_t **result) {
   auto local = to_local(value);
 
   *result = from_local(local->ToBoolean(env->isolate));
