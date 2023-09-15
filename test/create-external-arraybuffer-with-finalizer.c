@@ -37,22 +37,19 @@ main () {
 
   js_value_t *arraybuffer;
   e = js_create_external_arraybuffer(env, data, 4, on_finalize, NULL, &arraybuffer);
+  assert(e == 0);
 
-  if (e == 0) {
-    e = js_close_handle_scope(env, scope);
-    assert(e == 0);
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
-    js_request_garbage_collection(env);
-
-    assert(finalize_called);
-  } else {
-    e = js_close_handle_scope(env, scope);
-    assert(e == 0);
-  }
+  e = js_request_garbage_collection(env);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
 
   e = js_destroy_platform(platform);
   assert(e == 0);
+
+  assert(finalize_called);
 }

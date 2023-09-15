@@ -779,6 +779,50 @@ struct js_env_s {
     }
   }
 
+  inline void
+  uncaught_exception (Local<Value> error) {
+    if (on_uncaught_exception) {
+      on_uncaught_exception(this, from_local(error), uncaught_exception_data);
+    } else {
+      exception.Reset(isolate, error);
+    }
+  }
+
+  template <typename T>
+  inline T
+  call_into_javascript (const std::function<T()> &fn, bool always_checkpoint = false) {
+    auto try_catch = TryCatch(isolate);
+
+    depth++;
+
+    auto result = fn();
+
+    if (depth == 1 || always_checkpoint) run_microtasks();
+
+    depth--;
+
+    if (try_catch.HasCaught()) {
+      auto error = try_catch.Exception();
+
+      if (depth == 0 || always_checkpoint) uncaught_exception(error);
+      else exception.Reset(isolate, error);
+    }
+
+    return std::move(result);
+  }
+
+  template <typename T>
+  inline Maybe<T>
+  call_into_javascript (const std::function<Maybe<T>()> &fn, bool always_checkpoint = false) {
+    return call_into_javascript<Maybe<T>>(fn, always_checkpoint);
+  }
+
+  template <typename T>
+  inline MaybeLocal<T>
+  call_into_javascript (const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
+    return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
+  }
+
 private:
   inline void
   check_liveness () {
@@ -1108,11 +1152,7 @@ on_uncaught_exception (Local<Message> message, Local<Value> error) {
 
   auto env = get_env(context);
 
-  if (env->on_uncaught_exception) {
-    env->on_uncaught_exception(env, from_local(error), env->uncaught_exception_data);
-  } else {
-    env->exception.Reset(env->isolate, error);
-  }
+  env->uncaught_exception(error);
 }
 
 static void
@@ -1412,45 +1452,23 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto v8_source = ScriptCompiler::Source(local_source, origin);
 
-  auto try_catch = TryCatch(env->isolate);
-
-  auto compiled = ScriptCompiler::Compile(context, &v8_source);
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
+  auto compiled = env->call_into_javascript<Script>(
+    [&] {
+      return ScriptCompiler::Compile(context, &v8_source);
     }
+  );
 
-    return -1;
-  }
+  if (compiled.IsEmpty()) return -1;
 
-  env->depth++;
-
-  auto local = compiled.ToLocalChecked()->Run(context);
-
-  if (env->depth == 1) env->run_microtasks();
-
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return compiled.ToLocalChecked()->Run(context);
     }
+  );
 
-    return -1;
-  }
+  if (local.IsEmpty()) return -1;
 
-  if (result) {
-    *result = from_local(local.ToLocalChecked());
-  }
+  if (result) *result = from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -1683,29 +1701,15 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb 
   module->resolve = cb;
   module->resolve_data = data;
 
-  env->depth++;
-
-  auto try_catch = TryCatch(env->isolate);
-
   auto local = module->module.Get(env->isolate);
 
-  auto success = local->InstantiateModule(context, on_resolve_module);
-
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->InstantiateModule(context, on_resolve_module);
     }
+  );
 
-    return -1;
-  }
-
-  success.Check();
+  if (success.IsNothing()) return -1;
 
   return 0;
 }
@@ -1714,31 +1718,15 @@ extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
   auto context = to_local(env->context);
 
-  env->depth++;
-
-  auto try_catch = TryCatch(env->isolate);
-
-  auto local = module->module.Get(env->isolate)->Evaluate(context);
-
-  if (env->depth == 1) env->run_microtasks();
-
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return module->module.Get(env->isolate)->Evaluate(context);
     }
+  );
 
-    return -1;
-  }
+  if (local.IsEmpty()) return -1;
 
-  if (result) {
-    *result = from_local(local.ToLocalChecked());
-  }
+  if (result) *result = from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -1786,9 +1774,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
   if (reference->count == 1) js_clear_weak_reference(env, reference);
 
-  if (result) {
-    *result = reference->count;
-  }
+  if (result) *result = reference->count;
 
   return 0;
 }
@@ -1805,9 +1791,7 @@ js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
   if (reference->count == 0) js_set_weak_reference(env, reference);
 
-  if (result) {
-    *result = reference->count;
-  }
+  if (result) *result = reference->count;
 
   return 0;
 }
@@ -2094,9 +2078,7 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   finalizer->value.SetWeak();
 
-  if (result) {
-    *result = finalizer->data;
-  }
+  if (result) *result = finalizer->data;
 
   delete finalizer;
 
@@ -3405,16 +3387,10 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t 
       String::NO_NULL_TERMINATION | String::REPLACE_INVALID_UTF8
     );
 
-    if (written < len) {
-      str[written] = '\0';
-    }
+    if (written < len) str[written] = '\0';
 
-    if (result) {
-      *result = written;
-    }
-  } else if (result) {
-    *result = 0;
-  }
+    if (result) *result = written;
+  } else if (result) *result = 0;
 
   return 0;
 }
@@ -3434,16 +3410,10 @@ js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, siz
       String::NO_NULL_TERMINATION
     );
 
-    if (written < len) {
-      str[written] = u'\0';
-    }
+    if (written < len) str[written] = u'\0';
 
-    if (result) {
-      *result = written;
-    }
-  } else if (result) {
-    *result = 0;
-  }
+    if (result) *result = written;
+  } else if (result) *result = 0;
 
   return 0;
 }
@@ -3503,13 +3473,19 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto key_conversion = KeyConversionMode::kConvertToString;
 
-  auto names = local->GetPropertyNames(
-    context,
-    mode,
-    property_filter,
-    index_filter,
-    key_conversion
+  auto names = env->call_into_javascript<Array>(
+    [&] {
+      return local->GetPropertyNames(
+        context,
+        mode,
+        property_filter,
+        index_filter,
+        key_conversion
+      );
+    }
   );
+
+  if (names.IsEmpty()) return -1;
 
   *result = from_local(names.ToLocalChecked());
 
@@ -3522,9 +3498,15 @@ js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto local = to_local<Object>(object);
 
-  auto value = local->Get(context, to_local<String>(key));
+  auto value = env->call_into_javascript<Value>(
+    [&] {
+      return local->Get(context, to_local<String>(key));
+    }
+  );
 
-  *result = from_local(value.ToLocalChecked());
+  if (value.IsEmpty()) return -1;
+
+  if (result) *result = from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -3535,7 +3517,15 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
 
   auto local = to_local<Object>(object);
 
-  *result = local->Has(context, to_local<String>(key)).ToChecked();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Has(context, to_local<String>(key));
+    }
+  );
+
+  if (success.IsNothing()) return -1;
+
+  if (result) *result = success.ToChecked();
 
   return 0;
 }
@@ -3546,7 +3536,13 @@ js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto local = to_local<Object>(object);
 
-  local->Set(context, to_local<String>(key), to_local(value)).Check();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Set(context, to_local<String>(key), to_local(value));
+    }
+  );
+
+  if (success.IsNothing()) return -1;
 
   return 0;
 }
@@ -3557,11 +3553,15 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
 
   auto local = to_local<Object>(object);
 
-  auto deleted = local->Delete(context, to_local<String>(key)).ToChecked();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Delete(context, to_local<String>(key));
+    }
+  );
 
-  if (result) {
-    *result = deleted;
-  }
+  if (success.IsNothing()) return -1;
+
+  if (result) *result = success.ToChecked();
 
   return 0;
 }
@@ -3580,9 +3580,15 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     return -1;
   }
 
-  auto value = local->Get(context, key.ToLocalChecked());
+  auto value = env->call_into_javascript<Value>(
+    [&] {
+      return local->Get(context, key.ToLocalChecked());
+    }
+  );
 
-  *result = from_local(value.ToLocalChecked());
+  if (value.IsEmpty()) return -1;
+
+  if (result) *result = from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -3601,7 +3607,15 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
     return -1;
   }
 
-  *result = local->Has(context, key.ToLocalChecked()).ToChecked();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Has(context, key.ToLocalChecked());
+    }
+  );
+
+  if (success.IsNothing()) return -1;
+
+  *result = success.ToChecked();
 
   return 0;
 }
@@ -3620,7 +3634,13 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     return -1;
   }
 
-  local->Set(context, key.ToLocalChecked(), to_local(value)).Check();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Set(context, key.ToLocalChecked(), to_local(value));
+    }
+  );
+
+  if (success.IsNothing()) return -1;
 
   return 0;
 }
@@ -3639,11 +3659,15 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
     return -1;
   }
 
-  auto value = local->Delete(context, key.ToLocalChecked()).ToChecked();
+  auto value = env->call_into_javascript<bool>(
+    [&] {
+      return local->Delete(context, key.ToLocalChecked());
+    }
+  );
 
-  if (result) {
-    *result = value;
-  }
+  if (value.IsNothing()) return -1;
+
+  if (result) *result = value.ToChecked();
 
   return 0;
 }
@@ -3654,9 +3678,15 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
 
   auto local = to_local<Object>(object);
 
-  auto value = local->Get(context, index);
+  auto value = env->call_into_javascript<Value>(
+    [&] {
+      return local->Get(context, index);
+    }
+  );
 
-  *result = from_local(value.ToLocalChecked());
+  if (value.IsEmpty()) return -1;
+
+  if (result) *result = from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -3667,7 +3697,15 @@ js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result)
 
   auto local = to_local<Object>(object);
 
-  *result = local->Has(context, index).ToChecked();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Has(context, index);
+    }
+  );
+
+  if (success.IsNothing()) return -1;
+
+  if (result) *result = success.ToChecked();
 
   return 0;
 }
@@ -3678,7 +3716,13 @@ js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *v
 
   auto local = to_local<Object>(object);
 
-  local->Set(context, index, to_local(value)).Check();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Set(context, index, to_local(value));
+    }
+  );
+
+  if (success.IsNothing()) return -1;
 
   return 0;
 }
@@ -3689,11 +3733,15 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
 
   auto local = to_local<Object>(object);
 
-  auto deleted = local->Delete(context, index).ToChecked();
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->Delete(context, index);
+    }
+  );
 
-  if (result) {
-    *result = deleted;
-  }
+  if (success.IsNothing()) return -1;
+
+  if (result) *result = success.ToChecked();
 
   return 0;
 }
@@ -3851,36 +3899,20 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   auto local_function = to_local<Function>(function);
 
-  auto try_catch = TryCatch(env->isolate);
-
-  env->depth++;
-
-  auto local = local_function->Call(
-    context,
-    local_receiver,
-    argc,
-    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return local_function->Call(
+        context,
+        local_receiver,
+        argc,
+        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+      );
+    }
   );
 
-  if (env->depth == 1) env->run_microtasks();
+  if (local.IsEmpty()) return -1;
 
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
-    }
-
-    return -1;
-  }
-
-  if (result) {
-    *result = from_local(local.ToLocalChecked());
-  }
+  if (result) *result = from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -3893,32 +3925,21 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
   auto local_function = to_local<Function>(function);
 
-  auto try_catch = TryCatch(env->isolate);
-
-  env->depth++;
-
-  auto local = local_function->Call(
-    context,
-    local_receiver,
-    argc,
-    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return local_function->Call(
+        context,
+        local_receiver,
+        argc,
+        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+      );
+    },
+    true /* always_checkpoint */
   );
 
-  env->run_microtasks();
+  if (local.IsEmpty()) return -1;
 
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-
-    return -1;
-  }
-
-  if (result) {
-    *result = from_local(local.ToLocalChecked());
-  }
+  if (result) *result = from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -3929,29 +3950,17 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 
   auto local_constructor = to_local<Function>(constructor);
 
-  auto try_catch = TryCatch(env->isolate);
-
-  env->depth++;
-
-  auto local = local_constructor->NewInstance(
-    context,
-    argc,
-    reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+  auto local = env->call_into_javascript<Object>(
+    [&] {
+      return local_constructor->NewInstance(
+        context,
+        argc,
+        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+      );
+    }
   );
 
-  env->depth--;
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
-    } else {
-      env->exception.Reset(env->isolate, error);
-    }
-
-    return -1;
-  }
+  if (local.IsEmpty()) return -1;
 
   *result = from_local(local.ToLocalChecked());
 
@@ -4105,9 +4114,7 @@ extern "C" int
 js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result) {
   int64_t bytes = env->isolate->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
 
-  if (result) {
-    *result = bytes;
-  }
+  if (result) *result = bytes;
 
   return 0;
 }

@@ -54,11 +54,11 @@ main () {
   e = js_request_garbage_collection(env);
   assert(e == 0);
 
-  assert(finalize_called);
-
   e = js_destroy_env(env);
   assert(e == 0);
 
   e = js_destroy_platform(platform);
   assert(e == 0);
+
+  assert(finalize_called);
 }
