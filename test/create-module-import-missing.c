@@ -52,9 +52,22 @@ main () {
   assert(e == 0);
 
   e = js_instantiate_module(env, module, on_module_resolve, NULL);
-  assert(e != 0);
 
-  assert(uncaught_called == 1);
+  // The engine may fail early during module instantiation.
+  if (e != 0) assert(uncaught_called == 1);
+
+  // Otherwise, it must fail when evaluating the module
+  else {
+    js_value_t *result;
+    e = js_run_module(env, module, &result);
+    assert(e == 0);
+
+    js_promise_state_t state;
+    e = js_get_promise_state(env, result, &state);
+    assert(e == 0);
+
+    assert(state == js_promise_rejected);
+  }
 
   e = js_destroy_env(env);
   assert(e == 0);
