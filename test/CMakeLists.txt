@@ -18,6 +18,8 @@ list(APPEND tests
   create-delegate-get-throw
   create-delegate-has-throw
   create-delegate-set-throw
+  create-delegate-delete-throw
+  create-delegate-keys-throw
   create-external
   create-external-with-finalizer
   create-external-arraybuffer
