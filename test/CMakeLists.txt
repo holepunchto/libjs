@@ -114,6 +114,7 @@ list(APPEND tests
 )
 
 list(APPEND skipped_tests
+  # Not implemented in V8 yet
   create-function-with-ffi-arraybuffer
 )
 
