@@ -38,4 +38,7 @@ main () {
 
   e = js_destroy_platform(platform);
   assert(e == 0);
+
+  e = uv_run(loop, UV_RUN_DEFAULT);
+  assert(e == 0);
 }

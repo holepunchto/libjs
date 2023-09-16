@@ -4,6 +4,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -152,7 +153,13 @@ struct js_idle_task_handle_s {
 
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
-  uv_timer_t *timer;
+  uv_timer_t timer;
+  int active_handles = 1;
+
+  // Keep a cyclic reference to the task runner itself that we'll only reset
+  // once its handles have fully closed.
+  std::shared_ptr<js_task_runner_t> self;
+
   std::deque<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::queue<js_idle_task_handle_t> idle_tasks;
@@ -160,12 +167,13 @@ struct js_task_runner_s : public TaskRunner {
   uint32_t depth;
   uint32_t outstanding;
   uint32_t disposable;
+  bool closed;
   std::condition_variable_any available;
   std::condition_variable_any drained;
 
   js_task_runner_s(uv_loop_t *loop)
       : loop(loop),
-        timer(new uv_timer_t()),
+        timer(),
         tasks(),
         delayed_tasks(),
         idle_tasks(),
@@ -173,16 +181,29 @@ struct js_task_runner_s : public TaskRunner {
         depth(0),
         outstanding(0),
         disposable(0),
+        closed(false),
         available(),
         drained() {
-    uv_timer_init(loop, timer);
-    timer->data = this;
+    int err;
+
+    err = uv_timer_init(loop, &timer);
+    assert(err == 0);
+
+    timer.data = this;
   }
 
-  ~js_task_runner_s() {
-    terminate();
+  inline void
+  close () {
+    std::scoped_lock guard(lock);
 
-    uv_close(reinterpret_cast<uv_handle_t *>(timer), on_handle_close);
+    closed = true;
+
+    // TODO: Clear and cancel outstanding tasks and notify threads waiting for
+    // the outstanding tasks to drain.
+
+    available.notify_all();
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
   }
 
   inline uint64_t
@@ -277,6 +298,8 @@ struct js_task_runner_s : public TaskRunner {
 
     if (task) return task;
 
+    if (closed) return std::nullopt;
+
     available.wait(guard);
 
     return pop_task();
@@ -310,17 +333,32 @@ struct js_task_runner_s : public TaskRunner {
     }
   }
 
-  inline void
-  terminate () {
+private:
+  void
+  adjust_timer () {
     std::scoped_lock guard(lock);
 
-    // TODO: Clear and cancel outstanding tasks and notify threads waiting for
-    // the outstanding tasks to drain.
+    int err;
 
-    available.notify_all();
+    if (delayed_tasks.empty()) {
+      err = uv_timer_stop(&timer);
+    } else {
+      js_delayed_task_handle_t const &task = delayed_tasks.top();
+
+      uint64_t timeout = task.expiry - now();
+
+      err = uv_timer_start(&timer, on_timer, timeout, 0);
+
+      // Don't let the timer keep the loop alive if all outstanding tasks are
+      // disposable.
+      if (outstanding == disposable) {
+        uv_unref(reinterpret_cast<uv_handle_t *>(&timer));
+      }
+    }
+
+    assert(err == 0);
   }
 
-private:
   inline void
   on_completion (bool is_disposable = false) {
     std::scoped_lock guard(lock);
@@ -341,27 +379,10 @@ private:
 
   static void
   on_handle_close (uv_handle_t *handle) {
-    delete handle;
-  }
+    auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
 
-  void
-  adjust_timer () {
-    std::scoped_lock guard(lock);
-
-    if (delayed_tasks.empty()) {
-      uv_timer_stop(timer);
-    } else {
-      js_delayed_task_handle_t const &task = delayed_tasks.top();
-
-      uint64_t timeout = task.expiry - now();
-
-      uv_timer_start(timer, on_timer, timeout, 0);
-
-      // Don't let the timer keep the loop alive if all outstanding tasks are
-      // disposable.
-      if (outstanding == disposable) {
-        uv_unref(reinterpret_cast<uv_handle_t *>(timer));
-      }
+    if (--tasks->active_handles == 0) {
+      tasks->self.reset();
     }
   }
 
@@ -527,44 +548,78 @@ private: // V8 embedder API
 
 struct js_platform_s : public Platform {
   js_platform_options_t options;
+
   uv_loop_t *loop;
-  uv_prepare_t *prepare;
-  uv_check_t *check;
+  uv_prepare_t prepare;
+  uv_check_t check;
+  int active_handles = 2;
+
+  std::set<js_env_t *> environments;
+
   std::map<Isolate *, std::shared_ptr<js_task_runner_t>> foreground;
   std::shared_ptr<js_task_runner_t> background;
+
   std::vector<std::shared_ptr<js_worker_t>> workers;
   std::unique_ptr<js_tracing_controller_t> trace;
+
   std::recursive_mutex lock;
 
   js_platform_s(js_platform_options_t options, uv_loop_t *loop)
       : options(options),
         loop(loop),
-        prepare(new uv_prepare_t()),
-        check(new uv_check_t()),
+        prepare(),
+        check(),
         foreground(),
         background(new js_task_runner_t(loop)),
         workers(),
         trace(new js_tracing_controller_t()),
         lock() {
-    uv_prepare_init(loop, prepare);
-    uv_prepare_start(prepare, on_prepare);
-    prepare->data = this;
+    int err;
 
-    uv_check_init(loop, check);
-    uv_check_start(check, on_check);
-    check->data = this;
+    V8::InitializePlatform(this);
+    V8::Initialize();
+
+    background->self = background;
+
+    err = uv_prepare_init(loop, &prepare);
+    assert(err == 0);
+
+    err = uv_prepare_start(&prepare, on_prepare);
+    assert(err == 0);
+
+    prepare.data = this;
+
+    err = uv_check_init(loop, &check);
+    assert(err == 0);
+
+    err = uv_check_start(&check, on_check);
+    assert(err == 0);
+
+    check.data = this;
 
     // The check handle should not on its own keep the loop alive; it's simply
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
-    uv_unref(reinterpret_cast<uv_handle_t *>(check));
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
-    start_workers();
+    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
+
+    while (workers.size() < workers.capacity()) {
+      workers.emplace_back(new js_worker_t(background));
+    }
   }
 
-  ~js_platform_s() {
-    uv_close(reinterpret_cast<uv_handle_t *>(prepare), on_handle_close);
-    uv_close(reinterpret_cast<uv_handle_t *>(check), on_handle_close);
+  inline void
+  close () {
+    background->close();
+
+    for (auto &worker : workers) {
+      worker->join();
+    }
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
   }
 
   inline uint64_t
@@ -584,7 +639,29 @@ struct js_platform_s : public Platform {
     background->drain();
   }
 
+  inline void
+  attach (js_env_t *env) {
+    environments.insert(env);
+  }
+
+  inline void
+  detach (js_env_t *env) {
+    environments.erase(env);
+
+    dispose_maybe();
+  }
+
 private:
+  inline void
+  dispose_maybe () {
+    if (active_handles == 0 && environments.empty()) {
+      V8::Dispose();
+      V8::DisposePlatform();
+
+      delete this;
+    }
+  }
+
   inline void
   run_macrotasks () {
     background->move_expired_tasks();
@@ -596,11 +673,15 @@ private:
 
   inline void
   check_liveness () {
+    int err;
+
     if (background->empty() || background->outstanding == background->disposable) {
-      uv_prepare_stop(prepare);
+      err = uv_prepare_stop(&prepare);
     } else {
-      uv_prepare_start(prepare, on_prepare);
+      err = uv_prepare_start(&prepare, on_prepare);
     }
+
+    assert(err == 0);
   }
 
   static void
@@ -625,16 +706,11 @@ private:
 
   static void
   on_handle_close (uv_handle_t *handle) {
-    delete handle;
-  }
+    auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
-  inline void
-  start_workers () {
-    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
+    platform->active_handles--;
 
-    while (workers.size() < workers.capacity()) {
-      workers.emplace_back(new js_worker_t(background));
-    }
+    platform->dispose_maybe();
   }
 
 private: // V8 embedder API
@@ -686,20 +762,30 @@ private: // V8 embedder API
 
 struct js_env_s {
   uv_loop_t *loop;
-  uv_prepare_t *prepare;
-  uv_check_t *check;
+  uv_prepare_t prepare;
+  uv_check_t check;
+  int active_handles = 2;
+
   js_platform_t *platform;
+
   std::shared_ptr<js_task_runner_t> tasks;
+
   Isolate *isolate;
   HandleScope scope;
-  uint32_t depth;
   Persistent<Context> context;
+
+  uint32_t depth;
+
   Persistent<Private> wrapper;
   Persistent<Private> delegate;
   Persistent<Private> type_tag;
+
   Persistent<Value> exception;
+
   std::multimap<size_t, js_module_t *> modules;
+
   std::vector<Global<Promise>> unhandled_promises;
+
   js_uncaught_exception_cb on_uncaught_exception;
   void *uncaught_exception_data;
   js_unhandled_rejection_cb on_unhandled_rejection;
@@ -709,14 +795,14 @@ struct js_env_s {
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
-        prepare(new uv_prepare_t()),
-        check(new uv_check_t()),
+        prepare(),
+        check(),
         platform(platform),
         tasks(platform->foreground[isolate]),
         isolate(isolate),
         scope(isolate),
-        depth(0),
         context(isolate, Context::New(isolate)),
+        depth(0),
         wrapper(isolate, Private::New(isolate)),
         delegate(isolate, Private::New(isolate)),
         type_tag(isolate, Private::New(isolate)),
@@ -729,25 +815,43 @@ struct js_env_s {
         unhandled_rejection_data(nullptr),
         on_dynamic_import(nullptr),
         dynamic_import_data(nullptr) {
-    uv_prepare_init(loop, prepare);
-    uv_prepare_start(prepare, on_prepare);
-    prepare->data = this;
+    int err;
 
-    uv_check_init(loop, check);
-    uv_check_start(check, on_check);
-    check->data = this;
+    platform->attach(this);
+
+    tasks->self = tasks;
+
+    err = uv_prepare_init(loop, &prepare);
+    assert(err == 0);
+
+    err = uv_prepare_start(&prepare, on_prepare);
+    assert(err == 0);
+
+    prepare.data = this;
+
+    err = uv_check_init(loop, &check);
+    assert(err == 0);
+
+    err = uv_check_start(&check, on_check);
+    assert(err == 0);
+
+    check.data = this;
 
     // The check handle should not on its own keep the loop alive; it's simply
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
-    uv_unref(reinterpret_cast<uv_handle_t *>(check));
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     to_local(context)->Enter();
   }
 
-  ~js_env_s() {
-    uv_close(reinterpret_cast<uv_handle_t *>(prepare), on_handle_close);
-    uv_close(reinterpret_cast<uv_handle_t *>(check), on_handle_close);
+  inline void
+  close () {
+    tasks->close();
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
   }
 
   inline uint64_t
@@ -853,14 +957,32 @@ struct js_env_s {
 
 private:
   inline void
+  dispose_maybe () {
+    if (active_handles == 0) {
+      auto platform = this->platform;
+      auto isolate = this->isolate;
+
+      delete this;
+
+      isolate->Dispose();
+
+      platform->detach(this);
+    }
+  }
+
+  inline void
   check_liveness () {
+    int err;
+
     tasks->move_expired_tasks();
 
     if (tasks->empty() || tasks->outstanding == tasks->disposable) {
-      uv_prepare_stop(prepare);
+      err = uv_prepare_stop(&prepare);
     } else {
-      uv_prepare_start(prepare, on_prepare);
+      err = uv_prepare_start(&prepare, on_prepare);
     }
+
+    assert(err == 0);
   }
 
   static void
@@ -885,7 +1007,11 @@ private:
 
   static void
   on_handle_close (uv_handle_t *handle) {
-    delete handle;
+    auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    env->active_handles--;
+
+    env->dispose_maybe();
   }
 };
 
@@ -1175,28 +1301,14 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
 
   V8::SetFlagsFromString(flags.c_str());
 
-  auto platform = new js_platform_t(options ? *options : js_platform_options_t(), loop);
-
-  V8::InitializePlatform(platform);
-  V8::Initialize();
-
-  *result = platform;
+  *result = new js_platform_t(options ? *options : js_platform_options_t(), loop);
 
   return 0;
 }
 
 extern "C" int
 js_destroy_platform (js_platform_t *platform) {
-  platform->background->terminate();
-
-  for (auto &worker : platform->workers) {
-    worker->join();
-  }
-
-  V8::Dispose();
-  V8::DisposePlatform();
-
-  delete platform;
+  platform->close();
 
   return 0;
 }
@@ -1399,17 +1511,11 @@ extern "C" int
 js_destroy_env (js_env_t *env) {
   std::scoped_lock guard(env->platform->lock);
 
-  env->context.Reset();
-
-  auto isolate = env->isolate;
-
   env->exit();
 
-  env->platform->foreground.erase(isolate);
+  env->platform->foreground.erase(env->isolate);
 
-  delete env;
-
-  isolate->Dispose();
+  env->close();
 
   return 0;
 }
