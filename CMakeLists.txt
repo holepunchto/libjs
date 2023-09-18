@@ -72,7 +72,7 @@ if(WIN32)
   )
 endif()
 
-add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
+add_library(js_shared SHARED $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:v8>)
 
 set_target_properties(
   js_shared
@@ -85,13 +85,12 @@ target_link_libraries(
   js_shared
   PUBLIC
     uv
-    v8
     mem_shared
     utf_shared
     ${link_libraries}
 )
 
-add_library(js_static STATIC $<TARGET_OBJECTS:js>)
+add_library(js_static STATIC $<TARGET_OBJECTS:js> $<TARGET_OBJECTS:v8>)
 
 set_target_properties(
   js_static
@@ -104,7 +103,6 @@ target_link_libraries(
   js_static
   PUBLIC
     uv_a
-    v8
     mem_static
     utf_static
     ${link_libraries}
