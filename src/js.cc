@@ -470,7 +470,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
   std::recursive_mutex lock;
 
-  js_job_state_s(Platform *platform, TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
+  js_job_state_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
       : priority(priority),
         task(std::move(task)),
         task_runner(std::move(task_runner)),
@@ -742,8 +742,8 @@ private:
 struct js_job_handle_s : public JobHandle {
   std::shared_ptr<js_job_state_t> state;
 
-  js_job_handle_s(Platform *platform, TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
-      : state(new js_job_state_t(platform, priority, std::move(task), std::move(task_runner), available_parallelism)) {}
+  js_job_handle_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
+      : state(new js_job_state_t(priority, std::move(task), std::move(task_runner), available_parallelism)) {}
 
   js_job_handle_s(const js_job_handle_s &) = delete;
 
@@ -1090,7 +1090,7 @@ private: // V8 embedder API
 
   std::unique_ptr<JobHandle>
   CreateJob (TaskPriority priority, std::unique_ptr<JobTask> task) override {
-    return std::make_unique<js_job_handle_t>(this, priority, std::move(task), background, workers.size());
+    return std::make_unique<js_job_handle_t>(priority, std::move(task), background, workers.size());
   }
 
   double
