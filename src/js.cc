@@ -1,6 +1,9 @@
+#include <atomic>
+#include <bit>
 #include <condition_variable>
 #include <deque>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -20,8 +23,6 @@
 #include <v8-fast-api-calls.h>
 #include <v8.h>
 
-#include <libplatform/libplatform.h>
-
 #include "../include/js.h"
 #include "../include/js/ffi.h"
 
@@ -37,7 +38,6 @@ typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
 typedef struct js_task_scope_s js_task_scope_t;
 typedef struct js_job_state_s js_job_state_t;
-typedef struct js_job_delegate_s js_job_delegate_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
@@ -163,11 +163,15 @@ struct js_task_runner_s : public TaskRunner {
   std::deque<js_task_handle_t> tasks;
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::queue<js_idle_task_handle_t> idle_tasks;
+
   std::recursive_mutex lock;
+
   uint32_t depth;
   uint32_t outstanding;
   uint32_t disposable;
+
   bool closed;
+
   std::condition_variable_any available;
   std::condition_variable_any drained;
 
@@ -444,6 +448,351 @@ struct js_task_scope_s {
 
   js_task_scope_s &
   operator=(const js_task_scope_s &) = delete;
+};
+
+static const auto js_invalid_task_id = uint8_t(-1);
+
+struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
+  TaskPriority priority;
+  std::unique_ptr<JobTask> task;
+  std::shared_ptr<js_task_runner_t> task_runner;
+
+  uint8_t available_parallelism;
+
+  uint8_t active_workers;
+  uint8_t pending_workers;
+
+  std::atomic<uint64_t> task_ids;
+
+  std::atomic<bool> cancelled;
+
+  std::condition_variable_any worker_released;
+
+  std::recursive_mutex lock;
+
+  js_job_state_s(Platform *platform, TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
+      : priority(priority),
+        task(std::move(task)),
+        task_runner(std::move(task_runner)),
+        available_parallelism(available_parallelism < 64 ? available_parallelism : 64),
+        active_workers(0),
+        pending_workers(0),
+        task_ids(0),
+        cancelled(false),
+        lock() {}
+
+  js_job_state_s(const js_job_state_s &) = delete;
+
+  js_job_state_s &
+  operator=(const js_job_state_s &) = delete;
+
+  inline uint8_t
+  acquire_task_id () {
+    auto task_ids = this->task_ids.load(std::memory_order_relaxed);
+
+    uint8_t task_id;
+    bool ok;
+
+    do {
+      task_id = std::countr_one(task_ids);
+
+      ok = this->task_ids.compare_exchange_weak(
+        task_ids,
+        task_ids | (uint64_t(1) << task_id),
+        std::memory_order_acquire,
+        std::memory_order_relaxed
+      );
+    } while (!ok);
+
+    return task_id;
+  }
+
+  inline void
+  release_task_id (uint8_t task_id) {
+    task_ids.fetch_and(~(uint64_t(1) << task_id), std::memory_order_release);
+  }
+
+  inline void
+  create_workers () {
+    if (cancelled.load(std::memory_order_relaxed)) return;
+
+    std::scoped_lock guard(lock);
+
+    auto concurrency = max_concurrency();
+
+    if (concurrency > active_workers + pending_workers) {
+      concurrency -= active_workers + pending_workers;
+
+      for (auto i = 0; i < concurrency; i++, pending_workers++) {
+        schedule_run();
+      }
+    }
+  }
+
+  inline void
+  join () {
+    std::unique_lock guard(lock);
+
+    update_priority(TaskPriority::kUserBlocking);
+
+    active_workers++; // Reserved for the joining thread
+
+    auto wait_for_concurrency = [this, &guard] () -> uint8_t {
+      auto concurrency = max_concurrency(-1);
+
+      while (active_workers > concurrency && active_workers > 1) {
+        worker_released.wait(guard);
+
+        concurrency = max_concurrency(-1);
+      }
+
+      if (concurrency == 0) cancelled.store(true, std::memory_order_relaxed);
+
+      return concurrency;
+    };
+
+    auto concurrency = wait_for_concurrency();
+
+    if (concurrency == 0) return;
+
+    if (concurrency > active_workers + pending_workers) {
+      concurrency -= active_workers + pending_workers;
+
+      for (auto i = 0; i < concurrency; i++, pending_workers++) {
+        schedule_run();
+      }
+    }
+
+    do {
+      run(true);
+    } while (wait_for_concurrency());
+
+    active_workers--;
+  }
+
+  inline void
+  cancel () {
+    cancelled.store(true, std::memory_order_relaxed);
+  }
+
+  inline void
+  cancel_and_wait () {
+    std::unique_lock guard(lock);
+
+    cancel();
+
+    while (active_workers) {
+      worker_released.wait(guard);
+    }
+  }
+
+  inline bool
+  is_active () {
+    std::scoped_lock guard(lock);
+
+    return max_concurrency() != 0 || active_workers != 0;
+  }
+
+  inline void
+  update_priority (TaskPriority priority) {
+    std::scoped_lock guard(lock);
+
+    this->priority = priority;
+  }
+
+private:
+  inline uint8_t
+  max_concurrency (int8_t delta = 0) {
+    std::scoped_lock guard(lock);
+
+    return std::min<size_t>(task->GetMaxConcurrency(active_workers + delta), available_parallelism);
+  }
+
+  inline void
+  run (bool is_joining_thread = false) {
+    js_job_delegate_s delegate(shared_from_this(), is_joining_thread);
+
+    task->Run(&delegate);
+  }
+
+  inline void
+  schedule_run () {
+    auto task = std::make_unique<js_job_worker_s>(shared_from_this());
+
+    task_runner->push_task(js_task_handle_t(std::move(task), js_task_nestable));
+  }
+
+  inline bool
+  should_start_task () {
+    std::scoped_lock guard(lock);
+
+    pending_workers--;
+
+    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(-1)) {
+      return false;
+    }
+
+    active_workers++;
+
+    return true;
+  }
+
+  inline bool
+  should_continue_task () {
+    std::scoped_lock guard(lock);
+
+    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(-1)) {
+      active_workers--;
+
+      worker_released.notify_one();
+
+      return false;
+    }
+
+    return true;
+  }
+
+  struct js_job_worker_s : public Task {
+    std::weak_ptr<js_job_state_t> state;
+
+    js_job_worker_s(std::weak_ptr<js_job_state_t> state)
+        : state(state) {}
+
+    js_job_worker_s(const js_job_worker_s &) = delete;
+
+    js_job_worker_s &
+    operator=(const js_job_worker_s &) = delete;
+
+    inline void
+    run () {
+      auto state = this->state.lock();
+
+      if (!state) return;
+      if (!state->should_start_task()) return;
+
+      do {
+        state->run();
+      } while (state->should_continue_task());
+    }
+
+  private: // V8 embedder API
+    void
+    Run () {
+      run();
+    }
+  };
+
+  struct js_job_delegate_s : public JobDelegate {
+    std::shared_ptr<js_job_state_t> state;
+    uint8_t task_id;
+    bool is_joining_thread;
+    bool cancelled;
+
+    js_job_delegate_s(std::shared_ptr<js_job_state_t> state, bool is_joining_thread = false)
+        : state(std::move(state)),
+          task_id(js_invalid_task_id),
+          is_joining_thread(is_joining_thread),
+          cancelled(false) {}
+
+    ~js_job_delegate_s() {
+      release_task_id();
+    }
+
+    js_job_delegate_s(const js_job_delegate_s &) = delete;
+
+    js_job_delegate_s &
+    operator=(const js_job_delegate_s &) = delete;
+
+  private:
+    inline uint8_t
+    aquire_task_id () {
+      if (task_id == js_invalid_task_id) task_id = state->acquire_task_id();
+      return task_id;
+    }
+
+    inline void
+    release_task_id () {
+      if (task_id != js_invalid_task_id) state->release_task_id(task_id);
+    }
+
+  private: // V8 embedder API
+    bool
+    ShouldYield () override {
+      cancelled |= state->cancelled.load(std::memory_order_relaxed);
+      return cancelled;
+    }
+
+    void
+    NotifyConcurrencyIncrease () override {
+      return state->create_workers();
+    }
+
+    uint8_t
+    GetTaskId () override {
+      return aquire_task_id();
+    }
+
+    bool
+    IsJoiningThread () const override {
+      return is_joining_thread;
+    }
+  };
+};
+
+struct js_job_handle_s : public JobHandle {
+  std::shared_ptr<js_job_state_t> state;
+
+  js_job_handle_s(Platform *platform, TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
+      : state(new js_job_state_t(platform, priority, std::move(task), std::move(task_runner), available_parallelism)) {}
+
+  js_job_handle_s(const js_job_handle_s &) = delete;
+
+  js_job_handle_s &
+  operator=(const js_job_handle_s &) = delete;
+
+private: // V8 embedder API
+  void
+  NotifyConcurrencyIncrease () override {
+    state->create_workers();
+  }
+
+  void
+  Join () override {
+    state->join();
+    state = nullptr;
+  }
+
+  void
+  Cancel () override {
+    state->cancel_and_wait();
+    state = nullptr;
+  }
+
+  void
+  CancelAndDetach () override {
+    state->cancel();
+    state = nullptr;
+  }
+
+  bool
+  IsActive () override {
+    return state->is_active();
+  }
+
+  bool
+  IsValid () override {
+    return state != nullptr;
+  }
+
+  bool
+  UpdatePriorityEnabled () const override {
+    return true;
+  }
+
+  void
+  UpdatePriority (TaskPriority priority) override {
+    state->update_priority(priority);
+  }
 };
 
 struct js_worker_s {
@@ -741,7 +1090,7 @@ private: // V8 embedder API
 
   std::unique_ptr<JobHandle>
   CreateJob (TaskPriority priority, std::unique_ptr<JobTask> task) override {
-    return platform::NewDefaultJobHandle(this, priority, std::move(task), workers.size());
+    return std::make_unique<js_job_handle_t>(this, priority, std::move(task), background, workers.size());
   }
 
   double
