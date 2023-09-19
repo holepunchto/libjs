@@ -11,8 +11,9 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
-  coerce-to-number
-  coerce-to-string
+  coerce-number-to-string
+  coerce-object-to-string
+  coerce-string-to-number
   create-arraybuffer
   create-arraybuffer-with-backing-store
   create-delegate
