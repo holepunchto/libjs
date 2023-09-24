@@ -49,7 +49,7 @@ struct js_ffi_string_s {
 
 struct js_ffi_arraybuffer_s {
   void *data;
-  uint32_t len;
+  size_t len;
 };
 
 struct js_ffi_typedarray_s {
