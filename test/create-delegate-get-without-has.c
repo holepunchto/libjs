@@ -41,7 +41,7 @@ main () {
   assert(e == 0);
 
   js_delegate_callbacks_t callbacks = {
-    get,
+    .get = get,
   };
 
   js_value_t *delegate;

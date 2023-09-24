@@ -116,11 +116,11 @@ main () {
   assert(e == 0);
 
   js_delegate_callbacks_t callbacks = {
-    get,
-    has,
-    set,
-    delete_property,
-    own_keys,
+    .get = get,
+    .has = has,
+    .set = set,
+    .delete_property = delete_property,
+    .own_keys = own_keys,
   };
 
   js_value_t *delegate;

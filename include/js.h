@@ -82,20 +82,29 @@ enum {
   js_static = 1 << 10,
 };
 
+/** @version 0 */
 struct js_platform_options_s {
+  int version;
+
   /**
    * Expose garbage collection APIs, which are otherwise not available as they
    * negatively impact performance.
+   *
+   * @since 0
    */
   bool expose_garbage_collection;
 
   /**
    * Trace invocations of the garbage collector.
+   *
+   * @since 0
    */
   bool trace_garbage_collection;
 
   /**
    * Disable the optimizing compiler, such as TurboFan on V8.
+   *
+   * @since 0
    */
   bool disable_optimizing_compiler;
 
@@ -103,6 +112,8 @@ struct js_platform_options_s {
    * Trace optimizations made by the optimizing compiler based on type feedback.
    *
    * Requires that the optimizing compiler is enabled and supports tracing.
+   *
+   * @since 0
    */
   bool trace_optimizations;
 
@@ -110,46 +121,85 @@ struct js_platform_options_s {
    * Trace deoptimizations made by the optimizing compiler based on type feddback.
    *
    * Requires that the optimizing compiler is enabled and supports tracing.
+   *
+   * @since 0
    */
   bool trace_deoptimizations;
 };
 
+/** @version 0 */
 struct js_env_options_s {
+  int version;
+
   /**
    * The memory limit of the JavaScript heap. By default, the limit will be
    * inferred based on the amount of physical memory of the device.
+   *
+   * @since 0
    */
   size_t memory_limit;
 };
 
+/** @version 0 */
 struct js_property_descriptor_s {
+  int version;
+
+  /** @since 0 */
   const char *name;
+
+  /** @since 0 */
   void *data;
+
+  /** @since 0 */
   int attributes;
 
   // One of:
 
   // Method
+
+  /** @since 0 */
   js_function_cb method;
 
   // Accessor
+
+  /** @since 0 */
   js_function_cb getter;
+
+  /** @since 0 */
   js_function_cb setter;
 
   // Value
+
+  /** @since 0 */
   js_value_t *value;
 };
 
+/** @version 0 */
 struct js_delegate_callbacks_s {
+  int version;
+
+  /** @since 0 */
   js_delegate_get_cb get;
+
+  /** @since 0 */
   js_delegate_has_cb has;
+
+  /** @since 0 */
   js_delegate_set_cb set;
+
+  /** @since 0 */
   js_delegate_delete_property_cb delete_property;
+
+  /** @since 0 */
   js_delegate_own_keys_cb own_keys;
 };
 
+/** @version 0 */
 struct js_type_tag_s {
+  /** @since 0 */
   uint64_t lower;
+
+  /** @since 0 */
   uint64_t upper;
 };
 
