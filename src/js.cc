@@ -207,6 +207,8 @@ struct js_task_runner_s : public TaskRunner {
 
     available.notify_all();
 
+    uv_ref(reinterpret_cast<uv_handle_t *>(&timer));
+
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
   }
 
@@ -966,6 +968,8 @@ struct js_platform_s : public Platform {
       worker->join();
     }
 
+    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
+
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
@@ -1197,6 +1201,8 @@ struct js_env_s {
   inline void
   close () {
     tasks->close();
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
