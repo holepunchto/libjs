@@ -1001,15 +1001,11 @@ struct js_platform_s : public Platform {
 
   inline void
   attach (js_env_t *env) {
-    std::scoped_lock guard(lock);
-
     environments.insert(env);
   }
 
   inline void
   detach (js_env_t *env) {
-    std::scoped_lock guard(lock);
-
     environments.erase(env);
 
     dispose_maybe();
