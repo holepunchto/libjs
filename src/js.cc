@@ -1661,6 +1661,14 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
         flags += " --trace-deopt";
       }
     }
+
+    if (options->enable_sampling_profiler) {
+      flags += " --prof";
+
+      if (options->sampling_profiler_interval > 0) {
+        flags += " --prof_sampling_interval=" + std::to_string(options->sampling_profiler_interval);
+      }
+    }
   }
 
   V8::SetFlagsFromString(flags.c_str());

@@ -125,6 +125,20 @@ struct js_platform_options_s {
    * @since 0
    */
   bool trace_deoptimizations;
+
+  /**
+   * Enable the sampling profiler if supported.
+   *
+   * @since 0
+   */
+  bool enable_sampling_profiler;
+
+  /**
+   * The interval between stack traces in microseconds.
+   *
+   * @since 0
+   */
+  int sampling_profiler_interval;
 };
 
 /** @version 0 */
