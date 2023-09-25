@@ -21,7 +21,7 @@ main () {
   uint8_t *data;
 
   js_value_t *arraybuffer;
-  e = js_create_arraybuffer(env, 10, (void **) data, &arraybuffer);
+  e = js_create_arraybuffer(env, 10, (void **) &data, &arraybuffer);
   assert(e == 0);
 
   js_value_t *typedarray;
