@@ -37,7 +37,8 @@ main () {
   assert(e == 0);
 
   uv_thread_t thread;
-  uv_thread_create(&thread, on_thread, NULL);
+  e = uv_thread_create(&thread, on_thread, NULL);
+  assert(e == 0);
 
   e = uv_run(loop, UV_RUN_DEFAULT);
   assert(e == 0);
