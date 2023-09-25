@@ -39,6 +39,7 @@ list(APPEND tests
   create-function-with-ffi-receiver
   create-function-with-ffi-string
   create-function-with-ffi-uint8array
+  create-function-with-finalizer
   create-function-with-source
   create-module-import-missing
   create-promise-reject

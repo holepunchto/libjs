@@ -1207,6 +1207,8 @@ struct js_env_s {
 
   inline void
   close () {
+    to_local(context)->Exit();
+
     tasks->close();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&check));
@@ -2854,9 +2856,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
 
-  auto tpl = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
-
-  auto function = tpl->GetFunction(context).ToLocalChecked();
+  auto function = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
 
   if (name) {
     MaybeLocal<String> string;
