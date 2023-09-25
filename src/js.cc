@@ -231,6 +231,13 @@ struct js_task_runner_s : public TaskRunner {
     return tasks.size() + delayed_tasks.size() + idle_tasks.size();
   }
 
+  inline bool
+  inactive () {
+    std::scoped_lock guard(lock);
+
+    return empty() || outstanding == disposable;
+  }
+
   inline void
   push_task (js_task_handle_t &&task) {
     std::scoped_lock guard(lock);
@@ -1032,7 +1039,7 @@ private:
   check_liveness () {
     int err;
 
-    if (background->empty() || background->outstanding == background->disposable) {
+    if (background->inactive()) {
       err = uv_prepare_stop(&prepare);
     } else {
       err = uv_prepare_start(&prepare, on_prepare);
@@ -1335,7 +1342,7 @@ private:
 
     tasks->move_expired_tasks();
 
-    if (tasks->empty() || tasks->outstanding == tasks->disposable) {
+    if (tasks->inactive()) {
       err = uv_prepare_stop(&prepare);
     } else {
       err = uv_prepare_start(&prepare, on_prepare);
