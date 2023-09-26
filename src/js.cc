@@ -60,15 +60,13 @@ js_to_local (Persistent<T> &persistent) {
   return *reinterpret_cast<Local<T> *>(&persistent);
 }
 
-template <typename T = Value>
-static inline Local<T>
+static inline Local<Value>
 js_to_local (js_value_t *value) {
-  return *reinterpret_cast<Local<T> *>(&value);
+  return *reinterpret_cast<Local<Value> *>(&value);
 }
 
-template <typename T>
 static inline js_value_t *
-js_from_local (Local<T> local) {
+js_from_local (Local<Value> local) {
   return reinterpret_cast<js_value_t *>(*local);
 }
 
@@ -2054,7 +2052,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto context = js_to_local(env->context);
 
-  auto local_source = js_to_local<String>(source);
+  auto local_source = js_to_local(source).As<String>();
 
   MaybeLocal<String> local_file;
 
@@ -2112,7 +2110,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto context = js_to_local(env->context);
 
-  auto local_source = js_to_local<String>(source);
+  auto local_source = js_to_local(source).As<String>();
 
   MaybeLocal<String> local_name;
 
@@ -2276,7 +2274,7 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->SetSyntheticModuleExport(env->isolate, js_to_local<String>(name), js_to_local(value));
+      return local->SetSyntheticModuleExport(env->isolate, js_to_local(name).As<String>(), js_to_local(value));
     }
   );
 
@@ -2548,7 +2546,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
@@ -2627,7 +2625,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
 
@@ -2648,7 +2646,7 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
 
@@ -2665,7 +2663,7 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
 
@@ -2722,7 +2720,7 @@ js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb 
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
 
@@ -2741,7 +2739,7 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
 
   auto key = js_to_local(env->type_tag);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   if (local->HasPrivate(context, key).FromMaybe(true)) {
     js_throw_errorf(env, NULL, "Object is already type tagged");
@@ -2770,7 +2768,7 @@ js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, 
 
   auto key = js_to_local(env->type_tag);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto value = local->GetPrivate(context, key).ToLocalChecked();
 
@@ -2918,7 +2916,7 @@ js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result) {
   if (description == nullptr) {
     symbol = Symbol::New(env->isolate);
   } else {
-    symbol = Symbol::New(env->isolate, js_to_local<String>(description));
+    symbol = Symbol::New(env->isolate, js_to_local(description).As<String>());
   }
 
   *result = js_from_local(symbol);
@@ -2984,7 +2982,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto context = js_to_local(env->context);
 
-  auto local_source = js_to_local<String>(source);
+  auto local_source = js_to_local(source).As<String>();
 
   MaybeLocal<String> local_file;
 
@@ -3178,7 +3176,7 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
 
   auto context = js_to_local(env->context);
 
-  auto error = Error(js_to_local<String>(message)).As<Object>();
+  auto error = Error(js_to_local(message).As<String>()).As<Object>();
 
   if (code) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
@@ -3265,7 +3263,7 @@ extern "C" int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Promise>(promise);
+  auto local = js_to_local(promise).As<Promise>();
 
   switch (local->State()) {
   case Promise::PromiseState::kPending:
@@ -3286,7 +3284,7 @@ extern "C" int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Promise>(promise);
+  auto local = js_to_local(promise).As<Promise>();
 
   if (local->State() == Promise::PromiseState::kPending) {
     js_throw_error(env, nullptr, "Promise is pending");
@@ -3411,7 +3409,7 @@ extern "C" int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
 
   if (!local->IsDetachable()) {
     js_throw_error(env, nullptr, "Array buffer cannot be detached");
@@ -3428,7 +3426,7 @@ extern "C" int
 js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -3497,7 +3495,7 @@ extern "C" int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<SharedArrayBuffer>(sharedarraybuffer);
+  auto local = js_to_local(sharedarraybuffer).As<SharedArrayBuffer>();
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -3522,7 +3520,7 @@ extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
 
   Local<TypedArray> typedarray;
 
@@ -3571,7 +3569,7 @@ extern "C" int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
 
   auto dataview = DataView::New(local, offset, len);
 
@@ -3691,7 +3689,7 @@ js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool 
 
   auto context = js_to_local(env->context);
 
-  *result = js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor)).FromJust();
+  *result = js_to_local(object)->InstanceOf(context, js_to_local(constructor).As<Function>()).FromJust();
 
   return 0;
 }
@@ -3959,7 +3957,7 @@ extern "C" int
 js_get_value_bool (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Boolean>(value);
+  auto local = js_to_local(value).As<Boolean>();
 
   *result = local->Value();
 
@@ -3970,7 +3968,7 @@ extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Int32>(value);
+  auto local = js_to_local(value).As<Int32>();
 
   *result = local->Value();
 
@@ -3981,7 +3979,7 @@ extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Uint32>(value);
+  auto local = js_to_local(value).As<Uint32>();
 
   *result = local->Value();
 
@@ -3992,7 +3990,7 @@ extern "C" int
 js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Number>(value);
+  auto local = js_to_local(value).As<Number>();
 
   *result = static_cast<int64_t>(local->Value());
 
@@ -4003,7 +4001,7 @@ extern "C" int
 js_get_value_double (js_env_t *env, js_value_t *value, double *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Number>(value);
+  auto local = js_to_local(value).As<Number>();
 
   *result = local->Value();
 
@@ -4014,7 +4012,7 @@ extern "C" int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<BigInt>(value);
+  auto local = js_to_local(value).As<BigInt>();
 
   auto n = local->Int64Value(lossless);
 
@@ -4027,7 +4025,7 @@ extern "C" int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<BigInt>(value);
+  auto local = js_to_local(value).As<BigInt>();
 
   auto n = local->Uint64Value(lossless);
 
@@ -4040,7 +4038,7 @@ extern "C" int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<String>(value);
+  auto local = js_to_local(value).As<String>();
 
   if (str == nullptr) {
     *result = local->Utf8Length(env->isolate);
@@ -4065,7 +4063,7 @@ extern "C" int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<String>(value);
+  auto local = js_to_local(value).As<String>();
 
   if (str == nullptr) {
     *result = local->Length();
@@ -4090,7 +4088,7 @@ extern "C" int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<External>(value);
+  auto local = js_to_local(value).As<External>();
 
   *result = local->Value();
 
@@ -4101,7 +4099,7 @@ extern "C" int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Date>(value);
+  auto local = js_to_local(value).As<Date>();
 
   *result = local->ValueOf();
 
@@ -4112,7 +4110,7 @@ extern "C" int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local<Array>(value);
+  auto local = js_to_local(value).As<Array>();
 
   *result = local->Length();
 
@@ -4125,7 +4123,7 @@ js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   *result = js_from_local(local->GetPrototype());
 
@@ -4138,7 +4136,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto mode = KeyCollectionMode::kIncludePrototypes;
 
@@ -4176,11 +4174,11 @@ js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto value = env->call_into_javascript<Value>(
     [&] {
-      return local->Get(context, js_to_local<String>(key));
+      return local->Get(context, js_to_local(key));
     }
   );
 
@@ -4197,11 +4195,11 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Has(context, js_to_local<String>(key));
+      return local->Has(context, js_to_local(key));
     }
   );
 
@@ -4218,11 +4216,11 @@ js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, js_to_local<String>(key), js_to_local(value));
+      return local->Set(context, js_to_local(key), js_to_local(value));
     }
   );
 
@@ -4237,11 +4235,11 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Delete(context, js_to_local<String>(key));
+      return local->Delete(context, js_to_local(key));
     }
   );
 
@@ -4258,7 +4256,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4287,7 +4285,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4316,7 +4314,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4343,7 +4341,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4372,7 +4370,7 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -4393,7 +4391,7 @@ js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result)
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4414,7 +4412,7 @@ js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *v
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4433,7 +4431,7 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
 
   auto context = js_to_local(env->context);
 
-  auto local = js_to_local<Object>(object);
+  auto local = js_to_local(object).As<Object>();
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4611,7 +4609,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   auto local_receiver = js_to_local(receiver);
 
-  auto local_function = js_to_local<Function>(function);
+  auto local_function = js_to_local(function).As<Function>();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -4639,7 +4637,7 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
   auto local_receiver = js_to_local(receiver);
 
-  auto local_function = js_to_local<Function>(function);
+  auto local_function = js_to_local(function).As<Function>();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -4666,7 +4664,7 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 
   auto context = js_to_local(env->context);
 
-  auto local_constructor = js_to_local<Function>(constructor);
+  auto local_constructor = js_to_local(constructor).As<Function>();
 
   auto local = env->call_into_javascript<Object>(
     [&] {
