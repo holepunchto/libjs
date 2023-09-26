@@ -3279,6 +3279,22 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
   return 0;
 }
 
+static void
+js_finalize_unsafe_arraybuffer (void *data, size_t len, void *deleter_data) {
+  js_heap_t::local()->free(data);
+}
+
+static void
+js_finalize_external_arraybuffer (void *data, size_t len, void *deleter_data) {
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+
+  if (finalizer) {
+    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+
+    delete finalizer;
+  }
+}
+
 extern "C" int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
@@ -3313,11 +3329,6 @@ js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_
   return 0;
 }
 
-static void
-on_unsafe_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  js_heap_t::local()->free(data);
-}
-
 extern "C" int
 js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
@@ -3327,7 +3338,7 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_
   auto store = ArrayBuffer::NewBackingStore(
     data,
     len,
-    on_unsafe_arraybuffer_finalize,
+    js_finalize_unsafe_arraybuffer,
     nullptr
   );
 
@@ -3340,17 +3351,6 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_
   *result = from_local(arraybuffer);
 
   return 0;
-}
-
-static void
-on_external_arraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
-
-  if (finalizer) {
-    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
-
-    delete finalizer;
-  }
 }
 
 extern "C" int
@@ -3371,7 +3371,7 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
   auto store = ArrayBuffer::NewBackingStore(
     data,
     len,
-    on_external_arraybuffer_finalize,
+    js_finalize_external_arraybuffer,
     finalizer
   );
 
@@ -3445,11 +3445,6 @@ js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_ba
   return 0;
 }
 
-static void
-on_unsafe_sharedarraybuffer_finalize (void *data, size_t len, void *deleter_data) {
-  js_heap_t::local()->free(data);
-}
-
 extern "C" int
 js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
@@ -3459,7 +3454,7 @@ js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_
   auto store = SharedArrayBuffer::NewBackingStore(
     data,
     len,
-    on_unsafe_sharedarraybuffer_finalize,
+    js_finalize_unsafe_arraybuffer,
     nullptr
   );
 
