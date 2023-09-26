@@ -154,6 +154,7 @@ struct js_idle_task_handle_s {
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
+
   int active_handles = 1;
 
   // Keep a cyclic reference to the task runner itself that we'll only reset
@@ -910,6 +911,7 @@ struct js_platform_s : public Platform {
   uv_loop_t *loop;
   uv_prepare_t prepare;
   uv_check_t check;
+
   int active_handles = 2;
 
   std::set<js_env_t *> environments;
@@ -1124,6 +1126,7 @@ struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
   uv_check_t check;
+
   int active_handles = 2;
 
   js_platform_t *platform;
@@ -1146,12 +1149,16 @@ struct js_env_s {
 
   std::vector<Global<Promise>> unhandled_promises;
 
-  js_uncaught_exception_cb on_uncaught_exception;
-  void *uncaught_exception_data;
-  js_unhandled_rejection_cb on_unhandled_rejection;
-  void *unhandled_rejection_data;
-  js_dynamic_import_cb on_dynamic_import;
-  void *dynamic_import_data;
+  struct {
+    js_uncaught_exception_cb uncaught_exception;
+    void *uncaught_exception_data;
+
+    js_unhandled_rejection_cb unhandled_rejection;
+    void *unhandled_rejection_data;
+
+    js_dynamic_import_cb dynamic_import;
+    void *dynamic_import_data;
+  } callbacks;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
@@ -1169,12 +1176,7 @@ struct js_env_s {
         exception(),
         modules(),
         unhandled_promises(),
-        on_uncaught_exception(nullptr),
-        uncaught_exception_data(nullptr),
-        on_unhandled_rejection(nullptr),
-        unhandled_rejection_data(nullptr),
-        on_dynamic_import(nullptr),
-        dynamic_import_data(nullptr) {
+        callbacks() {
     int err;
 
     platform->attach(this);
@@ -1203,6 +1205,11 @@ struct js_env_s {
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     to_local(context)->Enter();
+  }
+
+  static inline js_env_t *
+  from_context (Local<Context> context) {
+    return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
   }
 
   inline void
@@ -1246,15 +1253,15 @@ struct js_env_s {
 
     isolate->PerformMicrotaskCheckpoint();
 
-    if (on_unhandled_rejection) {
+    if (callbacks.unhandled_rejection) {
       for (auto &promise : unhandled_promises) {
         auto local = promise.Get(isolate);
 
-        on_unhandled_rejection(
+        callbacks.unhandled_rejection(
           this,
           from_local(local->Result()),
           from_local(local),
-          unhandled_rejection_data
+          callbacks.unhandled_rejection_data
         );
       }
     }
@@ -1282,8 +1289,8 @@ struct js_env_s {
 
   inline void
   uncaught_exception (Local<Value> error) {
-    if (on_uncaught_exception) {
-      on_uncaught_exception(this, from_local(error), uncaught_exception_data);
+    if (callbacks.uncaught_exception) {
+      callbacks.uncaught_exception(this, from_local(error), callbacks.uncaught_exception_data);
     } else {
       exception.Reset(isolate, error);
     }
@@ -1322,6 +1329,50 @@ struct js_env_s {
   inline MaybeLocal<T>
   call_into_javascript (const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
+  }
+
+  static void
+  on_uncaught_exception (Local<Message> message, Local<Value> error) {
+    auto isolate = message->GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
+    env->uncaught_exception(error);
+  }
+
+  static void
+  on_promise_reject (PromiseRejectMessage message) {
+    auto promise = message.GetPromise();
+
+    auto isolate = promise->GetIsolate();
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
+    switch (message.GetEvent()) {
+    case kPromiseRejectAfterResolved:
+    case kPromiseResolveAfterResolved:
+      return;
+
+    case kPromiseRejectWithNoHandler:
+      env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
+      break;
+
+    case kPromiseHandlerAddedAfterReject:
+      for (auto it = env->unhandled_promises.begin(); it != env->unhandled_promises.end(); it++) {
+        auto unhandled_promise = it->Get(isolate);
+
+        if (unhandled_promise == promise) {
+          *it = std::move(env->unhandled_promises.back());
+
+          env->unhandled_promises.pop_back();
+
+          break;
+        }
+      }
+    }
   }
 
 private:
@@ -1402,26 +1453,168 @@ struct js_escapable_handle_scope_s {
 
 struct js_module_s {
   Global<Module> module;
-  js_module_resolve_cb resolve;
-  void *resolve_data;
-  js_module_meta_cb meta;
-  void *meta_data;
-  js_module_evaluate_cb evaluate;
-  void *evaluate_data;
-  char *name;
 
-  js_module_s(Isolate *isolate, Local<Module> module, char *name)
+  std::string name;
+
+  struct {
+    js_module_resolve_cb resolve;
+    void *resolve_data;
+
+    js_module_meta_cb meta;
+    void *meta_data;
+
+    js_module_evaluate_cb evaluate;
+    void *evaluate_data;
+  } callbacks;
+
+  js_module_s(Isolate *isolate, Local<Module> module, std::string &&name)
       : module(isolate, module),
-        resolve(nullptr),
-        resolve_data(nullptr),
-        meta(nullptr),
-        meta_data(nullptr),
-        evaluate(nullptr),
-        evaluate_data(nullptr),
-        name(name) {}
+        name(std::move(name)),
+        callbacks() {}
 
-  ~js_module_s() {
-    delete name;
+  static inline js_module_t *
+  from_local (Local<Context> context, Local<Module> local) {
+    auto env = js_env_t::from_context(context);
+
+    auto range = env->modules.equal_range(local->GetIdentityHash());
+
+    for (auto it = range.first; it != range.second; ++it) {
+      if (it->second->module == local) {
+        return it->second;
+      }
+    }
+
+    return nullptr;
+  }
+
+  static MaybeLocal<Module>
+  on_resolve (Local<Context> context, Local<String> specifier, Local<FixedArray> raw_assertions, Local<Module> referrer) {
+    auto env = js_env_t::from_context(context);
+
+    auto module = js_module_t::from_local(context, referrer);
+
+    auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
+
+    for (int i = 0; i < raw_assertions->Length(); i += 3) {
+      assertions
+        ->Set(
+          context,
+          raw_assertions->Get(context, i).As<String>(),
+          raw_assertions->Get(context, i + 1).As<Value>()
+        )
+        .Check();
+    }
+
+    auto result = module->callbacks.resolve(
+      env,
+      ::from_local(specifier),
+      ::from_local(assertions),
+      module,
+      module->callbacks.resolve_data
+    );
+
+    if (env->exception.IsEmpty()) {
+      if (result->callbacks.resolve == nullptr) {
+        result->callbacks.resolve = module->callbacks.resolve;
+        result->callbacks.resolve_data = module->callbacks.resolve_data;
+      }
+
+      return result->module.Get(env->isolate);
+    }
+
+    auto exception = env->exception.Get(env->isolate);
+
+    env->exception.Reset();
+
+    env->isolate->ThrowException(exception);
+
+    return MaybeLocal<Module>();
+  }
+
+  static MaybeLocal<Value>
+  on_evaluate (Local<Context> context, Local<Module> referrer) {
+    auto env = js_env_t::from_context(context);
+
+    auto module = js_module_t::from_local(context, referrer);
+
+    module->callbacks.evaluate(env, module, module->callbacks.evaluate_data);
+
+    return Undefined(env->isolate);
+  }
+
+  static MaybeLocal<Promise>
+  on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
+    auto env = js_env_t::from_context(context);
+
+    if (env->callbacks.dynamic_import == nullptr) {
+      js_throw_error(env, nullptr, "Dynamic import() is not supported");
+
+      return MaybeLocal<Promise>();
+    }
+
+    auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
+
+    for (int i = 0; i < raw_assertions->Length(); i += 3) {
+      assertions
+        ->Set(
+          context,
+          raw_assertions->Get(context, i).As<String>(),
+          raw_assertions->Get(context, i + 1).As<Value>()
+        )
+        .Check();
+    }
+
+    auto result = env->callbacks.dynamic_import(
+      env,
+      ::from_local(specifier),
+      ::from_local(assertions),
+      ::from_local(referrer),
+      env->callbacks.dynamic_import_data
+    );
+
+    if (env->exception.IsEmpty()) {
+      auto module = result->module.Get(env->isolate);
+
+      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+      auto success = resolver->Resolve(context, module->GetModuleNamespace());
+
+      success.Check();
+
+      return resolver->GetPromise();
+    }
+
+    auto exception = env->exception.Get(env->isolate);
+
+    env->exception.Reset();
+
+    env->isolate->ThrowException(exception);
+
+    return MaybeLocal<Promise>();
+  }
+
+  static void
+  on_import_meta (Local<Context> context, Local<Module> local, Local<Object> meta) {
+    auto env = js_env_t::from_context(context);
+
+    auto module = js_module_t::from_local(context, local);
+
+    if (module->callbacks.meta == nullptr) return;
+
+    module->callbacks.meta(
+      env,
+      module,
+      ::from_local(meta),
+      module->callbacks.meta_data
+    );
+
+    if (env->exception.IsEmpty()) return;
+
+    auto exception = env->exception.Get(env->isolate);
+
+    env->exception.Reset();
+
+    env->isolate->ThrowException(exception);
   }
 };
 
@@ -1613,26 +1806,6 @@ struct js_arraybuffer_backing_store_s {
       : backing_store(backing_store) {}
 };
 
-static inline js_env_t *
-get_env (Local<Context> context) {
-  return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
-}
-
-static inline js_module_t *
-get_module (Local<Context> context, Local<Module> referrer) {
-  auto env = get_env(context);
-
-  auto range = env->modules.equal_range(referrer->GetIdentityHash());
-
-  for (auto it = range.first; it != range.second; ++it) {
-    if (it->second->module == referrer) {
-      return it->second;
-    }
-  }
-
-  return nullptr;
-}
-
 static const char *js_platform_identifier = "v8";
 
 static const char *js_platform_version = V8::GetVersion();
@@ -1711,125 +1884,6 @@ js_get_platform_loop (js_platform_t *platform, uv_loop_t **result) {
   return 0;
 }
 
-static void
-on_uncaught_exception (Local<Message> message, Local<Value> error) {
-  auto isolate = message->GetIsolate();
-
-  auto context = isolate->GetCurrentContext();
-
-  auto env = get_env(context);
-
-  env->uncaught_exception(error);
-}
-
-static void
-on_promise_reject (PromiseRejectMessage message) {
-  auto promise = message.GetPromise();
-
-  auto isolate = promise->GetIsolate();
-  auto context = isolate->GetCurrentContext();
-
-  auto env = get_env(context);
-
-  switch (message.GetEvent()) {
-  case kPromiseRejectAfterResolved:
-  case kPromiseResolveAfterResolved:
-    return;
-
-  case kPromiseRejectWithNoHandler:
-    env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
-    break;
-
-  case kPromiseHandlerAddedAfterReject:
-    for (auto it = env->unhandled_promises.begin(); it != env->unhandled_promises.end(); it++) {
-      auto unhandled_promise = it->Get(isolate);
-
-      if (unhandled_promise == promise) {
-        *it = std::move(env->unhandled_promises.back());
-
-        env->unhandled_promises.pop_back();
-
-        break;
-      }
-    }
-  }
-}
-
-static MaybeLocal<Promise>
-on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
-  auto env = get_env(context);
-
-  if (env->on_dynamic_import == nullptr) {
-    js_throw_error(env, nullptr, "Dynamic import() is not supported");
-
-    return MaybeLocal<Promise>();
-  }
-
-  auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
-
-  for (int i = 0; i < raw_assertions->Length(); i += 3) {
-    assertions
-      ->Set(
-        context,
-        raw_assertions->Get(context, i).As<String>(),
-        raw_assertions->Get(context, i + 1).As<Value>()
-      )
-      .Check();
-  }
-
-  auto result = env->on_dynamic_import(
-    env,
-    from_local(specifier),
-    from_local(assertions),
-    from_local(referrer),
-    env->dynamic_import_data
-  );
-
-  if (env->exception.IsEmpty()) {
-    auto module = result->module.Get(env->isolate);
-
-    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
-
-    auto success = resolver->Resolve(context, module->GetModuleNamespace());
-
-    success.Check();
-
-    return resolver->GetPromise();
-  }
-
-  auto exception = env->exception.Get(env->isolate);
-
-  env->exception.Reset();
-
-  env->isolate->ThrowException(exception);
-
-  return MaybeLocal<Promise>();
-}
-
-static void
-on_import_meta (Local<Context> context, Local<Module> local, Local<Object> meta) {
-  auto env = get_env(context);
-
-  auto module = get_module(context, local);
-
-  if (module->meta == nullptr) return;
-
-  module->meta(
-    env,
-    module,
-    from_local(meta),
-    module->meta_data
-  );
-
-  if (env->exception.IsEmpty()) return;
-
-  auto exception = env->exception.Get(env->isolate);
-
-  env->exception.Reset();
-
-  env->isolate->ThrowException(exception);
-}
-
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
   std::scoped_lock guard(platform->lock);
@@ -1863,13 +1917,13 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
-  isolate->AddMessageListener(on_uncaught_exception);
+  isolate->AddMessageListener(js_env_t::on_uncaught_exception);
 
-  isolate->SetPromiseRejectCallback(on_promise_reject);
+  isolate->SetPromiseRejectCallback(js_env_t::on_promise_reject);
 
-  isolate->SetHostImportModuleDynamicallyCallback(on_dynamic_import);
+  isolate->SetHostImportModuleDynamicallyCallback(js_module_t::on_dynamic_import);
 
-  isolate->SetHostInitializeImportMetaObjectCallback(on_import_meta);
+  isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
 
   auto env = new js_env_t(loop, platform, isolate);
 
@@ -1899,24 +1953,24 @@ js_destroy_env (js_env_t *env) {
 
 extern "C" int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data) {
-  env->on_uncaught_exception = cb;
-  env->uncaught_exception_data = data;
+  env->callbacks.uncaught_exception = cb;
+  env->callbacks.uncaught_exception_data = data;
 
   return 0;
 }
 
 extern "C" int
 js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data) {
-  env->on_unhandled_rejection = cb;
-  env->unhandled_rejection_data = data;
+  env->callbacks.unhandled_rejection = cb;
+  env->callbacks.unhandled_rejection_data = data;
 
   return 0;
 }
 
 extern "C" int
 js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data) {
-  env->on_dynamic_import = cb;
-  env->dynamic_import_data = data;
+  env->callbacks.dynamic_import = cb;
+  env->callbacks.dynamic_import_data = data;
 
   return 0;
 }
@@ -2044,50 +2098,6 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
   return 0;
 }
 
-static MaybeLocal<Module>
-on_resolve_module (Local<Context> context, Local<String> specifier, Local<FixedArray> raw_assertions, Local<Module> referrer) {
-  auto env = get_env(context);
-
-  auto module = get_module(context, referrer);
-
-  auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
-
-  for (int i = 0; i < raw_assertions->Length(); i += 3) {
-    assertions
-      ->Set(
-        context,
-        raw_assertions->Get(context, i).As<String>(),
-        raw_assertions->Get(context, i + 1).As<Value>()
-      )
-      .Check();
-  }
-
-  auto result = module->resolve(
-    env,
-    from_local(specifier),
-    from_local(assertions),
-    module,
-    module->resolve_data
-  );
-
-  if (env->exception.IsEmpty()) {
-    if (result->resolve == nullptr) {
-      result->resolve = module->resolve;
-      result->resolve_data = module->resolve_data;
-    }
-
-    return result->module.Get(env->isolate);
-  }
-
-  auto exception = env->exception.Get(env->isolate);
-
-  env->exception.Reset();
-
-  env->isolate->ThrowException(exception);
-
-  return MaybeLocal<Module>();
-}
-
 extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
@@ -2133,7 +2143,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
     auto error = try_catch.Exception();
 
     if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+      env->uncaught_exception(error);
     } else {
       env->exception.Reset(env->isolate, error);
     }
@@ -2156,25 +2166,14 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto module = new js_module_t(env->isolate, local, module_name);
 
-  module->meta = cb;
-  module->meta_data = data;
+  module->callbacks.meta = cb;
+  module->callbacks.meta_data = data;
 
   env->modules.emplace(local->GetIdentityHash(), module);
 
   *result = module;
 
   return 0;
-}
-
-static MaybeLocal<Value>
-on_evaluate_module (Local<Context> context, Local<Module> referrer) {
-  auto env = get_env(context);
-
-  auto module = get_module(context, referrer);
-
-  module->evaluate(env, module, module->evaluate_data);
-
-  return Undefined(env->isolate);
 }
 
 extern "C" int
@@ -2205,24 +2204,21 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     env->isolate,
     local_name.ToLocalChecked(),
     names,
-    on_evaluate_module
+    js_module_t::on_evaluate
   );
 
-  char *module_name;
+  std::string module_name;
 
   if (len == size_t(-1)) {
-    module_name = strdup(name);
+    module_name = name;
   } else {
-    module_name = new char[len + 1];
-    module_name[len] = '\0';
-
-    memcpy(module_name, name, len);
+    module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, compiled, module_name);
+  auto module = new js_module_t(env->isolate, compiled, std::move(module_name));
 
-  module->evaluate = cb;
-  module->evaluate_data = data;
+  module->callbacks.evaluate = cb;
+  module->callbacks.evaluate_data = data;
 
   env->modules.emplace(compiled->GetIdentityHash(), module);
 
@@ -2242,7 +2238,7 @@ extern "C" int
 js_get_module_name (js_env_t *env, js_module_t *module, const char **result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = module->name;
+  *result = module->name.data();
 
   return 0;
 }
@@ -2287,14 +2283,14 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb 
 
   auto context = to_local(env->context);
 
-  module->resolve = cb;
-  module->resolve_data = data;
+  module->callbacks.resolve = cb;
+  module->callbacks.resolve_data = data;
 
   auto local = module->module.Get(env->isolate);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->InstantiateModule(context, on_resolve_module);
+      return local->InstantiateModule(context, js_module_t::on_resolve);
     }
   );
 
@@ -3020,7 +3016,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     auto error = try_catch.Exception();
 
     if (env->depth == 0) {
-      on_uncaught_exception(Exception::CreateMessage(env->isolate, error), error);
+      env->uncaught_exception(error);
     } else {
       env->exception.Reset(env->isolate, error);
     }
@@ -4848,9 +4844,7 @@ js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_fatal_exception (js_env_t *env, js_value_t *error) {
-  auto message = Exception::CreateMessage(env->isolate, to_local(error));
-
-  on_uncaught_exception(message, to_local(error));
+  env->uncaught_exception(to_local(error));
 
   return 0;
 }
