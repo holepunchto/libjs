@@ -267,15 +267,24 @@ js_get_env_platform (js_env_t *env, js_platform_t **result);
 int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope);
 
 int
 js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *scope);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
@@ -288,6 +297,9 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_delete_module (js_env_t *env, js_module_t *module);
 
@@ -309,6 +321,9 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result);
 int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_delete_reference (js_env_t *env, js_ref_t *reference);
 
@@ -725,15 +740,23 @@ js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, v
 int
 js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_exception_pending (js_env_t *env, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
 
 /**
  * Trigger an uncaught exception. If no uncaught exception handler is installed,
  * the function has no effect and execution will continue normally.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_fatal_exception (js_env_t *env, js_value_t *error);
