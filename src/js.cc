@@ -52,23 +52,27 @@ typedef enum {
   js_task_non_nestable,
 } js_task_nestability_t;
 
+namespace {
+
 template <typename T>
 static inline Local<T>
-to_local (Persistent<T> &persistent) {
+js_to_local (Persistent<T> &persistent) {
   return *reinterpret_cast<Local<T> *>(&persistent);
 }
 
 template <typename T = Value>
 static inline Local<T>
-to_local (js_value_t *value) {
+js_to_local (js_value_t *value) {
   return *reinterpret_cast<Local<T> *>(&value);
 }
 
 template <typename T>
 static inline js_value_t *
-from_local (Local<T> local) {
+js_from_local (Local<T> local) {
   return reinterpret_cast<js_value_t *>(*local);
 }
+
+} // namespace
 
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
@@ -460,7 +464,11 @@ struct js_task_scope_s {
   operator=(const js_task_scope_s &) = delete;
 };
 
+namespace {
+
 static const auto js_invalid_task_id = uint8_t(-1);
+
+} // namespace
 
 struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   TaskPriority priority;
@@ -1204,7 +1212,7 @@ struct js_env_s {
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
-    to_local(context)->Enter();
+    js_to_local(context)->Enter();
   }
 
   static inline js_env_t *
@@ -1214,7 +1222,7 @@ struct js_env_s {
 
   inline void
   close () {
-    to_local(context)->Exit();
+    js_to_local(context)->Exit();
 
     tasks->close();
 
@@ -1249,7 +1257,7 @@ struct js_env_s {
 
   inline void
   run_microtasks () {
-    auto context = to_local(this->context);
+    auto context = js_to_local(this->context);
 
     isolate->PerformMicrotaskCheckpoint();
 
@@ -1259,8 +1267,8 @@ struct js_env_s {
 
         callbacks.unhandled_rejection(
           this,
-          from_local(local->Result()),
-          from_local(local),
+          js_from_local(local->Result()),
+          js_from_local(local),
           callbacks.unhandled_rejection_data
         );
       }
@@ -1290,7 +1298,7 @@ struct js_env_s {
   inline void
   uncaught_exception (Local<Value> error) {
     if (callbacks.uncaught_exception) {
-      callbacks.uncaught_exception(this, from_local(error), callbacks.uncaught_exception_data);
+      callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
     } else {
       exception.Reset(isolate, error);
     }
@@ -1507,8 +1515,8 @@ struct js_module_s {
 
     auto result = module->callbacks.resolve(
       env,
-      ::from_local(specifier),
-      ::from_local(assertions),
+      ::js_from_local(specifier),
+      ::js_from_local(assertions),
       module,
       module->callbacks.resolve_data
     );
@@ -1566,9 +1574,9 @@ struct js_module_s {
 
     auto result = env->callbacks.dynamic_import(
       env,
-      ::from_local(specifier),
-      ::from_local(assertions),
-      ::from_local(referrer),
+      ::js_from_local(specifier),
+      ::js_from_local(assertions),
+      ::js_from_local(referrer),
       env->callbacks.dynamic_import_data
     );
 
@@ -1604,7 +1612,7 @@ struct js_module_s {
     module->callbacks.meta(
       env,
       module,
-      ::from_local(meta),
+      ::js_from_local(meta),
       module->callbacks.meta_data
     );
 
@@ -1675,7 +1683,7 @@ struct js_callback_s {
 
     if (env->exception.IsEmpty()) {
       if (result) {
-        info.GetReturnValue().Set(to_local(result));
+        info.GetReturnValue().Set(js_to_local(result));
       }
     } else {
       env->isolate->ThrowException(env->exception.Get(env->isolate));
@@ -1734,16 +1742,16 @@ struct js_delegate_s {
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.has) {
-      auto exists = delegate->callbacks.has(delegate->env, from_local(property), delegate->data);
+      auto exists = delegate->callbacks.has(delegate->env, js_from_local(property), delegate->data);
 
       if (!exists) return;
     }
 
     if (delegate->callbacks.get) {
-      auto result = delegate->callbacks.get(delegate->env, from_local(property), delegate->data);
+      auto result = delegate->callbacks.get(delegate->env, js_from_local(property), delegate->data);
 
       if (result) {
-        info.GetReturnValue().Set(to_local(result));
+        info.GetReturnValue().Set(js_to_local(result));
       }
     }
   }
@@ -1753,7 +1761,7 @@ struct js_delegate_s {
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.set) {
-      auto result = delegate->callbacks.set(delegate->env, from_local(property), from_local(value), delegate->data);
+      auto result = delegate->callbacks.set(delegate->env, js_from_local(property), js_from_local(value), delegate->data);
 
       info.GetReturnValue().Set(result);
     }
@@ -1764,7 +1772,7 @@ struct js_delegate_s {
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.delete_property) {
-      auto result = delegate->callbacks.delete_property(delegate->env, from_local(property), delegate->data);
+      auto result = delegate->callbacks.delete_property(delegate->env, js_from_local(property), delegate->data);
 
       info.GetReturnValue().Set(result);
     }
@@ -1778,7 +1786,7 @@ struct js_delegate_s {
       auto result = delegate->callbacks.own_keys(delegate->env, delegate->data);
 
       if (result) {
-        auto local = to_local(result).As<Array>();
+        auto local = js_to_local(result).As<Array>();
 
         info.GetReturnValue().Set(local);
       }
@@ -1929,7 +1937,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 
   env->enter();
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   context->SetAlignedPointerInEmbedderData(js_context_environment, env);
 
@@ -2033,9 +2041,9 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 
   scope->escaped = true;
 
-  auto local = to_local(escapee);
+  auto local = js_to_local(escapee);
 
-  *result = from_local(scope->scope.Escape(local));
+  *result = js_from_local(scope->scope.Escape(local));
 
   return 0;
 }
@@ -2044,9 +2052,9 @@ extern "C" int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_source = to_local<String>(source);
+  auto local_source = js_to_local<String>(source);
 
   MaybeLocal<String> local_file;
 
@@ -2093,7 +2101,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   if (local.IsEmpty()) return -1;
 
-  if (result) *result = from_local(local.ToLocalChecked());
+  if (result) *result = js_from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -2102,9 +2110,9 @@ extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_source = to_local<String>(source);
+  auto local_source = js_to_local<String>(source);
 
   MaybeLocal<String> local_name;
 
@@ -2180,7 +2188,7 @@ extern "C" int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto local = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
@@ -2255,7 +2263,7 @@ js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result
     return -1;
   }
 
-  *result = from_local(local->GetModuleNamespace());
+  *result = js_from_local(local->GetModuleNamespace());
 
   return 0;
 }
@@ -2268,7 +2276,7 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->SetSyntheticModuleExport(env->isolate, to_local<String>(name), to_local(value));
+      return local->SetSyntheticModuleExport(env->isolate, js_to_local<String>(name), js_to_local(value));
     }
   );
 
@@ -2281,7 +2289,7 @@ extern "C" int
 js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   module->callbacks.resolve = cb;
   module->callbacks.resolve_data = data;
@@ -2303,7 +2311,7 @@ extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -2313,10 +2321,12 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
 
   if (local.IsEmpty()) return -1;
 
-  if (result) *result = from_local(local.ToLocalChecked());
+  if (result) *result = js_from_local(local.ToLocalChecked());
 
   return 0;
 }
+
+namespace {
 
 static inline void
 js_set_weak_reference (js_env_t *env, js_ref_t *reference) {
@@ -2328,11 +2338,13 @@ js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
   reference->value.ClearWeak<js_ref_t>();
 }
 
+} // namespace
+
 extern "C" int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto reference = new js_ref_t(env->isolate, to_local(value), count);
+  auto reference = new js_ref_t(env->isolate, js_to_local(value), count);
 
   if (reference->count == 0) js_set_weak_reference(env, reference);
 
@@ -2389,7 +2401,7 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
   if (reference->value.IsEmpty()) {
     *result = nullptr;
   } else {
-    *result = from_local(reference->value.Get(env->isolate));
+    *result = js_from_local(reference->value.Get(env->isolate));
   }
 
   return 0;
@@ -2399,7 +2411,7 @@ extern "C" int
 js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto callback = new js_callback_t(env, constructor, data);
 
@@ -2511,7 +2523,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
         static_cast<PropertyAttribute>(attributes)
       );
     } else {
-      auto value = to_local(property->value);
+      auto value = js_to_local(property->value);
 
       tpl->PrototypeTemplate()->Set(
         name,
@@ -2523,7 +2535,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
 
   auto function = tpl->GetFunction(context).ToLocalChecked();
 
-  *result = from_local(function);
+  *result = js_from_local(function);
 
   return js_define_properties(env, *result, static_properties.data(), static_properties.size());
 }
@@ -2534,9 +2546,9 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
   if (properties_len == 0) return 0;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
@@ -2595,7 +2607,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
       local->DefineProperty(context, name, descriptor).Check();
     } else {
-      auto value = to_local(property->value);
+      auto value = js_to_local(property->value);
 
       auto descriptor = PropertyDescriptor(value, (property->attributes & js_writable) != 0);
 
@@ -2613,15 +2625,15 @@ extern "C" int
 js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
 
   auto external = External::New(env->isolate, finalizer);
 
-  local->SetPrivate(context, to_local(env->wrapper), external);
+  local->SetPrivate(context, js_to_local(env->wrapper), external);
 
   finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
 
@@ -2634,11 +2646,11 @@ extern "C" int
 js_unwrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
-  auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
+  auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
 
   auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
 
@@ -2651,15 +2663,15 @@ extern "C" int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
-  auto external = local->GetPrivate(context, to_local(env->wrapper)).ToLocalChecked();
+  auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
 
   auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
 
-  local->DeletePrivate(context, to_local(env->wrapper)).Check();
+  local->DeletePrivate(context, js_to_local(env->wrapper)).Check();
 
   finalizer->value.SetWeak();
 
@@ -2674,7 +2686,7 @@ extern "C" int
 js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto delegate = new js_delegate_t(env, Local<Value>(), *callbacks, data, finalize_cb, finalize_hint);
 
@@ -2693,13 +2705,13 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto object = tpl->NewInstance(context).ToLocalChecked();
 
-  object->SetPrivate(context, to_local(env->delegate), external);
+  object->SetPrivate(context, js_to_local(env->delegate), external);
 
   delegate->value.Reset(env->isolate, object);
 
   delegate->value.SetWeak(delegate, js_delegate_t::on_finalize, WeakCallbackType::kParameter);
 
-  *result = from_local(object);
+  *result = js_from_local(object);
 
   return 0;
 }
@@ -2708,9 +2720,9 @@ extern "C" int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
 
@@ -2725,11 +2737,11 @@ extern "C" int
 js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto key = to_local(env->type_tag);
+  auto key = js_to_local(env->type_tag);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   if (local->HasPrivate(context, key).FromMaybe(true)) {
     js_throw_errorf(env, NULL, "Object is already type tagged");
@@ -2754,11 +2766,11 @@ extern "C" int
 js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto key = to_local(env->type_tag);
+  auto key = js_to_local(env->type_tag);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto value = local->GetPrivate(context, key).ToLocalChecked();
 
@@ -2791,7 +2803,7 @@ js_create_int32 (js_env_t *env, int32_t value, js_value_t **result) {
 
   auto integer = Integer::New(env->isolate, value);
 
-  *result = from_local(integer);
+  *result = js_from_local(integer);
 
   return 0;
 }
@@ -2802,7 +2814,7 @@ js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result) {
 
   auto integer = Integer::NewFromUnsigned(env->isolate, value);
 
-  *result = from_local(integer);
+  *result = js_from_local(integer);
 
   return 0;
 }
@@ -2813,7 +2825,7 @@ js_create_int64 (js_env_t *env, int64_t value, js_value_t **result) {
 
   auto number = Number::New(env->isolate, static_cast<double>(value));
 
-  *result = from_local(number);
+  *result = js_from_local(number);
 
   return 0;
 }
@@ -2824,7 +2836,7 @@ js_create_double (js_env_t *env, double value, js_value_t **result) {
 
   auto number = Number::New(env->isolate, value);
 
-  *result = from_local(number);
+  *result = js_from_local(number);
 
   return 0;
 }
@@ -2835,7 +2847,7 @@ js_create_bigint_int64 (js_env_t *env, int64_t value, js_value_t **result) {
 
   auto bigint = BigInt::New(env->isolate, value);
 
-  *result = from_local(bigint);
+  *result = js_from_local(bigint);
 
   return 0;
 }
@@ -2846,7 +2858,7 @@ js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result) {
 
   auto bigint = BigInt::NewFromUnsigned(env->isolate, value);
 
-  *result = from_local(bigint);
+  *result = js_from_local(bigint);
 
   return 0;
 }
@@ -2869,7 +2881,7 @@ js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_
     return -1;
   }
 
-  *result = from_local(string.ToLocalChecked());
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
@@ -2892,7 +2904,7 @@ js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_va
     return -1;
   }
 
-  *result = from_local(string.ToLocalChecked());
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
@@ -2906,10 +2918,10 @@ js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result) {
   if (description == nullptr) {
     symbol = Symbol::New(env->isolate);
   } else {
-    symbol = Symbol::New(env->isolate, to_local<String>(description));
+    symbol = Symbol::New(env->isolate, js_to_local<String>(description));
   }
 
-  *result = from_local(symbol);
+  *result = js_from_local(symbol);
 
   return 0;
 }
@@ -2918,11 +2930,11 @@ extern "C" int
 js_create_object (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto object = Object::New(env->isolate);
 
-  *result = from_local(object);
+  *result = js_from_local(object);
 
   return 0;
 }
@@ -2931,7 +2943,7 @@ extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto callback = new js_callback_t(env, cb, data);
 
@@ -2961,7 +2973,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(function);
+  *result = js_from_local(function);
 
   return 0;
 }
@@ -2970,9 +2982,9 @@ extern "C" int
 js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_source = to_local<String>(source);
+  auto local_source = js_to_local<String>(source);
 
   MaybeLocal<String> local_file;
 
@@ -3044,7 +3056,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(function);
+  *result = js_from_local(function);
 
   return 0;
 }
@@ -3053,7 +3065,7 @@ extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto callback = new js_callback_t(env, cb, data, ffi);
 
@@ -3094,7 +3106,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     function->SetName(string.ToLocalChecked());
   }
 
-  *result = from_local(function);
+  *result = js_from_local(function);
 
   return 0;
 }
@@ -3105,7 +3117,7 @@ js_create_array (js_env_t *env, js_value_t **result) {
 
   auto array = Array::New(env->isolate);
 
-  *result = from_local(array);
+  *result = js_from_local(array);
 
   return 0;
 }
@@ -3116,7 +3128,7 @@ js_create_array_with_length (js_env_t *env, size_t len, js_value_t **result) {
 
   auto array = Array::New(env->isolate, len);
 
-  *result = from_local(array);
+  *result = js_from_local(array);
 
   return 0;
 }
@@ -3133,7 +3145,7 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
     finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
   }
 
-  *result = from_local(external);
+  *result = js_from_local(external);
 
   return 0;
 }
@@ -3142,7 +3154,7 @@ extern "C" int
 js_create_date (js_env_t *env, double time, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto date = Date::New(context, time);
 
@@ -3152,28 +3164,32 @@ js_create_date (js_env_t *env, double time, js_value_t **result) {
     return -1;
   }
 
-  *result = from_local(date.ToLocalChecked());
+  *result = js_from_local(date.ToLocalChecked());
 
   return 0;
 }
+
+namespace {
 
 template <Local<Value> Error(Local<String> message)>
 static inline int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto error = Error(to_local<String>(message)).As<Object>();
+  auto error = Error(js_to_local<String>(message)).As<Object>();
 
   if (code) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), to_local(code)).Check();
+    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
   }
 
-  *result = from_local(error);
+  *result = js_from_local(error);
 
   return 0;
 }
+
+} // namespace
 
 extern "C" int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
@@ -3199,27 +3215,29 @@ extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
   *deferred = new js_deferred_t(env->isolate, resolver);
 
-  *promise = from_local(resolver->GetPromise());
+  *promise = js_from_local(resolver->GetPromise());
 
   return 0;
 }
+
+namespace {
 
 template <bool resolved>
 static inline int
 js_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto resolver = deferred->resolver.Get(env->isolate);
 
-  auto local = to_local(resolution);
+  auto local = js_to_local(resolution);
 
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
@@ -3230,6 +3248,8 @@ js_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolu
 
   return 0;
 }
+
+} // namespace
 
 extern "C" int
 js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
@@ -3245,7 +3265,7 @@ extern "C" int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Promise>(promise);
+  auto local = js_to_local<Promise>(promise);
 
   switch (local->State()) {
   case Promise::PromiseState::kPending:
@@ -3266,7 +3286,7 @@ extern "C" int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Promise>(promise);
+  auto local = js_to_local<Promise>(promise);
 
   if (local->State() == Promise::PromiseState::kPending) {
     js_throw_error(env, nullptr, "Promise is pending");
@@ -3274,10 +3294,12 @@ js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) 
     return -1;
   }
 
-  *result = from_local(local->Result());
+  *result = js_from_local(local->Result());
 
   return 0;
 }
+
+namespace {
 
 static void
 js_finalize_unsafe_arraybuffer (void *data, size_t len, void *deleter_data) {
@@ -3295,6 +3317,8 @@ js_finalize_external_arraybuffer (void *data, size_t len, void *deleter_data) {
   }
 }
 
+} // namespace
+
 extern "C" int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
@@ -3305,7 +3329,7 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
     *data = arraybuffer->Data();
   }
 
-  *result = from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -3324,7 +3348,7 @@ js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_
     *len = arraybuffer->ByteLength();
   }
 
-  *result = from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -3348,7 +3372,7 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_
     *pdata = data;
   }
 
-  *result = from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -3377,7 +3401,7 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
 
-  *result = from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 #endif
@@ -3387,7 +3411,7 @@ extern "C" int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   if (!local->IsDetachable()) {
     js_throw_error(env, nullptr, "Array buffer cannot be detached");
@@ -3404,7 +3428,7 @@ extern "C" int
 js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -3421,7 +3445,7 @@ js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t 
     *data = sharedarraybuffer->Data();
   }
 
-  *result = from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -3440,7 +3464,7 @@ js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_ba
     *len = sharedarraybuffer->ByteLength();
   }
 
-  *result = from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -3464,7 +3488,7 @@ js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_
     *pdata = data;
   }
 
-  *result = from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -3473,7 +3497,7 @@ extern "C" int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<SharedArrayBuffer>(sharedarraybuffer);
+  auto local = js_to_local<SharedArrayBuffer>(sharedarraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -3498,7 +3522,7 @@ extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   Local<TypedArray> typedarray;
 
@@ -3538,7 +3562,7 @@ js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_v
     break;
   }
 
-  *result = from_local(typedarray);
+  *result = js_from_local(typedarray);
 
   return 0;
 }
@@ -3547,11 +3571,11 @@ extern "C" int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<ArrayBuffer>(arraybuffer);
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   auto dataview = DataView::New(local, offset, len);
 
-  *result = from_local(dataview);
+  *result = js_from_local(dataview);
 
   return 0;
 }
@@ -3560,9 +3584,9 @@ extern "C" int
 js_coerce_to_boolean (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
-  *result = from_local(local->ToBoolean(env->isolate));
+  *result = js_from_local(local->ToBoolean(env->isolate));
 
   return 0;
 }
@@ -3571,9 +3595,9 @@ extern "C" int
 js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
   auto number = local->ToNumber(context);
 
@@ -3583,7 +3607,7 @@ js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
     return -1;
   }
 
-  *result = from_local(number.ToLocalChecked());
+  *result = js_from_local(number.ToLocalChecked());
 
   return 0;
 }
@@ -3592,9 +3616,9 @@ extern "C" int
 js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
   auto string = local->ToString(context);
 
@@ -3604,7 +3628,7 @@ js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
     return -1;
   }
 
-  *result = from_local(string.ToLocalChecked());
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
@@ -3613,9 +3637,9 @@ extern "C" int
 js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
   auto object = local->ToObject(context);
 
@@ -3625,7 +3649,7 @@ js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
     return -1;
   }
 
-  *result = from_local(object.ToLocalChecked());
+  *result = js_from_local(object.ToLocalChecked());
 
   return 0;
 }
@@ -3634,7 +3658,7 @@ extern "C" int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
   if (local->IsNumber()) {
     *result = js_number;
@@ -3665,9 +3689,9 @@ extern "C" int
 js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  *result = to_local(object)->InstanceOf(context, to_local<Function>(constructor)).FromJust();
+  *result = js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor)).FromJust();
 
   return 0;
 }
@@ -3676,7 +3700,7 @@ extern "C" int
 js_is_undefined (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsUndefined();
+  *result = js_to_local(value)->IsUndefined();
 
   return 0;
 }
@@ -3685,7 +3709,7 @@ extern "C" int
 js_is_null (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsNull();
+  *result = js_to_local(value)->IsNull();
 
   return 0;
 }
@@ -3694,7 +3718,7 @@ extern "C" int
 js_is_boolean (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsBoolean();
+  *result = js_to_local(value)->IsBoolean();
 
   return 0;
 }
@@ -3703,7 +3727,7 @@ extern "C" int
 js_is_number (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsNumber();
+  *result = js_to_local(value)->IsNumber();
 
   return 0;
 }
@@ -3712,7 +3736,7 @@ extern "C" int
 js_is_string (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsString();
+  *result = js_to_local(value)->IsString();
 
   return 0;
 }
@@ -3721,7 +3745,7 @@ extern "C" int
 js_is_symbol (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsSymbol();
+  *result = js_to_local(value)->IsSymbol();
 
   return 0;
 }
@@ -3730,7 +3754,7 @@ extern "C" int
 js_is_object (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsObject();
+  *result = js_to_local(value)->IsObject();
 
   return 0;
 }
@@ -3739,7 +3763,7 @@ extern "C" int
 js_is_function (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsFunction();
+  *result = js_to_local(value)->IsFunction();
 
   return 0;
 }
@@ -3748,7 +3772,7 @@ extern "C" int
 js_is_native_function (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsFunction();
+  *result = js_to_local(value)->IsFunction();
 
   return 0;
 }
@@ -3757,7 +3781,7 @@ extern "C" int
 js_is_array (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsArray();
+  *result = js_to_local(value)->IsArray();
 
   return 0;
 }
@@ -3766,7 +3790,7 @@ extern "C" int
 js_is_external (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsExternal();
+  *result = js_to_local(value)->IsExternal();
 
   return 0;
 }
@@ -3775,11 +3799,11 @@ extern "C" int
 js_is_wrapped (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
-  *result = local->IsObject() && local.As<Object>()->HasPrivate(context, to_local(env->wrapper)).FromMaybe(false);
+  *result = local->IsObject() && local.As<Object>()->HasPrivate(context, js_to_local(env->wrapper)).FromMaybe(false);
 
   return 0;
 }
@@ -3788,11 +3812,11 @@ extern "C" int
 js_is_delegate (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
-  *result = local->IsObject() && local.As<Object>()->HasPrivate(context, to_local(env->delegate)).FromMaybe(false);
+  *result = local->IsObject() && local.As<Object>()->HasPrivate(context, js_to_local(env->delegate)).FromMaybe(false);
 
   return 0;
 }
@@ -3801,7 +3825,7 @@ extern "C" int
 js_is_bigint (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsBigInt();
+  *result = js_to_local(value)->IsBigInt();
 
   return 0;
 }
@@ -3810,7 +3834,7 @@ extern "C" int
 js_is_date (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsDate();
+  *result = js_to_local(value)->IsDate();
 
   return 0;
 }
@@ -3819,7 +3843,7 @@ extern "C" int
 js_is_error (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsNativeError();
+  *result = js_to_local(value)->IsNativeError();
 
   return 0;
 }
@@ -3828,7 +3852,7 @@ extern "C" int
 js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsPromise();
+  *result = js_to_local(value)->IsPromise();
 
   return 0;
 }
@@ -3837,7 +3861,7 @@ extern "C" int
 js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsArrayBuffer();
+  *result = js_to_local(value)->IsArrayBuffer();
 
   return 0;
 }
@@ -3846,7 +3870,7 @@ extern "C" int
 js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(value);
+  auto local = js_to_local(value);
 
   *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->WasDetached();
 
@@ -3857,7 +3881,7 @@ extern "C" int
 js_is_sharedarraybuffer (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsSharedArrayBuffer();
+  *result = js_to_local(value)->IsSharedArrayBuffer();
 
   return 0;
 }
@@ -3866,7 +3890,7 @@ extern "C" int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsTypedArray();
+  *result = js_to_local(value)->IsTypedArray();
 
   return 0;
 }
@@ -3875,7 +3899,7 @@ extern "C" int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(value)->IsDataView();
+  *result = js_to_local(value)->IsDataView();
 
   return 0;
 }
@@ -3884,7 +3908,7 @@ extern "C" int
 js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = to_local(a)->StrictEquals(to_local(b));
+  *result = js_to_local(a)->StrictEquals(js_to_local(b));
 
   return 0;
 }
@@ -3893,9 +3917,9 @@ extern "C" int
 js_get_global (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  *result = from_local(context->Global());
+  *result = js_from_local(context->Global());
 
   return 0;
 }
@@ -3904,7 +3928,7 @@ extern "C" int
 js_get_undefined (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = from_local(Undefined(env->isolate));
+  *result = js_from_local(Undefined(env->isolate));
 
   return 0;
 }
@@ -3913,7 +3937,7 @@ extern "C" int
 js_get_null (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  *result = from_local(Null(env->isolate));
+  *result = js_from_local(Null(env->isolate));
 
   return 0;
 }
@@ -3923,9 +3947,9 @@ js_get_boolean (js_env_t *env, bool value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
   if (value) {
-    *result = from_local(True(env->isolate));
+    *result = js_from_local(True(env->isolate));
   } else {
-    *result = from_local(False(env->isolate));
+    *result = js_from_local(False(env->isolate));
   }
 
   return 0;
@@ -3935,7 +3959,7 @@ extern "C" int
 js_get_value_bool (js_env_t *env, js_value_t *value, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Boolean>(value);
+  auto local = js_to_local<Boolean>(value);
 
   *result = local->Value();
 
@@ -3946,7 +3970,7 @@ extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Int32>(value);
+  auto local = js_to_local<Int32>(value);
 
   *result = local->Value();
 
@@ -3957,7 +3981,7 @@ extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Uint32>(value);
+  auto local = js_to_local<Uint32>(value);
 
   *result = local->Value();
 
@@ -3968,7 +3992,7 @@ extern "C" int
 js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Number>(value);
+  auto local = js_to_local<Number>(value);
 
   *result = static_cast<int64_t>(local->Value());
 
@@ -3979,7 +4003,7 @@ extern "C" int
 js_get_value_double (js_env_t *env, js_value_t *value, double *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Number>(value);
+  auto local = js_to_local<Number>(value);
 
   *result = local->Value();
 
@@ -3990,7 +4014,7 @@ extern "C" int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<BigInt>(value);
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Int64Value(lossless);
 
@@ -4003,7 +4027,7 @@ extern "C" int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<BigInt>(value);
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Uint64Value(lossless);
 
@@ -4016,7 +4040,7 @@ extern "C" int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<String>(value);
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Utf8Length(env->isolate);
@@ -4041,7 +4065,7 @@ extern "C" int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<String>(value);
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Length();
@@ -4066,7 +4090,7 @@ extern "C" int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<External>(value);
+  auto local = js_to_local<External>(value);
 
   *result = local->Value();
 
@@ -4077,7 +4101,7 @@ extern "C" int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Date>(value);
+  auto local = js_to_local<Date>(value);
 
   *result = local->ValueOf();
 
@@ -4088,7 +4112,7 @@ extern "C" int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local<Array>(value);
+  auto local = js_to_local<Array>(value);
 
   *result = local->Length();
 
@@ -4099,11 +4123,11 @@ extern "C" int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
-  *result = from_local(local->GetPrototype());
+  *result = js_from_local(local->GetPrototype());
 
   return 0;
 }
@@ -4112,9 +4136,9 @@ extern "C" int
 js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto mode = KeyCollectionMode::kIncludePrototypes;
 
@@ -4141,7 +4165,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   if (names.IsEmpty()) return -1;
 
-  if (result) *result = from_local(names.ToLocalChecked());
+  if (result) *result = js_from_local(names.ToLocalChecked());
 
   return 0;
 }
@@ -4150,19 +4174,19 @@ extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
-      return local->Get(context, to_local<String>(key));
+      return local->Get(context, js_to_local<String>(key));
     }
   );
 
   if (value.IsEmpty()) return -1;
 
-  if (result) *result = from_local(value.ToLocalChecked());
+  if (result) *result = js_from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -4171,13 +4195,13 @@ extern "C" int
 js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Has(context, to_local<String>(key));
+      return local->Has(context, js_to_local<String>(key));
     }
   );
 
@@ -4192,13 +4216,13 @@ extern "C" int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, to_local<String>(key), to_local(value));
+      return local->Set(context, js_to_local<String>(key), js_to_local(value));
     }
   );
 
@@ -4211,13 +4235,13 @@ extern "C" int
 js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Delete(context, to_local<String>(key));
+      return local->Delete(context, js_to_local<String>(key));
     }
   );
 
@@ -4232,9 +4256,9 @@ extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4252,7 +4276,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   if (value.IsEmpty()) return -1;
 
-  if (result) *result = from_local(value.ToLocalChecked());
+  if (result) *result = js_from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -4261,9 +4285,9 @@ extern "C" int
 js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4290,9 +4314,9 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4304,7 +4328,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, key.ToLocalChecked(), to_local(value));
+      return local->Set(context, key.ToLocalChecked(), js_to_local(value));
     }
   );
 
@@ -4317,9 +4341,9 @@ extern "C" int
 js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -4346,9 +4370,9 @@ extern "C" int
 js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -4358,7 +4382,7 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
 
   if (value.IsEmpty()) return -1;
 
-  if (result) *result = from_local(value.ToLocalChecked());
+  if (result) *result = js_from_local(value.ToLocalChecked());
 
   return 0;
 }
@@ -4367,9 +4391,9 @@ extern "C" int
 js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4388,13 +4412,13 @@ extern "C" int
 js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, index, to_local(value));
+      return local->Set(context, index, js_to_local(value));
     }
   );
 
@@ -4407,9 +4431,9 @@ extern "C" int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local = to_local<Object>(object);
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4434,13 +4458,13 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
     size_t i = 0, n = v8_info.Length() < *argc ? v8_info.Length() : *argc;
 
     for (; i < n; i++) {
-      argv[i] = from_local(v8_info[i]);
+      argv[i] = js_from_local(v8_info[i]);
     }
 
     n = *argc;
 
     if (i < n) {
-      auto undefined = from_local(Undefined(env->isolate));
+      auto undefined = js_from_local(Undefined(env->isolate));
 
       for (; i < n; i++) {
         argv[i] = undefined;
@@ -4453,7 +4477,7 @@ js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *arg
   }
 
   if (receiver) {
-    *receiver = from_local(v8_info.This());
+    *receiver = js_from_local(v8_info.This());
   }
 
   if (data) {
@@ -4469,7 +4493,7 @@ js_get_new_target (js_env_t *env, const js_callback_info_t *info, js_value_t **r
 
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
-  *result = from_local(v8_info.NewTarget());
+  *result = js_from_local(v8_info.NewTarget());
 
   return 0;
 }
@@ -4478,7 +4502,7 @@ extern "C" int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
 
   if (data) {
     *data = local->Data();
@@ -4495,7 +4519,7 @@ extern "C" int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(typedarray).As<TypedArray>();
+  auto local = js_to_local(typedarray).As<TypedArray>();
 
   if (type) {
     if (local->IsInt8Array()) {
@@ -4538,7 +4562,7 @@ js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_typ
   }
 
   if (arraybuffer) {
-    *arraybuffer = from_local(buffer);
+    *arraybuffer = js_from_local(buffer);
   }
 
   if (offset) {
@@ -4552,7 +4576,7 @@ extern "C" int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(dataview).As<DataView>();
+  auto local = js_to_local(dataview).As<DataView>();
 
   if (len) {
     *len = local->ByteLength();
@@ -4569,7 +4593,7 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
   }
 
   if (arraybuffer) {
-    *arraybuffer = from_local(buffer);
+    *arraybuffer = js_from_local(buffer);
   }
 
   if (offset) {
@@ -4583,11 +4607,11 @@ extern "C" int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_receiver = to_local(receiver);
+  auto local_receiver = js_to_local(receiver);
 
-  auto local_function = to_local<Function>(function);
+  auto local_function = js_to_local<Function>(function);
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -4602,7 +4626,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   if (local.IsEmpty()) return -1;
 
-  if (result) *result = from_local(local.ToLocalChecked());
+  if (result) *result = js_from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -4611,11 +4635,11 @@ extern "C" int
 js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_receiver = to_local(receiver);
+  auto local_receiver = js_to_local(receiver);
 
-  auto local_function = to_local<Function>(function);
+  auto local_function = js_to_local<Function>(function);
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -4631,7 +4655,7 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
   if (local.IsEmpty()) return -1;
 
-  if (result) *result = from_local(local.ToLocalChecked());
+  if (result) *result = js_from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -4640,9 +4664,9 @@ extern "C" int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
-  auto local_constructor = to_local<Function>(constructor);
+  auto local_constructor = js_to_local<Function>(constructor);
 
   auto local = env->call_into_javascript<Object>(
     [&] {
@@ -4656,7 +4680,7 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 
   if (local.IsEmpty()) return -1;
 
-  *result = from_local(local.ToLocalChecked());
+  *result = js_from_local(local.ToLocalChecked());
 
   return 0;
 }
@@ -4665,7 +4689,7 @@ extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = to_local(error);
+  auto local = js_to_local(error);
 
   env->isolate->ThrowException(local);
 
@@ -4674,12 +4698,14 @@ js_throw (js_env_t *env, js_value_t *error) {
   return 0;
 }
 
+namespace {
+
 template <Local<Value> Error(Local<String> message)>
 static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = to_local(env->context);
+  auto context = js_to_local(env->context);
 
   auto local = String::NewFromUtf8(env->isolate, message);
 
@@ -4703,7 +4729,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local.ToLocalChecked()).Check();
   }
 
-  return js_throw(env, from_local(error));
+  return js_throw(env, js_from_local(error));
 }
 
 template <Local<Value> Error(Local<String> message)>
@@ -4730,6 +4756,8 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
 
   return js_throw_error(env, code, formatted.data());
 }
+
+} // namespace
 
 extern "C" int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
@@ -4830,7 +4858,7 @@ extern "C" int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
   if (env->exception.IsEmpty()) return js_get_undefined(env, result);
 
-  *result = from_local(env->exception.Get(env->isolate));
+  *result = js_from_local(env->exception.Get(env->isolate));
 
   env->exception.Reset();
 
@@ -4839,7 +4867,7 @@ js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_fatal_exception (js_env_t *env, js_value_t *error) {
-  env->uncaught_exception(to_local(error));
+  env->uncaught_exception(js_to_local(error));
 
   return 0;
 }
