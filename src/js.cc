@@ -1515,8 +1515,8 @@ struct js_module_s {
 
     auto result = module->callbacks.resolve(
       env,
-      ::js_from_local(specifier),
-      ::js_from_local(assertions),
+      js_from_local(specifier),
+      js_from_local(assertions),
       module,
       module->callbacks.resolve_data
     );
@@ -1574,9 +1574,9 @@ struct js_module_s {
 
     auto result = env->callbacks.dynamic_import(
       env,
-      ::js_from_local(specifier),
-      ::js_from_local(assertions),
-      ::js_from_local(referrer),
+      js_from_local(specifier),
+      js_from_local(assertions),
+      js_from_local(referrer),
       env->callbacks.dynamic_import_data
     );
 
@@ -1612,7 +1612,7 @@ struct js_module_s {
     module->callbacks.meta(
       env,
       module,
-      ::js_from_local(meta),
+      js_from_local(meta),
       module->callbacks.meta_data
     );
 
