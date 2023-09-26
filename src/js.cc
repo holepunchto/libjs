@@ -3928,7 +3928,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   if (names.IsEmpty()) return -1;
 
-  *result = from_local(names.ToLocalChecked());
+  if (result) *result = from_local(names.ToLocalChecked());
 
   return 0;
 }
