@@ -1709,11 +1709,21 @@ struct js_finalizer_s {
   on_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
     auto finalizer = info.GetParameter();
 
-    if (finalizer->finalize_cb) {
-      finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
-    }
-
     finalizer->value.Reset();
+
+    if (finalizer->finalize_cb) {
+      info.SetSecondPassCallback(on_second_pass_finalize);
+    } else {
+      delete finalizer;
+    }
+  }
+
+private:
+  static void
+  on_second_pass_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+    auto finalizer = info.GetParameter();
+
+    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
 
     delete finalizer;
   }
@@ -1795,11 +1805,21 @@ struct js_delegate_s {
   on_finalize (const WeakCallbackInfo<js_delegate_t> &info) {
     auto delegate = info.GetParameter();
 
-    if (delegate->finalize_cb) {
-      delegate->finalize_cb(delegate->env, delegate->data, delegate->finalize_hint);
-    }
-
     delegate->value.Reset();
+
+    if (delegate->finalize_cb) {
+      info.SetSecondPassCallback(on_second_pass_finalize);
+    } else {
+      delete delegate;
+    }
+  }
+
+private:
+  static void
+  on_second_pass_finalize (const WeakCallbackInfo<js_delegate_t> &info) {
+    auto delegate = info.GetParameter();
+
+    delegate->finalize_cb(delegate->env, delegate->data, delegate->finalize_hint);
 
     delete delegate;
   }
