@@ -117,6 +117,16 @@ struct js_task_handle_s {
         nestability(nestability),
         on_completion(nullptr) {}
 
+  js_task_handle_s(const js_task_handle_s &) = delete;
+
+  js_task_handle_s(js_task_handle_s &&) = default;
+
+  js_task_handle_s &
+  operator=(const js_task_handle_s &) = delete;
+
+  js_task_handle_s &
+  operator=(js_task_handle_s &&) = default;
+
   inline void
   run () {
     task->Run();
@@ -144,6 +154,16 @@ struct js_idle_task_handle_s {
 
   js_idle_task_handle_s(std::unique_ptr<IdleTask> task)
       : task(std::move(task)) {}
+
+  js_idle_task_handle_s(const js_idle_task_handle_s &) = delete;
+
+  js_idle_task_handle_s(js_idle_task_handle_s &&) = default;
+
+  js_idle_task_handle_s &
+  operator=(const js_idle_task_handle_s &) = delete;
+
+  js_idle_task_handle_s &
+  operator=(js_idle_task_handle_s &&) = default;
 
   void
   run (double deadline) {
@@ -198,6 +218,11 @@ struct js_task_runner_s : public TaskRunner {
 
     timer.data = this;
   }
+
+  js_task_runner_s(const js_task_runner_s &) = delete;
+
+  js_task_runner_s &
+  operator=(const js_task_runner_s &) = delete;
 
   inline void
   close () {
@@ -312,7 +337,7 @@ struct js_task_runner_s : public TaskRunner {
 
     auto task = pop_task();
 
-    if (task) return task;
+    if (task) return std::optional(std::move(task));
 
     if (closed) return std::nullopt;
 
@@ -819,9 +844,14 @@ struct js_worker_s {
       : tasks(tasks),
         thread(&js_worker_t::on_thread, this) {}
 
+  js_worker_s(const js_worker_s &) = delete;
+
   ~js_worker_s() {
     if (thread.joinable()) join();
   }
+
+  js_worker_s &
+  operator=(const js_worker_s &) = delete;
 
   inline void
   join () {
@@ -849,9 +879,14 @@ private:
   }
 
 public:
+  js_heap_s(const js_heap_s &) = delete;
+
   ~js_heap_s() {
     mem_heap_destroy(heap);
   }
+
+  js_heap_s &
+  operator=(const js_heap_s &) = delete;
 
   static std::shared_ptr<js_heap_t>
   local () {
@@ -889,6 +924,13 @@ public:
 };
 
 struct js_allocator_s : public ArrayBuffer::Allocator {
+  js_allocator_s() = default;
+
+  js_allocator_s(const js_allocator_s &) = delete;
+
+  js_allocator_s &
+  operator=(const js_allocator_s &) = delete;
+
 private: // V8 embedder API
   void *
   Allocate (size_t length) override {
@@ -974,6 +1016,11 @@ struct js_platform_s : public Platform {
       workers.emplace_back(new js_worker_t(background));
     }
   }
+
+  js_platform_s(const js_platform_s &) = delete;
+
+  js_platform_s &
+  operator=(const js_platform_s &) = delete;
 
   inline void
   close () {
@@ -1213,6 +1260,11 @@ struct js_env_s {
     js_to_local(context)->Enter();
   }
 
+  js_env_s(const js_env_s &) = delete;
+
+  js_env_s &
+  operator=(const js_env_s &) = delete;
+
   static inline js_env_t *
   from_context (Local<Context> context) {
     return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
@@ -1446,15 +1498,23 @@ struct js_handle_scope_s {
 
   js_handle_scope_s(Isolate *isolate)
       : scope(isolate) {}
+
+  js_handle_scope_s(const js_handle_scope_s &) = delete;
+
+  js_handle_scope_s &
+  operator=(const js_handle_scope_s &) = delete;
 };
 
 struct js_escapable_handle_scope_s {
   EscapableHandleScope scope;
-  bool escaped;
 
   js_escapable_handle_scope_s(Isolate *isolate)
-      : scope(isolate),
-        escaped(false) {}
+      : scope(isolate) {}
+
+  js_escapable_handle_scope_s(const js_escapable_handle_scope_s &) = delete;
+
+  js_escapable_handle_scope_s &
+  operator=(const js_escapable_handle_scope_s &) = delete;
 };
 
 struct js_module_s {
@@ -1477,6 +1537,11 @@ struct js_module_s {
       : module(isolate, module),
         name(std::move(name)),
         callbacks() {}
+
+  js_module_s(const js_module_s &) = delete;
+
+  js_module_s &
+  operator=(const js_module_s &) = delete;
 
   static inline js_module_t *
   from_local (Local<Context> context, Local<Module> local) {
@@ -1632,6 +1697,11 @@ struct js_ref_s {
       : value(isolate, value),
         count(count) {}
 
+  js_ref_s(const js_ref_s &) = delete;
+
+  js_ref_s &
+  operator=(const js_ref_s &) = delete;
+
   static void
   on_finalize (const WeakCallbackInfo<js_ref_t> &info) {
     auto reference = info.GetParameter();
@@ -1645,6 +1715,11 @@ struct js_deferred_s {
 
   js_deferred_s(Isolate *isolate, Local<Promise::Resolver> resolver)
       : resolver(isolate, resolver) {}
+
+  js_deferred_s(const js_deferred_s &) = delete;
+
+  js_deferred_s &
+  operator=(const js_deferred_s &) = delete;
 };
 
 struct js_callback_s {
@@ -1659,6 +1734,11 @@ struct js_callback_s {
         cb(cb),
         data(data),
         ffi(ffi) {}
+
+  js_callback_s(const js_callback_s &) = delete;
+
+  js_callback_s &
+  operator=(const js_callback_s &) = delete;
 
   static void
   on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
@@ -1705,6 +1785,11 @@ struct js_finalizer_s {
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint) {}
 
+  js_finalizer_s(const js_finalizer_s &) = delete;
+
+  js_finalizer_s &
+  operator=(const js_finalizer_s &) = delete;
+
   static void
   on_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
     auto finalizer = info.GetParameter();
@@ -1744,6 +1829,11 @@ struct js_delegate_s {
         data(data),
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint) {}
+
+  js_delegate_s(const js_delegate_s &) = delete;
+
+  js_delegate_s &
+  operator=(const js_delegate_s &) = delete;
 
   static void
   on_get (Local<Name> property, const PropertyCallbackInfo<Value> &info) {
@@ -1830,6 +1920,11 @@ struct js_arraybuffer_backing_store_s {
 
   js_arraybuffer_backing_store_s(std::shared_ptr<BackingStore> backing_store)
       : backing_store(backing_store) {}
+
+  js_arraybuffer_backing_store_s(const js_arraybuffer_backing_store_s &) = delete;
+
+  js_arraybuffer_backing_store_s &
+  operator=(const js_arraybuffer_backing_store_s &) = delete;
 };
 
 static const char *js_platform_identifier = "v8";
@@ -2055,14 +2150,6 @@ extern "C" int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  if (scope->escaped) {
-    js_throw_error(env, nullptr, "Scope has already been escaped");
-
-    return -1;
-  }
-
-  scope->escaped = true;
-
   auto local = js_to_local(escapee);
 
   *result = js_from_local(scope->scope.Escape(local));
@@ -2157,36 +2244,25 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto v8_source = ScriptCompiler::Source(local_source, origin);
 
-  auto try_catch = TryCatch(env->isolate);
-
-  auto compiled = ScriptCompiler::CompileModule(env->isolate, &v8_source);
-
-  if (try_catch.HasCaught()) {
-    auto error = try_catch.Exception();
-
-    if (env->depth == 0) {
-      env->uncaught_exception(error);
-    } else {
-      env->exception.Reset(env->isolate, error);
+  auto compiled = env->call_into_javascript<Module>(
+    [&] {
+      return ScriptCompiler::CompileModule(env->isolate, &v8_source);
     }
+  );
 
-    return -1;
-  }
+  if (compiled.IsEmpty()) return -1;
 
   auto local = compiled.ToLocalChecked();
 
-  char *module_name;
+  std::string module_name;
 
   if (len == size_t(-1)) {
-    module_name = strdup(name);
+    module_name = std::string(name);
   } else {
-    module_name = new char[len + 1];
-    module_name[len] = '\0';
-
-    memcpy(module_name, name, len);
+    module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, module_name);
+  auto module = new js_module_t(env->isolate, local, std::move(module_name));
 
   module->callbacks.meta = cb;
   module->callbacks.meta_data = data;
@@ -2270,7 +2346,7 @@ js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result
   auto local = module->module.Get(env->isolate);
 
   if (local->GetStatus() < Module::Status::kInstantiated) {
-    js_throw_error(env, nullptr, "Module must be instantiaed");
+    js_throw_error(env, nullptr, "Module must be instantiated");
 
     return -1;
   }
@@ -2639,7 +2715,9 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto external = External::New(env->isolate, finalizer);
 
-  local->SetPrivate(context, js_to_local(env->wrapper), external);
+  auto success = local->SetPrivate(context, js_to_local(env->wrapper), external);
+
+  if (success.IsNothing()) return -1;
 
   finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
 
@@ -2656,9 +2734,11 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto local = js_to_local(object).As<Object>();
 
-  auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
+  auto external = local->GetPrivate(context, js_to_local(env->wrapper));
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
+  if (external.IsEmpty()) return -1;
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
 
   *result = finalizer->data;
 
@@ -2673,9 +2753,11 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto local = js_to_local(object).As<Object>();
 
-  auto external = local->GetPrivate(context, js_to_local(env->wrapper)).ToLocalChecked();
+  auto external = local->GetPrivate(context, js_to_local(env->wrapper));
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.As<External>()->Value());
+  if (external.IsEmpty()) return -1;
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
 
   local->DeletePrivate(context, js_to_local(env->wrapper)).Check();
 
@@ -2711,7 +2793,9 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto object = tpl->NewInstance(context).ToLocalChecked();
 
-  object->SetPrivate(context, js_to_local(env->delegate), external);
+  auto success = object->SetPrivate(context, js_to_local(env->delegate), external);
+
+  if (success.IsNothing()) return -1;
 
   delegate->value.Reset(env->isolate, object);
 
@@ -2778,16 +2862,18 @@ js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, 
 
   auto local = js_to_local(object).As<Object>();
 
-  auto value = local->GetPrivate(context, key).ToLocalChecked();
+  auto value = local->GetPrivate(context, key);
+
+  if (value.IsEmpty()) return -1;
 
   *result = false;
 
-  if (value->IsBigInt()) {
+  if (value.ToLocalChecked()->IsBigInt()) {
     js_type_tag_t existing;
 
     int sign, size = 2;
 
-    value.As<BigInt>()->ToWordsArray(&sign, &size, reinterpret_cast<uint64_t *>(&existing));
+    value.ToLocalChecked().As<BigInt>()->ToWordsArray(&sign, &size, reinterpret_cast<uint64_t *>(&existing));
 
     if (sign != 0) return 0;
 

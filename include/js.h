@@ -249,8 +249,8 @@ int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data);
 
 /**
- * Add a callback for unhandled promise rejections. By default, unhandled promise
- * rejections are swallowed and do not affect JavaScript execution.
+ * Add a callback for unhandled promise rejections. By default, unhandled
+ *promise rejections are swallowed and do not affect JavaScript execution.
  *
  * A promise rejection is considered unhandled if the rejection has not been
  * caught after performing a microtask checkpoint.
@@ -258,6 +258,11 @@ js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data
 int
 js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *data);
 
+/**
+ * Add a callback for dynamic `import()` statements. By default, a dynamic
+ * import will result in either an uncaught exception or an unhandled promise
+ * rejection during script or module evaluation.
+ */
 int
 js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data);
 
@@ -299,6 +304,9 @@ int
 js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *scope);
 
 /**
+ * Promote an escapee to the outer handle scope. The behavior is undefined if
+ * called more than once for the same handle.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
