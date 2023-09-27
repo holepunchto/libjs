@@ -4774,7 +4774,7 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
 
   va_end(args_copy);
 
-  return js_throw_error(env, code, formatted.data());
+  return js_throw_error<Error>(env, code, formatted.data());
 }
 
 } // namespace
@@ -4794,7 +4794,7 @@ js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf(env, code, message, args);
+  int err = js_throw_verrorf<Exception::Error>(env, code, message, args);
 
   va_end(args);
 
@@ -4816,7 +4816,7 @@ js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...)
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_type_verrorf(env, code, message, args);
+  int err = js_throw_verrorf<Exception::TypeError>(env, code, message, args);
 
   va_end(args);
 
@@ -4838,7 +4838,7 @@ js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_range_verrorf(env, code, message, args);
+  int err = js_throw_verrorf<Exception::RangeError>(env, code, message, args);
 
   va_end(args);
 
@@ -4860,7 +4860,7 @@ js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ..
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_syntax_verrorf(env, code, message, args);
+  int err = js_throw_verrorf<Exception::SyntaxError>(env, code, message, args);
 
   va_end(args);
 

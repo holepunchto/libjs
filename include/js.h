@@ -241,6 +241,9 @@ js_destroy_env (js_env_t *env);
 /**
  * Add a callback for uncaught exceptions. By default, uncaught exceptions are
  * swallowed and do not affect JavaScript execution.
+ *
+ * An exception is considered uncaught if the JavaScript execution stack is
+ * emptied without the exception being caught.
  */
 int
 js_on_uncaught_exception (js_env_t *env, js_uncaught_exception_cb cb, void *data);
@@ -753,7 +756,7 @@ int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
 
 /**
- * Trigger an uncaught exception. If no uncaught exception handler is installed,
+ * Trigger an uncaught exception. If no uncaught exception handler is installed
  * the function has no effect and execution will continue normally.
  *
  * This function can be called even if there is a pending JavaScript exception.
