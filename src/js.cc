@@ -2026,6 +2026,8 @@ js_open_handle_scope (js_env_t *env, js_handle_scope_t **result) {
 
 extern "C" int
 js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope) {
+  // Allow continuing even with a pending exception
+
   delete scope;
 
   return 0;
@@ -2042,6 +2044,8 @@ js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **res
 
 extern "C" int
 js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *scope) {
+  // Allow continuing even with a pending exception
+
   delete scope;
 
   return 0;
@@ -2255,6 +2259,8 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
 extern "C" int
 js_delete_module (js_env_t *env, js_module_t *module) {
+  // Allow continuing even with a pending exception
+
   delete module;
 
   return 0;
@@ -2373,6 +2379,8 @@ js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t 
 
 extern "C" int
 js_delete_reference (js_env_t *env, js_ref_t *reference) {
+  // Allow continuing even with a pending exception
+
   reference->value.Reset();
 
   delete reference;
@@ -3526,6 +3534,8 @@ js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybu
 
 extern "C" int
 js_release_arraybuffer_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store) {
+  // Allow continuing even with a pending exception
+
   delete backing_store;
 
   return 0;
@@ -4791,6 +4801,8 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
 
 extern "C" int
 js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  if (env->is_exception_pending()) return -1;
+
   va_list args;
   va_start(args, message);
 
@@ -4813,6 +4825,8 @@ js_throw_type_verrorf (js_env_t *env, const char *code, const char *message, va_
 
 extern "C" int
 js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  if (env->is_exception_pending()) return -1;
+
   va_list args;
   va_start(args, message);
 
@@ -4835,6 +4849,8 @@ js_throw_range_verrorf (js_env_t *env, const char *code, const char *message, va
 
 extern "C" int
 js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  if (env->is_exception_pending()) return -1;
+
   va_list args;
   va_start(args, message);
 
@@ -4857,6 +4873,8 @@ js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, v
 
 extern "C" int
 js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...) {
+  if (env->is_exception_pending()) return -1;
+
   va_list args;
   va_start(args, message);
 
@@ -4869,6 +4887,8 @@ js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ..
 
 extern "C" int
 js_is_exception_pending (js_env_t *env, bool *result) {
+  // Allow continuing even with a pending exception
+
   *result = env->is_exception_pending();
 
   return 0;
@@ -4876,6 +4896,8 @@ js_is_exception_pending (js_env_t *env, bool *result) {
 
 extern "C" int
 js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
   if (env->exception.IsEmpty()) return js_get_undefined(env, result);
 
   *result = js_from_local(env->exception.Get(env->isolate));
@@ -4887,6 +4909,8 @@ js_get_and_clear_last_exception (js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_fatal_exception (js_env_t *env, js_value_t *error) {
+  // Allow continuing even with a pending exception
+
   env->uncaught_exception(js_to_local(error));
 
   return 0;
