@@ -3260,6 +3260,8 @@ js_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolu
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
 
+  deferred->resolver.Reset();
+
   delete deferred;
 
   if (env->depth == 0) env->run_microtasks();
