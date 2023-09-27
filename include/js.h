@@ -267,6 +267,9 @@ js_get_env_loop (js_env_t *env, uv_loop_t **result);
 int
 js_get_env_platform (js_env_t *env, js_platform_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result);
 
@@ -276,6 +279,9 @@ js_open_handle_scope (js_env_t *env, js_handle_scope_t **result);
 int
 js_close_handle_scope (js_env_t *env, js_handle_scope_t *scope);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_open_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t **result);
 
@@ -321,6 +327,9 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb 
 int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result);
 
@@ -330,12 +339,21 @@ js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t 
 int
 js_delete_reference (js_env_t *env, js_ref_t *reference);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result);
 
@@ -354,9 +372,15 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result);
 int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
 
@@ -366,33 +390,63 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag);
 int
 js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_int32 (js_env_t *env, int32_t value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_uint32 (js_env_t *env, uint32_t value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_int64 (js_env_t *env, int64_t value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_double (js_env_t *env, double value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_bigint_int64 (js_env_t *env, int64_t value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_string_utf8 (js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_string_utf16le (js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_object (js_env_t *env, js_value_t **result);
 
@@ -402,27 +456,48 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 int
 js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_array (js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_array_with_length (js_env_t *env, size_t len, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 int
 js_create_date (js_env_t *env, double time, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_type_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_range_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_syntax_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
@@ -435,6 +510,9 @@ js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result);
 
@@ -456,6 +534,9 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
 int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result);
 
@@ -468,6 +549,9 @@ js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_ba
 int
 js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result);
 
@@ -503,117 +587,225 @@ js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result);
 int
 js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result);
 
 int
 js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_undefined (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_null (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_boolean (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_number (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_string (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_symbol (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_object (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_function (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_array (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_external (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_wrapped (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_delegate (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_bigint (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_date (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_error (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_promise (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_detached_arraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_sharedarraybuffer (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result);
 
 int
 js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_global (js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_undefined (js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_null (js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_boolean (js_env_t *env, bool value, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_bool (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_double (js_env_t *env, js_value_t *value, double *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result);
 
@@ -665,18 +857,33 @@ js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *v
 int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_callback_info (js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_new_target (js_env_t *env, const js_callback_info_t *info, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
@@ -767,6 +974,9 @@ js_get_and_clear_last_exception (js_env_t *env, js_value_t **result);
 int
 js_fatal_exception (js_env_t *env, js_value_t *error);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *result);
 
@@ -775,6 +985,8 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
  * testing as it will negatively impact performance.
  *
  * Requires that the `expose_garbage_collection` option is `true`.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_request_garbage_collection (js_env_t *env);
