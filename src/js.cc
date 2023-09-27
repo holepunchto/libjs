@@ -2086,11 +2086,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
     local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
   }
 
-  if (local_file.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!local_file.IsEmpty());
 
   auto origin = ScriptOrigin(
     env->isolate,
@@ -2144,11 +2140,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
     local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
   }
 
-  if (local_name.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!local_name.IsEmpty());
 
   auto origin = ScriptOrigin(
     env->isolate,
@@ -2224,11 +2216,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
     local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
   }
 
-  if (local_name.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!local_name.IsEmpty());
 
   auto compiled = Module::CreateSyntheticModule(
     env->isolate,
@@ -2454,11 +2442,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
       string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
     }
 
-    if (string.IsEmpty()) {
-      js_throw_error(env, nullptr, "Invalid string length");
-
-      return -1;
-    }
+    assert(!string.IsEmpty());
 
     tpl->SetClassName(string.ToLocalChecked());
   }
@@ -2897,11 +2881,7 @@ js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_
     string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value), NewStringType::kNormal, len);
   }
 
-  if (string.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!string.IsEmpty());
 
   *result = js_from_local(string.ToLocalChecked());
 
@@ -2920,11 +2900,7 @@ js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_va
     string = String::NewFromTwoByte(env->isolate, value, NewStringType::kNormal, len);
   }
 
-  if (string.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!string.IsEmpty());
 
   *result = js_from_local(string.ToLocalChecked());
 
@@ -2986,11 +2962,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
       string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
     }
 
-    if (string.IsEmpty()) {
-      js_throw_error(env, nullptr, "Invalid string length");
-
-      return -1;
-    }
+    assert(!string.IsEmpty());
 
     function->SetName(string.ToLocalChecked());
   }
@@ -3016,11 +2988,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, file_len);
   }
 
-  if (local_file.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!local_file.IsEmpty());
 
   auto origin = ScriptOrigin(
     env->isolate,
@@ -3069,11 +3037,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
       string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, name_len);
     }
 
-    if (string.IsEmpty()) {
-      js_throw_error(env, nullptr, "Invalid string length");
-
-      return -1;
-    }
+    assert(!string.IsEmpty());
 
     function->SetName(string.ToLocalChecked());
   }
@@ -3119,11 +3083,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
       string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
     }
 
-    if (string.IsEmpty()) {
-      js_throw_error(env, nullptr, "Invalid string length");
-
-      return -1;
-    }
+    assert(!string.IsEmpty());
 
     function->SetName(string.ToLocalChecked());
   }
@@ -4288,11 +4248,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
-  if (key.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!key.IsEmpty());
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -4317,11 +4273,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
-  if (key.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!key.IsEmpty());
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4346,11 +4298,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
-  if (key.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!key.IsEmpty());
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4373,11 +4321,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
-  if (key.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!key.IsEmpty());
 
   auto value = env->call_into_javascript<bool>(
     [&] {
@@ -4735,22 +4679,14 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 
   auto local = String::NewFromUtf8(env->isolate, message);
 
-  if (local.IsEmpty()) {
-    js_throw_error(env, nullptr, "Invalid string length");
-
-    return -1;
-  }
+  assert(!local.IsEmpty());
 
   auto error = Error(local.ToLocalChecked()).As<Object>();
 
   if (code) {
     auto local = String::NewFromUtf8(env->isolate, code);
 
-    if (local.IsEmpty()) {
-      js_throw_error(env, nullptr, "Invalid string length");
-
-      return -1;
-    }
+    assert(!local.IsEmpty());
 
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local.ToLocalChecked()).Check();
   }
