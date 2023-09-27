@@ -268,6 +268,13 @@ int
 js_get_env_platform (js_env_t *env, js_platform_t **result);
 
 /**
+ * Unless otherwise stated, the following functions will rethrow any pending
+ * exception set on the associated JavaScript environment. To handle a pending
+ * exception, call `js_get_and_clear_last_exception()`. If the exception cannot
+ * be handled it may be rethrown with `js_throw()`.
+ */
+
+/**
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
