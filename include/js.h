@@ -328,6 +328,9 @@ int
 js_delete_module (js_env_t *env, js_module_t *module);
 
 /**
+ * Get the name of the module as specified when the module was created. The
+ * name remains valid until the module is deleted.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
