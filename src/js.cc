@@ -3448,6 +3448,8 @@ js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *re
 
 extern "C" int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
   auto local = js_to_local(promise).As<Promise>();
 
   assert(local->State() != Promise::PromiseState::kPending);
