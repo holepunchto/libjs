@@ -1465,6 +1465,8 @@ private:
       auto platform = this->platform;
       auto isolate = this->isolate;
 
+      context.Reset();
+
       delete this;
 
       isolate->Dispose();
@@ -1928,7 +1930,7 @@ private:
 
     auto context = isolate->GetCurrentContext();
 
-    auto env = js_env_t::from_context(context);
+    auto env = context.IsEmpty() ? nullptr : js_env_t::from_context(context);
 
     auto finalizer = info.GetParameter();
 
