@@ -1727,6 +1727,22 @@ struct js_ref_s {
   js_ref_s &
   operator=(const js_ref_s &) = delete;
 
+  inline void
+  set_weak () {
+    value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
+  }
+
+  inline void
+  clear_weak () {
+    value.ClearWeak<js_ref_t>();
+  }
+
+  inline void
+  reset () {
+    value.Reset();
+  }
+
+private:
   static void
   on_finalize (const WeakCallbackInfo<js_ref_t> &info) {
     auto reference = info.GetParameter();
@@ -1866,8 +1882,8 @@ struct js_finalizer_s {
   js_finalize_cb finalize_cb;
   void *finalize_hint;
 
-  js_finalizer_s(js_env_t *env, Local<Value> value, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
-      : value(env->isolate, value),
+  js_finalizer_s(void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+      : value(),
         data(data),
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint) {}
@@ -1877,6 +1893,19 @@ struct js_finalizer_s {
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
 
+  inline void
+  attach_to (Isolate *isolate, Local<Value> value) {
+    this->value.Reset(isolate, value);
+
+    this->value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
+  }
+
+  inline void
+  detach () {
+    value.SetWeak();
+  }
+
+protected:
   template <typename T>
   static void
   on_finalize (const WeakCallbackInfo<T> &info) {
@@ -1912,10 +1941,29 @@ private:
 struct js_delegate_s : js_finalizer_t {
   js_delegate_callbacks_t callbacks;
 
-  js_delegate_s(js_env_t *env, const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
-      : js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint),
+  js_delegate_s(const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+      : js_finalizer_t(data, finalize_cb, finalize_hint),
         callbacks(callbacks) {}
 
+  inline Local<ObjectTemplate>
+  to_object_template (Isolate *isolate) {
+    auto external = External::New(isolate, this);
+
+    auto tpl = ObjectTemplate::New(isolate);
+
+    tpl->SetHandler(NamedPropertyHandlerConfiguration(
+      on_get,
+      on_set,
+      nullptr,
+      on_delete,
+      on_enumerate,
+      external
+    ));
+
+    return tpl;
+  }
+
+private:
   static void
   on_get (Local<Name> property, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
@@ -2009,9 +2057,13 @@ struct js_arraybuffer_backing_store_s {
   operator=(const js_arraybuffer_backing_store_s &) = delete;
 };
 
+namespace {
+
 static const char *js_platform_identifier = "v8";
 
 static const char *js_platform_version = V8::GetVersion();
+
+} // namespace
 
 extern "C" int
 js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result) {
@@ -2495,27 +2547,13 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
   return 0;
 }
 
-namespace {
-
-static inline void
-js_set_weak_reference (js_env_t *env, js_ref_t *reference) {
-  reference->value.SetWeak(reference, js_ref_t::on_finalize, WeakCallbackType::kParameter);
-}
-
-static inline void
-js_clear_weak_reference (js_env_t *env, js_ref_t *reference) {
-  reference->value.ClearWeak<js_ref_t>();
-}
-
-} // namespace
-
 extern "C" int
 js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result) {
   // Allow continuing even with a pending exception
 
   auto reference = new js_ref_t(env->isolate, js_to_local(value), count);
 
-  if (reference->count == 0) js_set_weak_reference(env, reference);
+  if (reference->count == 0) reference->set_weak();
 
   *result = reference;
 
@@ -2526,7 +2564,7 @@ extern "C" int
 js_delete_reference (js_env_t *env, js_ref_t *reference) {
   // Allow continuing even with a pending exception
 
-  reference->value.Reset();
+  reference->reset();
 
   delete reference;
 
@@ -2539,7 +2577,7 @@ js_reference_ref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
 
   reference->count++;
 
-  if (reference->count == 1) js_clear_weak_reference(env, reference);
+  if (reference->count == 1) reference->clear_weak();
 
   if (result) *result = reference->count;
 
@@ -2553,7 +2591,7 @@ js_reference_unref (js_env_t *env, js_ref_t *reference, uint32_t *result) {
   if (reference->count > 0) {
     reference->count--;
 
-    if (reference->count == 0) js_set_weak_reference(env, reference);
+    if (reference->count == 0) reference->set_weak();
   }
 
   if (result) *result = reference->count;
@@ -2769,7 +2807,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto local = js_to_local(object).As<Object>();
 
-  auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
+  auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
 
   auto external = External::New(env->isolate, finalizer);
 
@@ -2779,9 +2817,13 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) {
+    delete finalizer;
 
-  finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
+    return -1;
+  }
+
+  finalizer->attach_to(env->isolate, local);
 
   if (result) return js_create_reference(env, object, 0, result);
 
@@ -2835,7 +2877,7 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   local->DeletePrivate(context, key).Check();
 
-  finalizer->value.SetWeak();
+  finalizer->detach();
 
   if (result) *result = finalizer->data;
 
@@ -2852,28 +2894,13 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto key = js_to_local(env->delegate);
 
-  auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
+  auto delegate = new js_delegate_t(*callbacks, data, finalize_cb, finalize_hint);
 
-  auto external = External::New(env->isolate, delegate);
-
-  auto tpl = ObjectTemplate::New(env->isolate);
-
-  tpl->SetHandler(NamedPropertyHandlerConfiguration(
-    js_delegate_t::on_get,
-    js_delegate_t::on_set,
-    nullptr,
-    js_delegate_t::on_delete,
-    js_delegate_t::on_enumerate,
-    external
-  ));
+  auto tpl = delegate->to_object_template(env->isolate);
 
   auto object = tpl->NewInstance(context).ToLocalChecked();
 
-  object->SetPrivate(context, key, external).Check();
-
-  delegate->value.Reset(env->isolate, object);
-
-  delegate->value.SetWeak(delegate, js_delegate_t::on_finalize, WeakCallbackType::kParameter);
+  delegate->attach_to(env->isolate, object);
 
   *result = js_from_local(object);
 
@@ -2888,9 +2915,9 @@ js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb 
 
   auto local = js_to_local(object).As<Object>();
 
-  auto finalizer = new js_finalizer_t(env, local, data, finalize_cb, finalize_hint);
+  auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
 
-  finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
+  finalizer->attach_to(env->isolate, local);
 
   if (result) return js_create_reference(env, object, 0, result);
 
@@ -3281,9 +3308,9 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
   auto external = External::New(env->isolate, data);
 
   if (finalize_cb) {
-    auto finalizer = new js_finalizer_t(env, external, data, finalize_cb, finalize_hint);
+    auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
 
-    finalizer->value.SetWeak(finalizer, js_finalizer_t::on_finalize, WeakCallbackType::kParameter);
+    finalizer->attach_to(env->isolate, external);
   }
 
   *result = js_from_local(external);
@@ -3515,7 +3542,7 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
   js_finalizer_t *finalizer = nullptr;
 
   if (finalize_cb) {
-    finalizer = new js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint);
+    finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
   }
 
   auto store = ArrayBuffer::NewBackingStore(
