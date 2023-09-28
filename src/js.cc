@@ -29,6 +29,7 @@
 using namespace v8;
 
 typedef struct js_callback_s js_callback_t;
+typedef struct js_fast_callback_s js_fast_callback_t;
 typedef struct js_finalizer_s js_finalizer_t;
 typedef struct js_delegate_s js_delegate_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
@@ -1748,38 +1749,56 @@ struct js_deferred_s {
 
 struct js_callback_s {
   Persistent<External> external;
-  js_env_t *env;
   js_function_cb cb;
   void *data;
-  js_ffi_function_t *ffi;
 
-  js_callback_s(js_env_t *env, js_function_cb cb, void *data, js_ffi_function_t *ffi = nullptr)
-      : env(env),
+  js_callback_s(js_env_t *env, js_function_cb cb, void *data)
+      : external(env->isolate, External::New(env->isolate, this)),
         cb(cb),
-        data(data),
-        ffi(ffi) {}
+        data(data) {
+    external.SetWeak(this, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+  }
 
   js_callback_s(const js_callback_s &) = delete;
 
   js_callback_s &
   operator=(const js_callback_s &) = delete;
 
-  static void
-  on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
-    auto callback = info.GetParameter();
-
-    callback->external.Reset();
-
-    if (callback->ffi) delete callback->ffi;
-
-    delete callback;
+  inline MaybeLocal<Function>
+  to_function (Local<Context> context) {
+    return Function::New(
+      context,
+      on_call,
+      js_to_local(external),
+      0,
+      ConstructorBehavior::kAllow,
+      SideEffectType::kHasSideEffect
+    );
   }
 
+  inline Local<FunctionTemplate>
+  to_function_template (Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
+    return FunctionTemplate::New(
+      isolate,
+      on_call,
+      js_to_local(external),
+      signature,
+      0,
+      ConstructorBehavior::kAllow,
+      SideEffectType::kHasSideEffect
+    );
+  }
+
+protected:
   static void
   on_call (const FunctionCallbackInfo<Value> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
     auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
-    auto env = callback->env;
+    auto env = js_env_t::from_context(context);
 
     auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
@@ -1792,6 +1811,52 @@ struct js_callback_s {
 
       env->exception.Reset();
     }
+  }
+
+private:
+  static void
+  on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
+    auto callback = info.GetParameter();
+
+    callback->external.Reset();
+
+    delete callback;
+  }
+};
+
+struct js_fast_callback_s : js_callback_t {
+  js_ffi_function_t *ffi;
+
+  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, js_ffi_function_t *ffi)
+      : js_callback_t(env, cb, data),
+        ffi(ffi) {
+    external.SetWeak(this, js_fast_callback_t::on_finalize, WeakCallbackType::kParameter);
+  }
+
+  inline Local<FunctionTemplate>
+  to_function_template (Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
+    return FunctionTemplate::New(
+      isolate,
+      on_call,
+      js_to_local(external),
+      signature,
+      0,
+      ConstructorBehavior::kThrow,
+      SideEffectType::kHasSideEffect,
+      &ffi->function
+    );
+  }
+
+private:
+  static void
+  on_finalize (const WeakCallbackInfo<js_fast_callback_t> &info) {
+    auto callback = info.GetParameter();
+
+    callback->external.Reset();
+
+    if (callback->ffi) delete callback->ffi;
+
+    delete callback;
   }
 };
 
@@ -2524,13 +2589,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
 
   auto callback = new js_callback_t(env, constructor, data);
 
-  auto external = External::New(env->isolate, callback);
-
-  callback->external.Reset(env->isolate, external);
-
-  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-  auto tpl = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+  auto tpl = callback->to_function_template(env->isolate);
 
   if (name) {
     MaybeLocal<String> string;
@@ -2579,25 +2638,13 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
       if (property->getter) {
         auto callback = new js_callback_t(env, property->getter, property->data);
 
-        auto external = External::New(env->isolate, callback);
-
-        callback->external.Reset(env->isolate, external);
-
-        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-        getter = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+        getter = callback->to_function_template(env->isolate);
       }
 
       if (property->setter) {
         auto callback = new js_callback_t(env, property->setter, property->data);
 
-        auto external = External::New(env->isolate, callback);
-
-        callback->external.Reset(env->isolate, external);
-
-        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-        setter = FunctionTemplate::New(env->isolate, js_callback_t::on_call, external);
+        setter = callback->to_function_template(env->isolate);
       }
 
       tpl->PrototypeTemplate()->SetAccessorProperty(
@@ -2609,18 +2656,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
     } else if (property->method) {
       auto callback = new js_callback_t(env, property->method, property->data);
 
-      auto external = External::New(env->isolate, callback);
-
-      callback->external.Reset(env->isolate, external);
-
-      callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-      auto method = FunctionTemplate::New(
-        env->isolate,
-        js_callback_t::on_call,
-        external,
-        Signature::New(env->isolate, tpl)
-      );
+      auto method = callback->to_function_template(env->isolate, Signature::New(env->isolate, tpl));
 
       tpl->PrototypeTemplate()->Set(
         name,
@@ -2638,9 +2674,15 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
     }
   }
 
-  auto function = tpl->GetFunction(context).ToLocalChecked();
+  auto function = env->try_catch<Function>(
+    [&] {
+      return tpl->GetFunction(context);
+    }
+  );
 
-  *result = js_from_local(function);
+  if (function.IsEmpty()) return -1;
+
+  *result = js_from_local(function.ToLocalChecked());
 
   return js_define_properties(env, *result, static_properties.data(), static_properties.size());
 }
@@ -2660,6 +2702,8 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
     auto name = String::NewFromUtf8(env->isolate, property->name).ToLocalChecked();
 
+    auto success = Nothing<bool>();
+
     if (property->getter || property->setter) {
       Local<Function> getter;
       Local<Function> setter;
@@ -2667,25 +2711,13 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
       if (property->getter) {
         auto callback = new js_callback_t(env, property->getter, property->data);
 
-        auto external = External::New(env->isolate, callback);
-
-        callback->external.Reset(env->isolate, external);
-
-        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-        getter = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+        getter = callback->to_function(context).ToLocalChecked();
       }
 
       if (property->setter) {
         auto callback = new js_callback_t(env, property->setter, property->data);
 
-        auto external = External::New(env->isolate, callback);
-
-        callback->external.Reset(env->isolate, external);
-
-        callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-        setter = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+        setter = callback->to_function(context).ToLocalChecked();
       }
 
       auto descriptor = PropertyDescriptor(getter, setter);
@@ -2693,24 +2725,26 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      local->DefineProperty(context, name, descriptor).Check();
+      success = env->try_catch<bool>(
+        [&] {
+          return local->DefineProperty(context, name, descriptor);
+        }
+      );
     } else if (property->method) {
       auto callback = new js_callback_t(env, property->method, property->data);
 
-      auto external = External::New(env->isolate, callback);
-
-      callback->external.Reset(env->isolate, external);
-
-      callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-      auto method = Function::New(context, js_callback_t::on_call, external).ToLocalChecked();
+      auto method = callback->to_function(context).ToLocalChecked();
 
       auto descriptor = PropertyDescriptor(method, (property->attributes & js_writable) != 0);
 
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      local->DefineProperty(context, name, descriptor).Check();
+      success = env->try_catch<bool>(
+        [&] {
+          return local->DefineProperty(context, name, descriptor);
+        }
+      );
     } else {
       auto value = js_to_local(property->value);
 
@@ -2719,8 +2753,14 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      local->DefineProperty(context, name, descriptor).Check();
+      success = env->try_catch<bool>(
+        [&] {
+          return local->DefineProperty(context, name, descriptor);
+        }
+      );
     }
+
+    if (success.IsNothing()) return -1;
   }
 
   return 0;
@@ -3088,15 +3128,9 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto callback = new js_callback_t(env, cb, data);
 
-  auto external = External::New(env->isolate, callback);
-
-  callback->external.Reset(env->isolate, external);
-
-  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
   auto function = env->try_catch<Function>(
     [&] {
-      return Function::New(context, js_callback_t::on_call, external);
+      return callback->to_function(context);
     }
   );
 
@@ -3194,28 +3228,11 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto context = js_to_local(env->context);
 
-  auto callback = new js_callback_t(env, cb, data, ffi);
-
-  auto external = External::New(env->isolate, callback);
-
-  callback->external.Reset(env->isolate, external);
-
-  callback->external.SetWeak(callback, js_callback_t::on_finalize, WeakCallbackType::kParameter);
-
-  auto tpl = FunctionTemplate::New(
-    env->isolate,
-    js_callback_t::on_call,
-    external,
-    Local<Signature>(),
-    0,
-    ConstructorBehavior::kThrow,
-    SideEffectType::kHasSideEffect,
-    &callback->ffi->function
-  );
+  auto callback = new js_fast_callback_t(env, cb, data, ffi);
 
   auto function = env->try_catch<Function>(
     [&] {
-      return tpl->GetFunction(context);
+      return callback->to_function_template(env->isolate)->GetFunction(context);
     }
   );
 
