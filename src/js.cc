@@ -1862,14 +1862,12 @@ private:
 
 struct js_finalizer_s {
   Persistent<Value> value;
-  js_env_t *env;
   void *data;
   js_finalize_cb finalize_cb;
   void *finalize_hint;
 
   js_finalizer_s(js_env_t *env, Local<Value> value, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : value(env->isolate, value),
-        env(env),
         data(data),
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint) {}
@@ -1879,63 +1877,63 @@ struct js_finalizer_s {
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
 
+  template <typename T>
   static void
-  on_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+  on_finalize (const WeakCallbackInfo<T> &info) {
     auto finalizer = info.GetParameter();
 
     finalizer->value.Reset();
 
     if (finalizer->finalize_cb) {
-      info.SetSecondPassCallback(on_second_pass_finalize);
+      info.SetSecondPassCallback(on_second_pass_finalize<T>);
     } else {
       delete finalizer;
     }
   }
 
 private:
+  template <typename T>
   static void
-  on_second_pass_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
+  on_second_pass_finalize (const WeakCallbackInfo<T> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
     auto finalizer = info.GetParameter();
 
-    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+    finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
 
     delete finalizer;
   }
 };
 
-struct js_delegate_s {
-  Persistent<Value> value;
-  js_env_t *env;
+struct js_delegate_s : js_finalizer_t {
   js_delegate_callbacks_t callbacks;
-  void *data;
-  js_finalize_cb finalize_cb;
-  void *finalize_hint;
 
-  js_delegate_s(js_env_t *env, Local<Value> value, const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
-      : env(env),
-        value(env->isolate, value),
-        callbacks(callbacks),
-        data(data),
-        finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
-
-  js_delegate_s(const js_delegate_s &) = delete;
-
-  js_delegate_s &
-  operator=(const js_delegate_s &) = delete;
+  js_delegate_s(js_env_t *env, const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+      : js_finalizer_t(env, Local<Value>(), data, finalize_cb, finalize_hint),
+        callbacks(callbacks) {}
 
   static void
   on_get (Local<Name> property, const PropertyCallbackInfo<Value> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.has) {
-      auto exists = delegate->callbacks.has(delegate->env, js_from_local(property), delegate->data);
+      auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
 
       if (!exists) return;
     }
 
     if (delegate->callbacks.get) {
-      auto result = delegate->callbacks.get(delegate->env, js_from_local(property), delegate->data);
+      auto result = delegate->callbacks.get(env, js_from_local(property), delegate->data);
 
       if (result) {
         info.GetReturnValue().Set(js_to_local(result));
@@ -1945,10 +1943,16 @@ struct js_delegate_s {
 
   static void
   on_set (Local<Name> property, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.set) {
-      auto result = delegate->callbacks.set(delegate->env, js_from_local(property), js_from_local(value), delegate->data);
+      auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
 
       info.GetReturnValue().Set(result);
     }
@@ -1956,10 +1960,16 @@ struct js_delegate_s {
 
   static void
   on_delete (Local<Name> property, const PropertyCallbackInfo<Boolean> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.delete_property) {
-      auto result = delegate->callbacks.delete_property(delegate->env, js_from_local(property), delegate->data);
+      auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
 
       info.GetReturnValue().Set(result);
     }
@@ -1967,10 +1977,16 @@ struct js_delegate_s {
 
   static void
   on_enumerate (const PropertyCallbackInfo<Array> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = js_env_t::from_context(context);
+
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
     if (delegate->callbacks.own_keys) {
-      auto result = delegate->callbacks.own_keys(delegate->env, delegate->data);
+      auto result = delegate->callbacks.own_keys(env, delegate->data);
 
       if (result) {
         auto local = js_to_local(result).As<Array>();
@@ -1978,29 +1994,6 @@ struct js_delegate_s {
         info.GetReturnValue().Set(local);
       }
     }
-  }
-
-  static void
-  on_finalize (const WeakCallbackInfo<js_delegate_t> &info) {
-    auto delegate = info.GetParameter();
-
-    delegate->value.Reset();
-
-    if (delegate->finalize_cb) {
-      info.SetSecondPassCallback(on_second_pass_finalize);
-    } else {
-      delete delegate;
-    }
-  }
-
-private:
-  static void
-  on_second_pass_finalize (const WeakCallbackInfo<js_delegate_t> &info) {
-    auto delegate = info.GetParameter();
-
-    delegate->finalize_cb(delegate->env, delegate->data, delegate->finalize_hint);
-
-    delete delegate;
   }
 };
 
@@ -2859,7 +2852,7 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto key = js_to_local(env->delegate);
 
-  auto delegate = new js_delegate_t(env, Local<Value>(), *callbacks, data, finalize_cb, finalize_hint);
+  auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
   auto external = External::New(env->isolate, delegate);
 
@@ -3449,7 +3442,7 @@ js_finalize_external_arraybuffer (void *data, size_t len, void *deleter_data) {
   auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
 
   if (finalizer) {
-    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+    finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
 
     delete finalizer;
   }
