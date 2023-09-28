@@ -327,9 +327,18 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 int
 js_delete_module (js_env_t *env, js_module_t *module);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_module_name (js_env_t *env, js_module_t *module, const char **result);
 
+/**
+ * Get the namespace object of the module. The behavior is undefined if the
+ * module is not yet instantiated.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result);
 
@@ -489,6 +498,9 @@ js_create_array_with_length (js_env_t *env, size_t len, js_value_t **result);
 int
 js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_date (js_env_t *env, double time, js_value_t **result);
 
@@ -516,12 +528,21 @@ js_create_range_error (js_env_t *env, js_value_t *code, js_value_t *message, js_
 int
 js_create_syntax_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_resolve_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
@@ -531,6 +552,12 @@ js_reject_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
 int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result);
 
+/**
+ * Get the result of the promise. The behavior is undefined if the promise is
+ * still pending.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result);
 
@@ -546,6 +573,9 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t
 int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer);
 
@@ -590,6 +620,9 @@ js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_v
 int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_coerce_to_boolean (js_env_t *env, js_value_t *value, js_value_t **result);
 
@@ -737,6 +770,9 @@ js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
 int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
@@ -824,12 +860,21 @@ js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, siz
 int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result);
 
@@ -997,9 +1042,9 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
 
 /**
  * Request that the garbage collector be run. This should only be used for
- * testing as it will negatively impact performance.
- *
- * Requires that the `expose_garbage_collection` option is `true`.
+ * testing as it will negatively impact performance. Unless garbage collection
+ * APIs have been exposed using the `expose_garbage_collection` option the
+ * function does nothing.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
