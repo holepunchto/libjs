@@ -1787,7 +1787,7 @@ struct js_callback_s {
       : external(env->isolate, External::New(env->isolate, this)),
         cb(cb),
         data(data) {
-    external.SetWeak(this, js_callback_t::on_finalize, WeakCallbackType::kParameter);
+    external.SetWeak(this, on_finalize<js_callback_t>, WeakCallbackType::kParameter);
   }
 
   js_callback_s(const js_callback_s &) = delete;
@@ -1844,9 +1844,9 @@ protected:
     }
   }
 
-private:
+  template <typename T>
   static void
-  on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
+  on_finalize (const WeakCallbackInfo<T> &info) {
     auto callback = info.GetParameter();
 
     callback->external.Reset();
@@ -1866,7 +1866,9 @@ struct js_fast_callback_s : js_callback_t {
         return_info(return_info),
         arg_info(arg_info),
         function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
-        address(address) {}
+        address(address) {
+    external.SetWeak(this, on_finalize<js_fast_callback_t>, WeakCallbackType::kParameter);
+  }
 
   inline Local<FunctionTemplate>
   to_function_template (Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
@@ -1906,7 +1908,7 @@ struct js_finalizer_s {
   attach_to (Isolate *isolate, Local<Value> value) {
     this->value.Reset(isolate, value);
 
-    this->value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
+    this->value.SetWeak(this, on_finalize<js_finalizer_t>, WeakCallbackType::kParameter);
   }
 
   inline void
@@ -1953,6 +1955,13 @@ struct js_delegate_s : js_finalizer_t {
   js_delegate_s(const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : js_finalizer_t(data, finalize_cb, finalize_hint),
         callbacks(callbacks) {}
+
+  inline void
+  attach_to (Isolate *isolate, Local<Value> value) {
+    this->value.Reset(isolate, value);
+
+    this->value.SetWeak(this, on_finalize<js_delegate_t>, WeakCallbackType::kParameter);
+  }
 
   inline Local<ObjectTemplate>
   to_object_template (Isolate *isolate) {
