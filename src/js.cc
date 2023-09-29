@@ -1071,22 +1071,28 @@ struct js_platform_s : public Platform {
 
   inline void
   attach (js_env_t *env) {
+    std::scoped_lock guard(lock);
+
     environments.insert(env);
   }
 
   inline void
   detach (js_env_t *env) {
+    std::unique_lock guard(lock);
+
     environments.erase(env);
 
-    dispose_maybe();
+    dispose_maybe(guard);
   }
 
 private:
   inline void
-  dispose_maybe () {
+  dispose_maybe (std::unique_lock<std::recursive_mutex> &lock) {
     if (active_handles == 0 && environments.empty()) {
       V8::Dispose();
       V8::DisposePlatform();
+
+      lock.unlock();
 
       delete this;
     }
@@ -1138,9 +1144,11 @@ private:
   on_handle_close (uv_handle_t *handle) {
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
+    std::unique_lock guard(platform->lock);
+
     platform->active_handles--;
 
-    platform->dispose_maybe();
+    platform->dispose_maybe(guard);
   }
 
 private: // V8 embedder API
