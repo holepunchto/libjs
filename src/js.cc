@@ -1316,10 +1316,6 @@ struct js_env_s {
     // isolate. They must be able to reference the isolate during teardown.
     delete handles;
 
-    // Let the isolate know that we disposed of a context and that it wasn't
-    // depending on state from other contexts.
-    isolate->ContextDisposedNotification(false);
-
     isolate->Exit();
 
     isolate->Dispose();
