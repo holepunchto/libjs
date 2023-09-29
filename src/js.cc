@@ -1312,13 +1312,15 @@ struct js_env_s {
 
     context->Exit();
 
-    // Delete the handle scope and persistent handles before dispoing of the
+    // Delete the handle scope and persistent handles before disposing of the
     // isolate. They must be able to reference the isolate during teardown.
     delete handles;
 
     // Let the isolate know that we disposed of a context and that it wasn't
     // depending on state from other contexts.
     isolate->ContextDisposedNotification(false);
+
+    isolate->Exit();
 
     isolate->Dispose();
   }
@@ -1347,16 +1349,6 @@ struct js_env_s {
   inline uint64_t
   now () {
     return uv_hrtime();
-  }
-
-  inline void
-  enter () {
-    isolate->Enter();
-  }
-
-  inline void
-  exit () {
-    isolate->Exit();
   }
 
   inline void
@@ -2240,9 +2232,9 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 
   isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
 
-  auto env = new js_env_t(loop, platform, isolate);
+  isolate->Enter();
 
-  env->enter();
+  auto env = new js_env_t(loop, platform, isolate);
 
   *result = env;
 
@@ -2252,8 +2244,6 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 extern "C" int
 js_destroy_env (js_env_t *env) {
   std::scoped_lock guard(env->platform->lock);
-
-  env->exit();
 
   env->platform->foreground.erase(env->isolate);
 
