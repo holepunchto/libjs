@@ -38,6 +38,7 @@ list(APPEND tests
   create-function-throw-indirect
   create-function-with-ffi
   create-function-with-ffi-arraybuffer
+  create-function-with-ffi-finalizer
   create-function-with-ffi-no-jit
   create-function-with-ffi-pointer
   create-function-with-ffi-receiver
