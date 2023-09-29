@@ -76,7 +76,7 @@ js_from_local (Local<Value> local) {
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
 
-  js_ffi_type_info_s(CTypeInfo &&type_info)
+  js_ffi_type_info_s(CTypeInfo type_info)
       : type_info(type_info) {}
 
   js_ffi_type_info_s(const js_ffi_type_info_s &) = delete;
@@ -89,9 +89,9 @@ struct js_ffi_function_info_s {
   CTypeInfo return_info;
   std::vector<CTypeInfo> arg_info;
 
-  js_ffi_function_info_s(CTypeInfo &&return_info, std::vector<CTypeInfo> &&arg_info)
+  js_ffi_function_info_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info)
       : return_info(return_info),
-        arg_info(std::move(arg_info)) {}
+        arg_info(arg_info) {}
 
   js_ffi_function_info_s(const js_ffi_function_info_s &) = delete;
 
@@ -104,9 +104,9 @@ struct js_ffi_function_s {
   std::vector<CTypeInfo> arg_info;
   const void *address;
 
-  js_ffi_function_s(CTypeInfo &&return_info, std::vector<CTypeInfo> &&arg_info, const void *address)
+  js_ffi_function_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info, const void *address)
       : return_info(return_info),
-        arg_info(std::move(arg_info)),
+        arg_info(arg_info),
         address(address) {}
 
   js_ffi_function_s(const js_ffi_function_s &) = delete;
@@ -1861,10 +1861,10 @@ struct js_fast_callback_s : js_callback_t {
   CFunctionInfo function_info;
   const void *address;
 
-  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo return_info, std::vector<CTypeInfo> &&arg_info, const void *address)
+  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo return_info, std::vector<CTypeInfo> arg_info, const void *address)
       : js_callback_t(env, cb, data),
         return_info(return_info),
-        arg_info(std::move(arg_info)),
+        arg_info(arg_info),
         function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
         address(address) {}
 
@@ -3257,14 +3257,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto context = js_to_local(env->context);
 
-  auto callback = new js_fast_callback_t(
-    env,
-    cb,
-    data,
-    std::move(ffi->return_info),
-    std::move(ffi->arg_info),
-    ffi->address
-  );
+  auto callback = new js_fast_callback_t(env, cb, data, ffi->return_info, ffi->arg_info, ffi->address);
 
   delete ffi;
 
@@ -5114,14 +5107,14 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
 
   auto v8_type_info = CTypeInfo(v8_type, v8_sequence_type, v8_flags);
 
-  *result = new js_ffi_type_info_t(std::move(v8_type_info));
+  *result = new js_ffi_type_info_t(v8_type_info);
 
   return 0;
 }
 
 extern "C" int
 js_ffi_create_function_info (const js_ffi_type_info_t *return_info, js_ffi_type_info_t *const arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
-  auto v8_return_info = std::move(return_info->type_info);
+  auto v8_return_info = return_info->type_info;
 
   delete return_info;
 
@@ -5130,32 +5123,25 @@ js_ffi_create_function_info (const js_ffi_type_info_t *return_info, js_ffi_type_
   v8_arg_info.reserve(arg_len);
 
   for (unsigned int i = 0; i < arg_len; i++) {
-    v8_arg_info.push_back(std::move(arg_info[i]->type_info));
+    v8_arg_info.push_back(arg_info[i]->type_info);
 
     delete arg_info[i];
   }
 
-  *result = new js_ffi_function_info_t(
-    std::move(v8_return_info),
-    std::move(v8_arg_info)
-  );
+  *result = new js_ffi_function_info_t(v8_return_info, v8_arg_info);
 
   return 0;
 }
 
 extern "C" int
 js_ffi_create_function (const void *function, const js_ffi_function_info_t *type_info, js_ffi_function_t **result) {
-  auto v8_return_info = std::move(type_info->return_info);
+  auto v8_return_info = type_info->return_info;
 
-  auto v8_arg_info = std::move(type_info->arg_info);
+  auto v8_arg_info = type_info->arg_info;
 
   delete type_info;
 
-  *result = new js_ffi_function_t(
-    std::move(v8_return_info),
-    std::move(v8_arg_info),
-    function
-  );
+  *result = new js_ffi_function_t(v8_return_info, v8_arg_info, function);
 
   return 0;
 }
