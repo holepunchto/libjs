@@ -2504,6 +2504,17 @@ extern "C" int
 js_delete_module (js_env_t *env, js_module_t *module) {
   // Allow continuing even with a pending exception
 
+  auto local = module->module.Get(env->isolate);
+
+  auto range = env->modules.equal_range(local->GetIdentityHash());
+
+  for (auto it = range.first; it != range.second; ++it) {
+    if (it->second->module == local) {
+      env->modules.erase(it);
+      break;
+    }
+  }
+
   delete module;
 
   return 0;
