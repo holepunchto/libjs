@@ -76,30 +76,43 @@ js_from_local (Local<Value> local) {
 struct js_ffi_type_info_s {
   CTypeInfo type_info;
 
-  js_ffi_type_info_s(CTypeInfo type_info)
+  js_ffi_type_info_s(CTypeInfo &&type_info)
       : type_info(type_info) {}
+
+  js_ffi_type_info_s(const js_ffi_type_info_s &) = delete;
+
+  js_ffi_type_info_s &
+  operator=(const js_ffi_type_info_s &) = delete;
 };
 
 struct js_ffi_function_info_s {
   CTypeInfo return_info;
   std::vector<CTypeInfo> arg_info;
 
-  js_ffi_function_info_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info)
+  js_ffi_function_info_s(CTypeInfo &&return_info, std::vector<CTypeInfo> &&arg_info)
       : return_info(return_info),
         arg_info(std::move(arg_info)) {}
+
+  js_ffi_function_info_s(const js_ffi_function_info_s &) = delete;
+
+  js_ffi_function_info_s &
+  operator=(const js_ffi_function_info_s &) = delete;
 };
 
 struct js_ffi_function_s {
   CTypeInfo return_info;
   std::vector<CTypeInfo> arg_info;
-  CFunctionInfo function_info;
-  CFunction function;
+  const void *address;
 
-  js_ffi_function_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info, const void *address)
+  js_ffi_function_s(CTypeInfo &&return_info, std::vector<CTypeInfo> &&arg_info, const void *address)
       : return_info(return_info),
         arg_info(std::move(arg_info)),
-        function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
-        function(address, &function_info) {}
+        address(address) {}
+
+  js_ffi_function_s(const js_ffi_function_s &) = delete;
+
+  js_ffi_function_s &
+  operator=(const js_ffi_function_s &) = delete;
 };
 
 struct js_tracing_controller_s : public TracingController {
@@ -1843,16 +1856,22 @@ private:
 };
 
 struct js_fast_callback_s : js_callback_t {
-  js_ffi_function_t *ffi;
+  CTypeInfo return_info;
+  std::vector<CTypeInfo> arg_info;
+  CFunctionInfo function_info;
+  const void *address;
 
-  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, js_ffi_function_t *ffi)
+  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo return_info, std::vector<CTypeInfo> &&arg_info, const void *address)
       : js_callback_t(env, cb, data),
-        ffi(ffi) {
-    external.SetWeak(this, js_fast_callback_t::on_finalize, WeakCallbackType::kParameter);
-  }
+        return_info(return_info),
+        arg_info(std::move(arg_info)),
+        function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
+        address(address) {}
 
   inline Local<FunctionTemplate>
   to_function_template (Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
+    auto function = CFunction(address, &function_info);
+
     return FunctionTemplate::New(
       isolate,
       on_call,
@@ -1861,20 +1880,8 @@ struct js_fast_callback_s : js_callback_t {
       0,
       ConstructorBehavior::kThrow,
       SideEffectType::kHasSideEffect,
-      &ffi->function
+      &function
     );
-  }
-
-private:
-  static void
-  on_finalize (const WeakCallbackInfo<js_fast_callback_t> &info) {
-    auto callback = info.GetParameter();
-
-    callback->external.Reset();
-
-    if (callback->ffi) delete callback->ffi;
-
-    delete callback;
   }
 };
 
@@ -3250,7 +3257,16 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto context = js_to_local(env->context);
 
-  auto callback = new js_fast_callback_t(env, cb, data, ffi);
+  auto callback = new js_fast_callback_t(
+    env,
+    cb,
+    data,
+    std::move(ffi->return_info),
+    std::move(ffi->arg_info),
+    ffi->address
+  );
+
+  delete ffi;
 
   auto function = env->try_catch<Function>(
     [&] {
