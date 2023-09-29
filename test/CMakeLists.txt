@@ -126,6 +126,9 @@ list(APPEND tests
 list(APPEND skipped_tests
   # Not implemented in V8 yet
   create-function-with-ffi-arraybuffer
+
+  # Function templates are not reliably collected
+  create-function-with-ffi-finalizer
 )
 
 foreach(test IN LISTS tests)
