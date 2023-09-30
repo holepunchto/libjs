@@ -1355,6 +1355,8 @@ struct js_env_s {
           js_from_local(local),
           callbacks.unhandled_rejection_data
         );
+
+        promise.Reset();
       }
     }
 
