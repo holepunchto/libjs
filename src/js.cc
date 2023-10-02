@@ -55,6 +55,11 @@ typedef enum {
 
 namespace {
 
+// As V8 local handles are, by design, just a pointer to an allocation, we can
+// treat them as pointers to the opaque `js_value_t` type.
+
+static_assert(sizeof(Local<Value>) == sizeof(js_value_t *));
+
 static inline Local<Value>
 js_to_local (js_value_t *value) {
   return *reinterpret_cast<Local<Value> *>(&value);
