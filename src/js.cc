@@ -2501,6 +2501,8 @@ js_delete_module (js_env_t *env, js_module_t *module) {
     }
   }
 
+  module->module.Reset();
+
   delete module;
 
   return 0;

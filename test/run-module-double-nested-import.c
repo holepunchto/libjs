@@ -79,6 +79,15 @@ main () {
 
   assert(state == js_promise_fulfilled);
 
+  e = js_delete_module(env, foo);
+  assert(e == 0);
+
+  e = js_delete_module(env, bar);
+  assert(e == 0);
+
+  e = js_delete_module(env, baz);
+  assert(e == 0);
+
   e = js_destroy_env(env);
   assert(e == 0);
 

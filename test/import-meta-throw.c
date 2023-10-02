@@ -47,6 +47,9 @@ main () {
 
   assert(state == js_promise_rejected);
 
+  e = js_delete_module(env, module);
+  assert(e == 0);
+
   e = js_destroy_env(env);
   assert(e == 0);
 
