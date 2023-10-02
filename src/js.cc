@@ -1300,6 +1300,13 @@ struct js_env_s {
 
     scope.~HandleScope();
 
+    // Trigger a critical memory pressure notification for the isolate before
+    // disposing of it. This ensures that the disposed context is collected
+    // and that any outstanding finalizers will run.
+    //
+    // TODO: Figure out a way to possibly avoid this.
+    isolate->MemoryPressureNotification(MemoryPressureLevel::kCritical);
+
     isolate->Exit();
 
     isolate->Dispose();
