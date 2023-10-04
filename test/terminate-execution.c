@@ -40,20 +40,42 @@ main () {
   e = js_set_named_property(env, global, "terminate", fn);
   assert(e == 0);
 
-  const char *source =
-    "terminate();"
-    "(() => {})();" // Trigger a stack check
-    "throw 'err'";
+  {
+    const char *source =
+      "try { terminate() } catch {}"
+      "(() => {})();" // Trigger a stack check
+      "throw 'err'";
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) source, -1, &script);
-  assert(e == 0);
+    js_value_t *script;
+    e = js_create_string_utf8(env, (utf8_t *) source, -1, &script);
+    assert(e == 0);
 
-  js_value_t *result;
-  e = js_run_script(env, NULL, 0, 0, script, &result);
-  assert(e != 0);
+    js_value_t *result;
+    e = js_run_script(env, NULL, 0, 0, script, &result);
+    assert(e != 0);
 
-  js_print_pending_exception(env);
+    js_print_pending_exception(env);
+  }
+
+  {
+    const char *source =
+      "(() => {})();" // Trigger a stack check
+      "1 + 2";
+
+    js_value_t *script;
+    e = js_create_string_utf8(env, (utf8_t *) source, -1, &script);
+    assert(e == 0);
+
+    js_value_t *result;
+    e = js_run_script(env, NULL, 0, 0, script, &result);
+    assert(e == 0);
+
+    uint32_t value;
+    e = js_get_value_uint32(env, result, &value);
+    assert(e == 0);
+
+    assert(value == 3);
+  }
 
   e = js_destroy_env(env);
   assert(e == 0);
