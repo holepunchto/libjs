@@ -3535,11 +3535,9 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, len);
 
-  if (data) {
-    *data = arraybuffer->Data();
-  }
+  if (data) *data = arraybuffer->Data();
 
-  *result = js_from_local(arraybuffer);
+  if (result) *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -3550,27 +3548,21 @@ js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, backing_store->backing_store);
 
-  if (data) {
-    *data = arraybuffer->Data();
-  }
+  if (data) *data = arraybuffer->Data();
 
-  if (len) {
-    *len = arraybuffer->ByteLength();
-  }
+  if (len) *len = arraybuffer->ByteLength();
 
-  *result = js_from_local(arraybuffer);
+  if (result) *result = js_from_local(arraybuffer);
 
   return 0;
 }
 
 extern "C" int
-js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
+js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto data = js_heap_t::local()->alloc_unsafe(len);
-
   auto store = ArrayBuffer::NewBackingStore(
-    data,
+    js_heap_t::local()->alloc_unsafe(len),
     len,
     js_finalize_unsafe_arraybuffer,
     nullptr
@@ -3578,11 +3570,9 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **pdata, js_value_
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
 
-  if (pdata) {
-    *pdata = data;
-  }
+  if (data) *data = arraybuffer->Data();
 
-  *result = js_from_local(arraybuffer);
+  if (result) *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -3641,11 +3631,9 @@ js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t 
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, len);
 
-  if (data) {
-    *data = sharedarraybuffer->Data();
-  }
+  if (data) *data = sharedarraybuffer->Data();
 
-  *result = js_from_local(sharedarraybuffer);
+  if (result) *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -3656,27 +3644,21 @@ js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_ba
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, backing_store->backing_store);
 
-  if (data) {
-    *data = sharedarraybuffer->Data();
-  }
+  if (data) *data = sharedarraybuffer->Data();
 
-  if (len) {
-    *len = sharedarraybuffer->ByteLength();
-  }
+  if (len) *len = sharedarraybuffer->ByteLength();
 
-  *result = js_from_local(sharedarraybuffer);
+  if (result) *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
 
 extern "C" int
-js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_value_t **result) {
+js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto data = js_heap_t::local()->alloc_unsafe(len);
-
   auto store = SharedArrayBuffer::NewBackingStore(
-    data,
+    js_heap_t::local()->alloc_unsafe(len),
     len,
     js_finalize_unsafe_arraybuffer,
     nullptr
@@ -3684,11 +3666,9 @@ js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **pdata, js_
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
 
-  if (pdata) {
-    *pdata = data;
-  }
+  if (data) *data = sharedarraybuffer->Data();
 
-  *result = js_from_local(sharedarraybuffer);
+  if (result) *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
