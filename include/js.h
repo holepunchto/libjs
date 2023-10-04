@@ -1038,6 +1038,15 @@ int
 js_fatal_exception (js_env_t *env, js_value_t *error);
 
 /**
+ * Terminate JavaScript execution at the next possible opportunity, discarding
+ * the remainder of the execution stack.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_terminate_execution (js_env_t *env);
+
+/**
  * This function can be called even if there is a pending JavaScript exception.
  */
 int

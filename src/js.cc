@@ -1403,7 +1403,7 @@ struct js_env_s {
 
     auto result = fn();
 
-    if (try_catch.HasCaught()) {
+    if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
@@ -5052,6 +5052,15 @@ js_fatal_exception (js_env_t *env, js_value_t *error) {
   // Allow continuing even with a pending exception
 
   env->uncaught_exception(js_to_local(error));
+
+  return 0;
+}
+
+extern "C" int
+js_terminate_execution (js_env_t *env) {
+  // Allow continuing even with a pending exception
+
+  env->isolate->TerminateExecution();
 
   return 0;
 }
