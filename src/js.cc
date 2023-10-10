@@ -1196,6 +1196,8 @@ private: // V8 embedder API
   }
 };
 
+using js_teardown_cb = std::function<void()>;
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1223,6 +1225,8 @@ struct js_env_s {
   std::multimap<size_t, js_module_t *> modules;
 
   std::vector<Global<Promise>> unhandled_promises;
+
+  std::map<void *, js_teardown_cb> teardown_tasks;
 
   struct {
     js_uncaught_exception_cb uncaught_exception;
@@ -1300,13 +1304,6 @@ struct js_env_s {
 
     scope.~HandleScope();
 
-    // Trigger a critical memory pressure notification for the isolate before
-    // disposing of it. This ensures that the disposed context is collected
-    // and that any outstanding finalizers will run.
-    //
-    // TODO: Figure out a way to possibly avoid this.
-    isolate->MemoryPressureNotification(MemoryPressureLevel::kCritical);
-
     isolate->Exit();
 
     isolate->Dispose();
@@ -1324,6 +1321,10 @@ struct js_env_s {
 
   inline void
   close () {
+    for (auto const &[key, task] : teardown_tasks) {
+      task();
+    }
+
     tasks->close();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&check));
@@ -1453,6 +1454,16 @@ struct js_env_s {
   inline MaybeLocal<T>
   call_into_javascript (const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
+  }
+
+  inline void
+  add_teardown_task (void *key, js_teardown_cb &&cb) {
+    teardown_tasks[key] = std::move(cb);
+  }
+
+  inline void
+  remove_teardown_task (void *key) {
+    teardown_tasks.erase(key);
   }
 
   static void
@@ -1811,6 +1822,8 @@ struct js_callback_s {
         cb(cb),
         data(data) {
     external.SetWeak(this, on_finalize<js_callback_t>, WeakCallbackType::kParameter);
+
+    env->add_teardown_task(this, [&] { dispose(); });
   }
 
   js_callback_s(const js_callback_s &) = delete;
@@ -1844,6 +1857,13 @@ struct js_callback_s {
   }
 
 protected:
+  inline void
+  dispose () {
+    external.Reset();
+
+    delete this;
+  }
+
   static void
   on_call (const FunctionCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
@@ -1870,11 +1890,17 @@ protected:
   template <typename T>
   static void
   on_finalize (const WeakCallbackInfo<T> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto context = isolate->GetCurrentContext();
+
+    auto env = context.IsEmpty() ? nullptr : js_env_t::from_context(context);
+
     auto callback = info.GetParameter();
 
-    callback->external.Reset();
+    callback->dispose();
 
-    delete callback;
+    if (env) env->remove_teardown_task(callback);
   }
 };
 
@@ -1891,6 +1917,8 @@ struct js_fast_callback_s : js_callback_t {
         function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
         address(address) {
     external.SetWeak(this, on_finalize<js_fast_callback_t>, WeakCallbackType::kParameter);
+
+    env->add_teardown_task(this, [&] { dispose(); });
   }
 
   inline Local<FunctionTemplate>
