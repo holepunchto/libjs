@@ -1821,15 +1821,21 @@ struct js_callback_s {
       : external(env->isolate, External::New(env->isolate, this)),
         cb(cb),
         data(data) {
-    external.SetWeak(this, on_finalize<js_callback_t>, WeakCallbackType::kParameter);
+    external.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
 
-    env->add_teardown_task(this, [&] { dispose(); });
+    env->add_teardown_task(this, [&] {
+      external.Reset();
+
+      delete this;
+    });
   }
 
   js_callback_s(const js_callback_s &) = delete;
 
   js_callback_s &
   operator=(const js_callback_s &) = delete;
+
+  virtual ~js_callback_s() = default;
 
   inline MaybeLocal<Function>
   to_function (Isolate *isolate, Local<Context> context) {
@@ -1857,13 +1863,6 @@ struct js_callback_s {
   }
 
 protected:
-  inline void
-  dispose () {
-    external.Reset();
-
-    delete this;
-  }
-
   static void
   on_call (const FunctionCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
@@ -1887,9 +1886,8 @@ protected:
     }
   }
 
-  template <typename T>
   static void
-  on_finalize (const WeakCallbackInfo<T> &info) {
+  on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -1898,7 +1896,9 @@ protected:
 
     auto callback = info.GetParameter();
 
-    callback->dispose();
+    callback->external.Reset();
+
+    delete callback;
 
     if (env) env->remove_teardown_task(callback);
   }
@@ -1915,11 +1915,7 @@ struct js_fast_callback_s : js_callback_t {
         return_info(return_info),
         arg_info(arg_info),
         function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
-        address(address) {
-    external.SetWeak(this, on_finalize<js_fast_callback_t>, WeakCallbackType::kParameter);
-
-    env->add_teardown_task(this, [&] { dispose(); });
-  }
+        address(address) {}
 
   inline Local<FunctionTemplate>
   to_function_template (Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
@@ -1955,11 +1951,13 @@ struct js_finalizer_s {
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
 
+  virtual ~js_finalizer_s() = default;
+
   inline void
   attach_to (Isolate *isolate, Local<Value> value) {
     this->value.Reset(isolate, value);
 
-    this->value.SetWeak(this, on_finalize<js_finalizer_t>, WeakCallbackType::kParameter);
+    this->value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
   }
 
   inline void
@@ -1967,25 +1965,22 @@ struct js_finalizer_s {
     value.SetWeak();
   }
 
-protected:
-  template <typename T>
+private:
   static void
-  on_finalize (const WeakCallbackInfo<T> &info) {
+  on_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
     auto finalizer = info.GetParameter();
 
     finalizer->value.Reset();
 
     if (finalizer->finalize_cb) {
-      info.SetSecondPassCallback(on_second_pass_finalize<T>);
+      info.SetSecondPassCallback(on_second_pass_finalize);
     } else {
       delete finalizer;
     }
   }
 
-private:
-  template <typename T>
   static void
-  on_second_pass_finalize (const WeakCallbackInfo<T> &info) {
+  on_second_pass_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -2006,13 +2001,6 @@ struct js_delegate_s : js_finalizer_t {
   js_delegate_s(const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : js_finalizer_t(data, finalize_cb, finalize_hint),
         callbacks(callbacks) {}
-
-  inline void
-  attach_to (Isolate *isolate, Local<Value> value) {
-    this->value.Reset(isolate, value);
-
-    this->value.SetWeak(this, on_finalize<js_delegate_t>, WeakCallbackType::kParameter);
-  }
 
   inline Local<ObjectTemplate>
   to_object_template (Isolate *isolate) {
