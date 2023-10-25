@@ -3285,6 +3285,8 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     }
   );
 
+  if (function.IsEmpty()) return -1;
+
   auto local = function.ToLocalChecked();
 
   if (name) {
