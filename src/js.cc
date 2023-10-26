@@ -1321,7 +1321,7 @@ struct js_env_s {
 
   inline void
   close () {
-    for (auto const &[key, task] : teardown_tasks) {
+    for (auto const &[key, task] : std::map(teardown_tasks) /* Copy to handle task deletion */) {
       task();
     }
 
@@ -1814,11 +1814,13 @@ struct js_deferred_s {
 
 struct js_callback_s {
   Persistent<External> external;
+  js_env_t *env;
   js_function_cb cb;
   void *data;
 
   js_callback_s(js_env_t *env, js_function_cb cb, void *data)
       : external(env->isolate, External::New(env->isolate, this)),
+        env(env),
         cb(cb),
         data(data) {
     external.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
@@ -1832,10 +1834,12 @@ struct js_callback_s {
 
   js_callback_s(const js_callback_s &) = delete;
 
+  virtual ~js_callback_s() {
+    env->remove_teardown_task(this);
+  }
+
   js_callback_s &
   operator=(const js_callback_s &) = delete;
-
-  virtual ~js_callback_s() = default;
 
   inline MaybeLocal<Function>
   to_function (Isolate *isolate, Local<Context> context) {
@@ -1867,11 +1871,9 @@ protected:
   on_call (const FunctionCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
-    auto context = isolate->GetCurrentContext();
-
     auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
-    auto env = js_env_t::from_context(context);
+    auto env = callback->env;
 
     auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
@@ -1888,19 +1890,11 @@ protected:
 
   static void
   on_finalize (const WeakCallbackInfo<js_callback_t> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = context.IsEmpty() ? nullptr : js_env_t::from_context(context);
-
     auto callback = info.GetParameter();
 
     callback->external.Reset();
 
     delete callback;
-
-    if (env) env->remove_teardown_task(callback);
   }
 };
 
@@ -1936,22 +1930,34 @@ struct js_fast_callback_s : js_callback_t {
 
 struct js_finalizer_s {
   Persistent<Value> value;
+  js_env_t *env;
   void *data;
   js_finalize_cb finalize_cb;
   void *finalize_hint;
 
-  js_finalizer_s(void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+  js_finalizer_s(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : value(),
+        env(env),
         data(data),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
+        finalize_hint(finalize_hint) {
+    env->add_teardown_task(this, [&] {
+      value.Reset();
+
+      if (this->finalize_cb) this->finalize_cb(env, this->data, this->finalize_hint);
+
+      delete this;
+    });
+  }
 
   js_finalizer_s(const js_finalizer_s &) = delete;
 
+  virtual ~js_finalizer_s() {
+    env->remove_teardown_task(this);
+  }
+
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
-
-  virtual ~js_finalizer_s() = default;
 
   inline void
   attach_to (Isolate *isolate, Local<Value> value) {
@@ -1985,11 +1991,13 @@ private:
 
     auto context = isolate->GetCurrentContext();
 
-    auto env = context.IsEmpty() ? nullptr : js_env_t::from_context(context);
+    // Bail if the environment was destroyed before the second-pass finalizer
+    // got a chance to run.
+    if (context.IsEmpty()) return;
 
     auto finalizer = info.GetParameter();
 
-    finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
+    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
 
     delete finalizer;
   }
@@ -1998,8 +2006,8 @@ private:
 struct js_delegate_s : js_finalizer_t {
   js_delegate_callbacks_t callbacks;
 
-  js_delegate_s(const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
-      : js_finalizer_t(data, finalize_cb, finalize_hint),
+  js_delegate_s(js_env_t *env, const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+      : js_finalizer_t(env, data, finalize_cb, finalize_hint),
         callbacks(callbacks) {}
 
   inline Local<ObjectTemplate>
@@ -2871,7 +2879,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto local = js_to_local(object).As<Object>();
 
-  auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
+  auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
   auto external = External::New(env->isolate, finalizer);
 
@@ -2958,7 +2966,7 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto key = env->delegate.Get(env->isolate);
 
-  auto delegate = new js_delegate_t(*callbacks, data, finalize_cb, finalize_hint);
+  auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
   auto tpl = delegate->to_object_template(env->isolate);
 
@@ -2979,7 +2987,7 @@ js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb 
 
   auto local = js_to_local(object).As<Object>();
 
-  auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
+  auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
   finalizer->attach_to(env->isolate, local);
 
@@ -3376,7 +3384,7 @@ js_create_external (js_env_t *env, void *data, js_finalize_cb finalize_cb, void 
   auto external = External::New(env->isolate, data);
 
   if (finalize_cb) {
-    auto finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
+    auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
     finalizer->attach_to(env->isolate, external);
   }
@@ -3602,7 +3610,7 @@ js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finali
   js_finalizer_t *finalizer = nullptr;
 
   if (finalize_cb) {
-    finalizer = new js_finalizer_t(data, finalize_cb, finalize_hint);
+    finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
   }
 
   auto store = ArrayBuffer::NewBackingStore(
