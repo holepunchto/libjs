@@ -32,7 +32,7 @@ add_library(js OBJECT)
 set_target_properties(
   js
   PROPERTIES
-  C_STANDARD 99
+  C_STANDARD 11
   CXX_STANDARD 20
   POSITION_INDEPENDENT_CODE ON
 )
