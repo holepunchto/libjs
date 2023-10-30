@@ -4,13 +4,15 @@ project(js C CXX)
 
 include(cmake/gn/gn.cmake)
 
-include_directories(SYSTEM
-  ${GN_DIR}/buildtools/third_party/libc++
-  ${GN_DIR}/third_party/libc++/src/include
-)
-
 if(NOT TARGET v8)
   add_gn_library(v8 prebuilds:v8 STATIC)
+
+  target_include_directories(
+    v8
+    INTERFACE
+      ${GN_DIR}/buildtools/third_party/libc++
+      ${GN_DIR}/third_party/libc++/src/include
+  )
 endif()
 
 if(NOT TARGET mem)
