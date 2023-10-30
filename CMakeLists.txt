@@ -72,6 +72,7 @@ else()
   target_compile_options(
     js
     PUBLIC
+      -fno-exceptions
       -fno-rtti
       -nostdinc++
   )
