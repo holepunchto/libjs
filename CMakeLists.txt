@@ -10,7 +10,6 @@ if(NOT TARGET v8)
   target_include_directories(
     v8
     INTERFACE
-      ${GN_DIR}/buildtools/third_party/libc++
       ${GN_DIR}/third_party/libc++/src/include
   )
 endif()
@@ -62,13 +61,6 @@ if(MSVC)
     js
     PUBLIC
       /GR-
-      /X
-  )
-
-  target_link_options(
-    js
-    PUBLIC
-      /NODEFAULTLIB
   )
 else()
   target_compile_options(
@@ -83,14 +75,6 @@ else()
     js
     PUBLIC
       -nostdlib++
-  )
-endif()
-
-if(WIN32)
-  list(APPEND link_libraries
-    dbghelp.lib
-    winmm.lib
-    ws2_32.lib
   )
 endif()
 
