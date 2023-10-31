@@ -4,13 +4,23 @@ project(js C CXX)
 
 include(cmake/gn/gn.cmake)
 
+if(NOT TARGET c++)
+  add_gn_library(c++ prebuilds:c++ STATIC)
+
+  target_include_directories(
+    c++
+    INTERFACE
+      ${GN_DIR}/third_party/libc++/src/include
+  )
+endif()
+
 if(NOT TARGET v8)
   add_gn_library(v8 prebuilds:v8 STATIC)
 
-  target_include_directories(
+  target_link_libraries(
     v8
     INTERFACE
-      ${GN_DIR}/third_party/libc++/src/include
+      c++
   )
 endif()
 
