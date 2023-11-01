@@ -4,6 +4,12 @@ project(js C CXX)
 
 include(cmake/gn/gn.cmake)
 
+if(MSVC)
+  add_compile_options(/MT$<$<CONFIG:Debug>:d>)
+
+  add_link_options(/DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>.lib)
+endif()
+
 if(NOT TARGET c++)
   add_gn_library(c++ prebuilds:c++ STATIC)
 endif()
