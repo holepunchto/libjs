@@ -6,12 +6,6 @@ include(cmake/gn/gn.cmake)
 
 if(NOT TARGET c++)
   add_gn_library(c++ prebuilds:c++ STATIC)
-
-  target_include_directories(
-    c++
-    INTERFACE
-      ${GN_DIR}/third_party/libc++/src/include
-  )
 endif()
 
 if(NOT TARGET v8)
