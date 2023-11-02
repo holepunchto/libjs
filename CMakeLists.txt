@@ -62,8 +62,13 @@ target_include_directories(
     $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
-    $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_link_libraries(
+  js
+  PRIVATE
+    v8
 )
 
 if(MSVC)
@@ -76,15 +81,7 @@ else()
   target_compile_options(
     js
     PUBLIC
-      -fno-exceptions
       -fno-rtti
-      -nostdinc++
-  )
-
-  target_link_options(
-    js
-    PUBLIC
-      -nostdlib++
   )
 endif()
 
