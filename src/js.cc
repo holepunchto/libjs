@@ -1348,8 +1348,6 @@ struct js_env_s {
 
   inline void
   run_microtasks () {
-    auto context = this->context.Get(isolate);
-
     isolate->PerformMicrotaskCheckpoint();
 
     if (callbacks.unhandled_rejection) {
@@ -1869,8 +1867,6 @@ struct js_callback_s {
 protected:
   static void
   on_call (const FunctionCallbackInfo<Value> &info) {
-    auto isolate = info.GetIsolate();
-
     auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
 
     auto env = callback->env;
@@ -2409,8 +2405,6 @@ extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
   auto local_source = js_to_local(source).As<String>();
 
   MaybeLocal<String> local_name;
@@ -2472,8 +2466,6 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 extern "C" int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
-
-  auto context = env->context.Get(env->isolate);
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
@@ -2964,8 +2956,6 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 
   auto context = env->context.Get(env->isolate);
 
-  auto key = env->delegate.Get(env->isolate);
-
   auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
   auto tpl = delegate->to_object_template(env->isolate);
@@ -2982,8 +2972,6 @@ js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, voi
 extern "C" int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   // Allow continuing even with a pending exception
-
-  auto context = env->context.Get(env->isolate);
 
   auto local = js_to_local(object).As<Object>();
 
@@ -4342,8 +4330,6 @@ js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
 extern "C" int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
   // Allow continuing even with a pending exception
-
-  auto context = env->context.Get(env->isolate);
 
   auto local = js_to_local(object).As<Object>();
 
