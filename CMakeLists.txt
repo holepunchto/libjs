@@ -76,12 +76,14 @@ if(MSVC)
     js
     PUBLIC
       /GR-
+      /X
   )
 else()
   target_compile_options(
     js
     PUBLIC
       -fno-rtti
+      -nostdinc++
   )
 endif()
 
