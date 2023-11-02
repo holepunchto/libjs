@@ -103,7 +103,6 @@ target_link_libraries(
     v8
     mem_shared
     utf_shared
-    ${link_libraries}
 )
 
 add_library(js_static STATIC $<TARGET_OBJECTS:js>)
@@ -122,7 +121,6 @@ target_link_libraries(
     v8
     mem_static
     utf_static
-    ${link_libraries}
 )
 
 install(TARGETS js_shared js_static)
