@@ -11,8 +11,8 @@ static js_module_t *
 on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
   int e;
 
-  utf8_t file[PATH_MAX];
-  e = js_get_value_string_utf8(env, specifier, file, PATH_MAX, NULL);
+  utf8_t file[1024];
+  e = js_get_value_string_utf8(env, specifier, file, 1024, NULL);
   assert(e == 0);
 
   assert(strcmp((char *) file, "bar.js") == 0);
