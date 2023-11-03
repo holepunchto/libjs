@@ -1923,7 +1923,7 @@ struct js_finalizer_s {
 
   inline void
   detach () {
-    value.SetWeak();
+    this->value.ClearWeak<js_finalizer_t>();
   }
 
 private:
@@ -2896,9 +2896,9 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   if (external.IsEmpty()) return -1;
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
-
   local->DeletePrivate(context, key).Check();
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
 
   finalizer->detach();
 
