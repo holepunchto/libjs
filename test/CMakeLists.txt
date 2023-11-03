@@ -159,9 +159,7 @@ foreach(test IN LISTS tests)
   add_custom_command(
     TARGET ${test}
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_RUNTIME_DLLS:${test}>
-      $<TARGET_FILE_DIR:${test}>
+    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${test}> $<TARGET_RUNTIME_DLLS:${test}>
     COMMAND_EXPAND_LISTS
   )
 
