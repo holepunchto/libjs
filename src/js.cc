@@ -1294,6 +1294,8 @@ struct js_env_s {
     auto context = this->context.Get(isolate);
 
     context->Exit();
+
+    this->context.Reset();
   }
 
   js_env_s(const js_env_s &) = delete;
