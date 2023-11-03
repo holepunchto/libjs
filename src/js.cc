@@ -1226,8 +1226,6 @@ struct js_env_s {
 
   std::vector<Global<Promise>> unhandled_promises;
 
-  std::map<void *, js_teardown_cb> teardown_tasks;
-
   struct {
     js_uncaught_exception_cb uncaught_exception;
     void *uncaught_exception_data;
@@ -1310,10 +1308,6 @@ struct js_env_s {
 
   inline void
   close () {
-    for (auto const &[key, task] : std::map(teardown_tasks) /* Copy to handle task deletion */) {
-      task();
-    }
-
     tasks->close();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&check));
@@ -1441,16 +1435,6 @@ struct js_env_s {
   inline MaybeLocal<T>
   call_into_javascript (const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
-  }
-
-  inline void
-  add_teardown_task (void *key, js_teardown_cb &&cb) {
-    teardown_tasks[key] = std::move(cb);
-  }
-
-  inline void
-  remove_teardown_task (void *key) {
-    teardown_tasks.erase(key);
   }
 
   static void
@@ -1815,19 +1799,11 @@ struct js_callback_s {
         cb(cb),
         data(data) {
     external.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
-
-    env->add_teardown_task(this, [&] {
-      external.Reset();
-
-      delete this;
-    });
   }
 
   js_callback_s(const js_callback_s &) = delete;
 
-  virtual ~js_callback_s() {
-    env->remove_teardown_task(this);
-  }
+  virtual ~js_callback_s() = default;
 
   js_callback_s &
   operator=(const js_callback_s &) = delete;
@@ -1929,21 +1905,11 @@ struct js_finalizer_s {
         env(env),
         data(data),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {
-    env->add_teardown_task(this, [&] {
-      value.Reset();
-
-      if (this->finalize_cb) this->finalize_cb(env, this->data, this->finalize_hint);
-
-      delete this;
-    });
-  }
+        finalize_hint(finalize_hint) {}
 
   js_finalizer_s(const js_finalizer_s &) = delete;
 
-  virtual ~js_finalizer_s() {
-    env->remove_teardown_task(this);
-  }
+  virtual ~js_finalizer_s() = default;
 
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
