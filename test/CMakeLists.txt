@@ -156,6 +156,15 @@ foreach(test IN LISTS tests)
     TIMEOUT 30
   )
 
+  add_custom_command(
+    TARGET ${test}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:${test}>
+      $<TARGET_FILE_DIR:${test}>
+    COMMAND_EXPAND_LISTS
+  )
+
   if(${test} IN_LIST skipped_tests)
     set_tests_properties(
       ${test}
