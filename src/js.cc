@@ -1294,19 +1294,6 @@ struct js_env_s {
     auto context = this->context.Get(isolate);
 
     context->Exit();
-
-    wrapper.Reset();
-    delegate.Reset();
-    tag.Reset();
-    exception.Reset();
-
-    this->context.Reset();
-
-    scope.~HandleScope();
-
-    isolate->Exit();
-
-    isolate->Dispose();
   }
 
   js_env_s(const js_env_s &) = delete;
@@ -1512,9 +1499,13 @@ private:
   inline void
   dispose_maybe () {
     if (active_handles == 0) {
+      auto isolate = this->isolate;
       auto platform = this->platform;
 
       delete this;
+
+      isolate->Exit();
+      isolate->Dispose();
 
       platform->detach(this);
     }
