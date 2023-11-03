@@ -7,7 +7,10 @@ include(cmake/gn/gn.cmake)
 if(MSVC)
   add_compile_options(/MT$<$<CONFIG:Debug>:d>)
 
-  add_link_options(/DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>.lib)
+  add_link_options(
+    /DEFAULTLIB:libucrt$<$<CONFIG:Debug>:d>.lib
+    /DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>.lib
+  )
 endif()
 
 if(NOT TARGET c++)
