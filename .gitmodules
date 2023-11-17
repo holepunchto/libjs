@@ -1,16 +1,20 @@
 [submodule "cmake/gn"]
 	path = cmake/gn
-	url = git@github.com:holepunchto/cmake-gn.git
+	url = ../../holepunchto/cmake-gn.git
+	shallow = true
+[submodule "cmake/toolchains"]
+	path = cmake/toolchains
+	url = ../../holepunchto/cmake-toolchains.git
 	shallow = true
 [submodule "vendor/libuv"]
 	path = vendor/libuv
-	url = git@github.com:libuv/libuv.git
+	url = ../../libuv/libuv.git
 	shallow = true
 [submodule "vendor/libmem"]
 	path = vendor/libmem
-	url = git@github.com:holepunchto/libmem.git
+	url = ../../holepunchto/libmem.git
 	shallow = true
 [submodule "vendor/libutf"]
 	path = vendor/libutf
-	url = git@github.com:holepunchto/libutf.git
+	url = ../../holepunchto/libutf.git
 	shallow = true
