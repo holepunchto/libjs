@@ -1980,12 +1980,22 @@ struct js_delegate_s : js_finalizer_t {
       external
     ));
 
+    tpl->SetHandler(IndexedPropertyHandlerConfiguration(
+      on_get,
+      on_set,
+      nullptr,
+      on_delete,
+      nullptr,
+      external
+    ));
+
     return tpl;
   }
 
 private:
+  template <typename T>
   static void
-  on_get (Local<Name> property, const PropertyCallbackInfo<Value> &info) {
+  on_get (Local<T> property, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -2010,7 +2020,17 @@ private:
   }
 
   static void
-  on_set (Local<Name> property, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
+  on_get (uint32_t index, const PropertyCallbackInfo<Value> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto property = Int32::NewFromUnsigned(isolate, index);
+
+    on_get(property, info);
+  }
+
+  template <typename T>
+  static void
+  on_set (Local<T> property, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -2027,7 +2047,17 @@ private:
   }
 
   static void
-  on_delete (Local<Name> property, const PropertyCallbackInfo<Boolean> &info) {
+  on_set (uint32_t index, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto property = Int32::NewFromUnsigned(isolate, index);
+
+    on_set(property, value, info);
+  }
+
+  template <typename T>
+  static void
+  on_delete (Local<T> property, const PropertyCallbackInfo<Boolean> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -2041,6 +2071,15 @@ private:
 
       info.GetReturnValue().Set(result);
     }
+  }
+
+  static void
+  on_delete (uint32_t index, const PropertyCallbackInfo<Boolean> &info) {
+    auto isolate = info.GetIsolate();
+
+    auto property = Int32::NewFromUnsigned(isolate, index);
+
+    on_delete(property, info);
   }
 
   static void
