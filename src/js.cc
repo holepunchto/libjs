@@ -21,12 +21,14 @@
 #include <uv.h>
 
 #include <v8-fast-api-calls.h>
+#include <v8-inspector.h>
 #include <v8.h>
 
 #include "../include/js.h"
 #include "../include/js/ffi.h"
 
 using namespace v8;
+using namespace v8_inspector;
 
 typedef struct js_callback_s js_callback_t;
 typedef struct js_fast_callback_s js_fast_callback_t;
@@ -43,6 +45,7 @@ typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
+typedef struct js_inspector_channel_s js_inspector_channel_t;
 
 typedef enum {
   js_context_environment = 1,
@@ -2114,6 +2117,114 @@ struct js_arraybuffer_backing_store_s {
 
   js_arraybuffer_backing_store_s &
   operator=(const js_arraybuffer_backing_store_s &) = delete;
+};
+
+struct js_inspector_channel_s : public V8Inspector::Channel {
+  js_env_t *env;
+  js_inspector_t *inspector;
+  js_inspector_message_cb cb;
+  void *data;
+
+  js_inspector_channel_s(js_env_t *env, js_inspector_t *inspector)
+      : env(env),
+        inspector(inspector),
+        cb(),
+        data() {}
+
+  js_inspector_channel_s(const js_inspector_channel_s &) = delete;
+
+  js_inspector_channel_s &
+  operator=(const js_inspector_channel_s &) = delete;
+
+private: // V8 embedder API
+  inline void
+  send (const StringView &string) {
+    if (cb == nullptr) return;
+
+    auto length = string.length();
+
+    auto scope = HandleScope(env->isolate);
+
+    auto message =
+      (string.is8Bit()
+         ? String::NewFromOneByte(
+             env->isolate,
+             reinterpret_cast<const uint8_t *>(string.characters8()),
+             v8::NewStringType::kNormal,
+             length
+           )
+         : String::NewFromTwoByte(
+             env->isolate,
+             reinterpret_cast<const uint16_t *>(string.characters16()),
+             v8::NewStringType::kNormal,
+             length
+           ))
+        .ToLocalChecked();
+
+    cb(env, inspector, js_from_local(message), data);
+  }
+
+  void
+  sendResponse (int callId, std::unique_ptr<StringBuffer> message) override {
+    send(message->string());
+  }
+
+  void
+  sendNotification (std::unique_ptr<StringBuffer> message) override {
+    send(message->string());
+  }
+
+  void
+  flushProtocolNotifications () override {}
+};
+
+struct js_inspector_s : private V8InspectorClient {
+  js_env_t *env;
+  js_inspector_channel_t channel;
+
+  std::unique_ptr<V8Inspector> inspector;
+  std::unique_ptr<V8InspectorSession> session;
+
+  js_inspector_s(js_env_t *env)
+      : env(env),
+        channel(env, this),
+        inspector(V8Inspector::create(env->isolate, this)),
+        session() {}
+
+  js_inspector_s(const js_inspector_s &) = delete;
+
+  js_inspector_s &
+  operator=(const js_inspector_s &) = delete;
+
+  inline void
+  connect () {
+    auto context = env->context.Get(env->isolate);
+
+    session = inspector->connect(1, &channel, StringView(), V8Inspector::kFullyTrusted, V8Inspector::kNotWaitingForDebugger);
+
+    inspector->contextCreated(V8ContextInfo(context, 1, StringView()));
+  }
+
+  inline void
+  send (Local<String> message) {
+    auto length = message->Length();
+
+    auto buffer = std::vector<uint16_t>(length);
+
+    message->Write(env->isolate, buffer.data(), 0, length);
+
+    auto message_view = StringView(buffer.data(), length);
+
+    auto scope = SealHandleScope(env->isolate);
+
+    session->dispatchProtocolMessage(message_view);
+  }
+
+private: // V8 embedder API
+  v8::Local<v8::Context>
+  ensureDefaultContextInGroup (int contextGroupId) override {
+    return env->context.Get(env->isolate);
+  }
 };
 
 namespace {
@@ -5093,6 +5204,42 @@ js_request_garbage_collection (js_env_t *env) {
   if (env->platform->options.expose_garbage_collection) {
     env->isolate->RequestGarbageCollectionForTesting(Isolate::GarbageCollectionType::kFullGarbageCollection);
   }
+
+  return 0;
+}
+
+extern "C" int
+js_create_inspector (js_env_t *env, js_inspector_t **result) {
+  *result = new js_inspector_t(env);
+
+  return 0;
+}
+
+extern "C" int
+js_destroy_inspector (js_env_t *env, js_inspector_t *inspector) {
+  delete inspector;
+
+  return 0;
+}
+
+extern "C" int
+js_on_inspector_response (js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data) {
+  inspector->channel.cb = cb;
+  inspector->channel.data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_connect_inspector (js_env_t *env, js_inspector_t *inspector) {
+  inspector->connect();
+
+  return 0;
+}
+
+extern "C" int
+js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message) {
+  inspector->send(js_to_local(message).As<String>());
 
   return 0;
 }

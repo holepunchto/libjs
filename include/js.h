@@ -27,6 +27,7 @@ typedef struct js_type_tag_s js_type_tag_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
+typedef struct js_inspector_s js_inspector_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
@@ -41,6 +42,7 @@ typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *dat
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
 
 typedef enum {
   js_undefined,
@@ -1062,6 +1064,21 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
  */
 int
 js_request_garbage_collection (js_env_t *env);
+
+int
+js_create_inspector (js_env_t *env, js_inspector_t **result);
+
+int
+js_destroy_inspector (js_env_t *env, js_inspector_t *inspector);
+
+int
+js_on_inspector_response (js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
+
+int
+js_connect_inspector (js_env_t *env, js_inspector_t *inspector);
+
+int
+js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message);
 
 #ifdef __cplusplus
 }

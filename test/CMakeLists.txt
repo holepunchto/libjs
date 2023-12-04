@@ -88,6 +88,7 @@ list(APPEND tests
   get-value-string-utf8-no-null
   import-meta
   import-meta-throw
+  inspector
   many-large-allocs
   many-small-allocs
   promise-rejection
