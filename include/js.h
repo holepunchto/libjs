@@ -43,6 +43,7 @@ typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *da
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
+typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
 typedef enum {
   js_undefined,
@@ -1073,6 +1074,9 @@ js_destroy_inspector (js_env_t *env, js_inspector_t *inspector);
 
 int
 js_on_inspector_response (js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
+
+int
+js_on_inspector_paused (js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data);
 
 int
 js_connect_inspector (js_env_t *env, js_inspector_t *inspector);

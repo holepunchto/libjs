@@ -89,6 +89,7 @@ list(APPEND tests
   import-meta
   import-meta-throw
   inspector
+  inspector-pause
   many-large-allocs
   many-small-allocs
   promise-rejection

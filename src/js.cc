@@ -2181,15 +2181,22 @@ private: // V8 embedder API
 struct js_inspector_s : private V8InspectorClient {
   js_env_t *env;
   js_inspector_channel_t channel;
+  js_inspector_paused_cb cb;
+  void *data;
 
   std::unique_ptr<V8Inspector> inspector;
   std::unique_ptr<V8InspectorSession> session;
 
+  bool paused;
+
   js_inspector_s(js_env_t *env)
       : env(env),
         channel(env, this),
+        cb(),
+        data(),
         inspector(V8Inspector::create(env->isolate, this)),
-        session() {}
+        session(),
+        paused(false) {}
 
   js_inspector_s(const js_inspector_s &) = delete;
 
@@ -2200,7 +2207,13 @@ struct js_inspector_s : private V8InspectorClient {
   connect () {
     auto context = env->context.Get(env->isolate);
 
-    session = inspector->connect(1, &channel, StringView(), V8Inspector::kFullyTrusted, V8Inspector::kNotWaitingForDebugger);
+    session = inspector->connect(
+      1,
+      &channel,
+      StringView(),
+      V8Inspector::kFullyTrusted,
+      V8Inspector::kNotWaitingForDebugger
+    );
 
     inspector->contextCreated(V8ContextInfo(context, 1, StringView()));
   }
@@ -2224,6 +2237,24 @@ private: // V8 embedder API
   v8::Local<v8::Context>
   ensureDefaultContextInGroup (int contextGroupId) override {
     return env->context.Get(env->isolate);
+  }
+
+  void
+  runMessageLoopOnPause (int contextGroupId) override {
+    if (paused || cb == nullptr) return;
+
+    paused = true;
+
+    while (paused && cb(env, this, data)) {
+      env->run_macrotasks();
+    }
+
+    paused = false;
+  }
+
+  void
+  quitMessageLoopOnPause () override {
+    paused = false;
   }
 };
 
@@ -5226,6 +5257,14 @@ extern "C" int
 js_on_inspector_response (js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data) {
   inspector->channel.cb = cb;
   inspector->channel.data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_on_inspector_paused (js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data) {
+  inspector->cb = cb;
+  inspector->data = data;
 
   return 0;
 }
