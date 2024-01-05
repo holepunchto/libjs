@@ -67,6 +67,9 @@ main () {
 
   assert(value == 42);
 
+  e = js_delete_reference(env, ref);
+  assert(e == 0);
+
   e = js_destroy_env(env);
   assert(e == 0);
 
