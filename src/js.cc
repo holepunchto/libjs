@@ -1132,9 +1132,16 @@ private:
 
   static void
   on_check (uv_check_t *handle) {
+    int err;
+
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
-    if (uv_loop_alive(platform->loop)) return;
+    if (uv_loop_alive(platform->loop)) {
+      err = uv_prepare_start(&platform->prepare, on_prepare);
+      assert(err == 0);
+
+      return;
+    }
 
     platform->idle();
 
@@ -1526,9 +1533,16 @@ private:
 
   static void
   on_check (uv_check_t *handle) {
+    int err;
+
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
-    if (uv_loop_alive(env->loop)) return;
+    if (uv_loop_alive(env->loop)) {
+      err = uv_prepare_start(&env->prepare, on_prepare);
+      assert(err == 0);
+
+      return;
+    }
 
     env->idle();
 

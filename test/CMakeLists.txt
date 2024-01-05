@@ -133,9 +133,6 @@ list(APPEND skipped_tests
 
   # Not reliably finalized
   create-function-with-ffi-finalizer
-
-  # Broken
-  wasm-async-io
 )
 
 foreach(test IN LISTS tests)
