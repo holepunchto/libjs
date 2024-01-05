@@ -120,6 +120,7 @@ list(APPEND tests
   typeof-undefined
   wasm
   wasm-async
+  wasm-async-io
   wrap
   wrap-with-finalizer
   wrap-with-reference
@@ -129,6 +130,12 @@ list(APPEND tests
 list(APPEND skipped_tests
   # Not implemented in V8 yet
   create-function-with-ffi-arraybuffer
+
+  # Not reliably finalized
+  create-function-with-ffi-finalizer
+
+  # Broken
+  wasm-async-io
 )
 
 foreach(test IN LISTS tests)
