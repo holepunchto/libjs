@@ -260,9 +260,11 @@ struct js_task_runner_s : public TaskRunner {
     available.notify_all();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&timer));
+
     uv_ref(reinterpret_cast<uv_handle_t *>(&async));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
+
     uv_close(reinterpret_cast<uv_handle_t *>(&async), on_handle_close);
   }
 
