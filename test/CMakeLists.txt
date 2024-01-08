@@ -121,6 +121,7 @@ list(APPEND tests
   wasm
   wasm-async
   wasm-async-io
+  wasm-async-io-multiple
   wrap
   wrap-with-finalizer
   wrap-with-reference

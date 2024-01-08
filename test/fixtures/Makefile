@@ -9,4 +9,5 @@ all: \
 	promise-rejection.js.h \
 	promise-rejection-unhandled.js.h \
 	wasm-async.js.h \
+	wasm-async-log.js.h \
 	wasm-sync.js.h

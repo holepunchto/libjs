@@ -192,8 +192,9 @@ struct js_idle_task_handle_s {
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
+  uv_async_t async;
 
-  int active_handles = 1;
+  int active_handles = 2;
 
   // Keep a cyclic reference to the task runner itself that we'll only reset
   // once its handles have fully closed.
@@ -233,6 +234,13 @@ struct js_task_runner_s : public TaskRunner {
     assert(err == 0);
 
     timer.data = this;
+
+    err = uv_async_init(loop, &async, on_async);
+    assert(err == 0);
+
+    async.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&async));
   }
 
   js_task_runner_s(const js_task_runner_s &) = delete;
@@ -252,8 +260,10 @@ struct js_task_runner_s : public TaskRunner {
     available.notify_all();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&timer));
+    uv_ref(reinterpret_cast<uv_handle_t *>(&async));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
+    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_handle_close);
   }
 
   inline uint64_t
@@ -284,6 +294,8 @@ struct js_task_runner_s : public TaskRunner {
 
   inline void
   push_task (js_task_handle_t &&task) {
+    int err;
+
     std::scoped_lock guard(lock);
 
     outstanding++;
@@ -293,6 +305,9 @@ struct js_task_runner_s : public TaskRunner {
     tasks.push_back(std::move(task));
 
     available.notify_one();
+
+    err = uv_async_send(&async);
+    assert(err == 0);
   }
 
   inline void
@@ -364,6 +379,8 @@ struct js_task_runner_s : public TaskRunner {
 
   void
   move_expired_tasks () {
+    int err;
+
     std::scoped_lock guard(lock);
 
     while (!delayed_tasks.empty()) {
@@ -374,6 +391,9 @@ struct js_task_runner_s : public TaskRunner {
       tasks.push_back(std::move(const_cast<js_delayed_task_handle_t &>(task)));
 
       delayed_tasks.pop();
+
+      err = uv_async_send(&async);
+      assert(err == 0);
 
       available.notify_one();
     }
@@ -433,6 +453,9 @@ private:
 
     tasks->move_expired_tasks();
   }
+
+  static void
+  on_async (uv_async_t *handle) {}
 
   static void
   on_handle_close (uv_handle_t *handle) {
