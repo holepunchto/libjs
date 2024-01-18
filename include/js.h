@@ -144,7 +144,7 @@ struct js_platform_options_s {
   int sampling_profiler_interval;
 
   /**
-   * Enable trade-off of performance for memory savings.
+   * Enable trade-off of performance for memory if supported.
    *
    * @since 0
    */
