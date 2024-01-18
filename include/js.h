@@ -148,7 +148,7 @@ struct js_platform_options_s {
    *
    * @since 0
    */
-  bool lite_mode;
+  bool optimize_for_memory;
 };
 
 /** @version 0 */
