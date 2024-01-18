@@ -142,6 +142,13 @@ struct js_platform_options_s {
    * @since 0
    */
   int sampling_profiler_interval;
+
+  /**
+   * Enable trade-off of performance for memory if supported.
+   *
+   * @since 0
+   */
+  bool optimize_for_memory;
 };
 
 /** @version 0 */
