@@ -85,7 +85,7 @@ enum {
   js_static = 1 << 10,
 };
 
-/** @version 0 */
+/** @version 1 */
 struct js_platform_options_s {
   int version;
 
@@ -146,7 +146,7 @@ struct js_platform_options_s {
   /**
    * Enable trade-off of performance for memory if supported.
    *
-   * @since 0
+   * @since 1
    */
   bool optimize_for_memory;
 };

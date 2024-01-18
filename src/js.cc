@@ -2303,6 +2303,16 @@ static const char *js_platform_identifier = "v8";
 
 static const char *js_platform_version = V8::GetVersion();
 
+static const js_platform_options_t js_platform_default_options = {
+  .version = 1,
+};
+
+template <auto js_platform_options_t::*P, typename T>
+static inline T
+js_option (const js_platform_options_t *options, int min_version, T fallback = T(js_platform_default_options.*P)) {
+  return T(options && options->version >= min_version ? options->*P : fallback);
+}
+
 } // namespace
 
 extern "C" int
@@ -2314,37 +2324,35 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
   // isn't allowed on iOS in unprivileged processes.
   flags += "--no-freeze-flags-after-init";
 
-  if (options) {
-    if (options->expose_garbage_collection) {
-      flags += " --expose-gc";
+  if (js_option<&js_platform_options_t::expose_garbage_collection, bool>(options, 0)) {
+    flags += " --expose-gc";
+  }
+
+  if (js_option<&js_platform_options_t::trace_garbage_collection, bool>(options, 0)) {
+    flags += " --trace-gc";
+  }
+
+  if (js_option<&js_platform_options_t::optimize_for_memory, bool>(options, 1)) {
+    flags += " --lite-mode";
+  } else if (js_option<&js_platform_options_t::disable_optimizing_compiler, bool>(options, 0)) {
+    flags += " --jitless --no-expose-wasm";
+  } else {
+    if (js_option<&js_platform_options_t::trace_optimizations, bool>(options, 0)) {
+      flags += " --trace-opt";
     }
 
-    if (options->trace_garbage_collection) {
-      flags += " --trace-gc";
+    if (js_option<&js_platform_options_t::trace_deoptimizations, bool>(options, 0)) {
+      flags += " --trace-deopt";
     }
+  }
 
-    if (options->disable_optimizing_compiler) {
-      flags += " --jitless --no-expose-wasm";
-    } else {
-      if (options->trace_optimizations) {
-        flags += " --trace-opt";
-      }
+  if (js_option<&js_platform_options_t::enable_sampling_profiler, bool>(options, 0)) {
+    flags += " --prof";
 
-      if (options->trace_deoptimizations) {
-        flags += " --trace-deopt";
-      }
-    }
+    auto interval = js_option<&js_platform_options_t::sampling_profiler_interval, int>(options, 0);
 
-    if (options->enable_sampling_profiler) {
-      flags += " --prof";
-
-      if (options->sampling_profiler_interval > 0) {
-        flags += " --prof_sampling_interval=" + std::to_string(options->sampling_profiler_interval);
-      }
-    }
-
-    if (options->optimize_for_memory) {
-      flags += " --lite-mode";
+    if (interval > 0) {
+      flags += " --prof_sampling_interval=" + std::to_string(interval);
     }
   }
 
@@ -2383,6 +2391,20 @@ js_get_platform_loop (js_platform_t *platform, uv_loop_t **result) {
   return 0;
 }
 
+namespace {
+
+static const js_env_options_t js_env_default_options = {
+  .version = 0,
+};
+
+template <auto js_env_options_t::*P, typename T>
+static inline T
+js_option (const js_env_options_t *options, int min_version, T fallback = T(js_env_default_options.*P)) {
+  return T(options && options->version >= min_version ? options->*P : fallback);
+}
+
+} // namespace
+
 extern "C" int
 js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
   std::scoped_lock guard(platform->lock);
@@ -2391,8 +2413,10 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
   params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
   params.allow_atomics_wait = false;
 
-  if (options && options->memory_limit > 0) {
-    params.constraints.ConfigureDefaultsFromHeapSize(0, options->memory_limit);
+  auto memory_limit = js_option<&js_env_options_t::memory_limit, size_t>(options, 0);
+
+  if (memory_limit > 0) {
+    params.constraints.ConfigureDefaultsFromHeapSize(0, memory_limit);
   } else {
     auto constrained_memory = uv_get_constrained_memory();
     auto total_memory = uv_get_total_memory();
