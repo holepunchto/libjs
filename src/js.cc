@@ -2554,6 +2554,17 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
+js_get_bindings (js_env_t *env, js_value_t **result) {
+  if (env->is_exception_pending()) return -1;
+
+  auto context = env->context.Get(env->isolate);
+
+  *result = js_from_local(context->GetExtrasBindingObject());
+
+  return 0;
+}
+
+extern "C" int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 

@@ -322,6 +322,16 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
+/**
+ * Get the platform specific bindings object for the specified environment.
+ *
+ * Platform implementations can use this to export any additional functionality
+ * by setting properties on the object and may also import any properties set
+ * by embedders.
+ */
+int
+js_get_bindings (js_env_t *env, js_value_t **result);
+
 int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
