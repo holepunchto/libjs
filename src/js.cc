@@ -2342,6 +2342,10 @@ js_create_platform (uv_loop_t *loop, const js_platform_options_t *options, js_pl
         flags += " --prof_sampling_interval=" + std::to_string(options->sampling_profiler_interval);
       }
     }
+
+    if (options->lite_mode) {
+      flags += " --lite-mode";
+    }
   }
 
   V8::SetFlagsFromString(flags.c_str());
