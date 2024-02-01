@@ -106,6 +106,7 @@ list(APPEND tests
   set-named-property
   terminate-execution
   threads
+  threads-platform-loop
   throw-error
   throw-error-formatted
   typeof-bigint
