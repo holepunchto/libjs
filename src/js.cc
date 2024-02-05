@@ -340,6 +340,19 @@ struct js_task_runner_s : public TaskRunner {
     idle_tasks.push(std::move(task));
   }
 
+  inline bool
+  can_pop_task () {
+    std::scoped_lock guard(lock);
+
+    if (depth == 0) return !tasks.empty();
+
+    for (auto task = tasks.begin(); task != tasks.end(); task++) {
+      if (task->nestability == js_task_nestable) return true;
+    }
+
+    return false;
+  }
+
   inline std::optional<js_task_handle_t>
   pop_task () {
     std::scoped_lock guard(lock);
@@ -372,9 +385,9 @@ struct js_task_runner_s : public TaskRunner {
 
     if (task) return std::optional(std::move(task));
 
-    if (closed) return std::nullopt;
-
-    available.wait(guard);
+    while (!closed && !can_pop_task()) {
+      available.wait(guard);
+    }
 
     return pop_task();
   }
@@ -406,6 +419,8 @@ struct js_task_runner_s : public TaskRunner {
   inline void
   drain () {
     std::unique_lock guard(lock);
+
+    if (closed) return;
 
     while (outstanding > disposable) {
       drained.wait(guard);
@@ -1071,6 +1086,8 @@ struct js_platform_s : public Platform {
       worker->join();
     }
 
+    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
+
     uv_ref(reinterpret_cast<uv_handle_t *>(&check));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
@@ -1344,6 +1361,8 @@ struct js_env_s {
   inline void
   close () {
     tasks->close();
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&check));
 
