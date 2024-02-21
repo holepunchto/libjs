@@ -2003,14 +2003,6 @@ private:
 
   static void
   on_second_pass_finalize (const WeakCallbackInfo<js_finalizer_t> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    // Bail if the environment was destroyed before the second-pass finalizer
-    // got a chance to run.
-    if (context.IsEmpty()) return;
-
     auto finalizer = info.GetParameter();
 
     finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
