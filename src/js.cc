@@ -1809,6 +1809,10 @@ struct js_ref_s {
 
   js_ref_s(const js_ref_s &) = delete;
 
+  ~js_ref_s() {
+    value.Reset();
+  }
+
   js_ref_s &
   operator=(const js_ref_s &) = delete;
 
@@ -1820,11 +1824,6 @@ struct js_ref_s {
   inline void
   clear_weak () {
     value.ClearWeak<js_ref_t>();
-  }
-
-  inline void
-  reset () {
-    value.Reset();
   }
 
 private:
@@ -2856,8 +2855,6 @@ js_create_reference (js_env_t *env, js_value_t *value, uint32_t count, js_ref_t 
 extern "C" int
 js_delete_reference (js_env_t *env, js_ref_t *reference) {
   // Allow continuing even with a pending exception
-
-  reference->reset();
 
   delete reference;
 
