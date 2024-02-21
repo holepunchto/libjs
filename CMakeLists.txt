@@ -85,7 +85,7 @@ else()
   )
 endif()
 
-add_library(js_shared SHARED $<TARGET_OBJECTS:js>)
+add_library(js_shared SHARED)
 
 set_target_properties(
   js_shared
@@ -97,13 +97,14 @@ set_target_properties(
 target_link_libraries(
   js_shared
   PUBLIC
+    js
     uv
     v8
     mem_shared
     utf_shared
 )
 
-add_library(js_static STATIC $<TARGET_OBJECTS:js>)
+add_library(js_static STATIC)
 
 set_target_properties(
   js_static
@@ -115,6 +116,7 @@ set_target_properties(
 target_link_libraries(
   js_static
   PUBLIC
+    js
     uv_a
     v8
     mem_static
@@ -129,5 +131,6 @@ install(DIRECTORY include/js DESTINATION include)
 
 if(PROJECT_IS_TOP_LEVEL)
   enable_testing()
+
   add_subdirectory(test)
 endif()

@@ -146,12 +146,6 @@ foreach(test IN LISTS tests)
       js_shared
   )
 
-  target_include_directories(
-    ${test}
-    PRIVATE
-      $<TARGET_PROPERTY:js,INTERFACE_INCLUDE_DIRECTORIES>
-  )
-
   add_test(
     NAME ${test}
     COMMAND ${test}
