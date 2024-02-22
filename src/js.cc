@@ -1347,11 +1347,11 @@ struct js_env_s {
   }
 
   ~js_env_s() {
-    auto scope = HandleScope(isolate);
-
     this->wrapper.Reset();
     this->delegate.Reset();
     this->tag.Reset();
+
+    auto scope = HandleScope(isolate);
 
     auto context = this->context.Get(isolate);
 
@@ -1401,6 +1401,8 @@ struct js_env_s {
 
     if (callbacks.unhandled_rejection) {
       for (auto &promise : unhandled_promises) {
+        auto scope = HandleScope(isolate);
+
         auto local = promise.Get(isolate);
 
         callbacks.unhandled_rejection(
