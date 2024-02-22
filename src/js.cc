@@ -1264,7 +1264,6 @@ struct js_env_s {
   uint32_t depth;
 
   Isolate *isolate;
-  HandleScope scope;
 
   Persistent<Context> context;
 
@@ -1297,11 +1296,10 @@ struct js_env_s {
         tasks(platform->foreground[isolate]),
         depth(0),
         isolate(isolate),
-        scope(isolate),
-        context(isolate, Context::New(isolate)),
-        wrapper(isolate, Private::New(isolate)),
-        delegate(isolate, Private::New(isolate)),
-        tag(isolate, Private::New(isolate)),
+        context(),
+        wrapper(),
+        delegate(),
+        tag(),
         exception(),
         modules(),
         unhandled_promises(),
@@ -1333,14 +1331,28 @@ struct js_env_s {
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
-    auto context = this->context.Get(isolate);
+    auto scope = HandleScope(isolate);
+
+    auto context = Context::New(isolate);
 
     context->SetAlignedPointerInEmbedderData(js_context_environment, this);
 
     context->Enter();
+
+    this->context.Reset(isolate, context);
+
+    this->wrapper.Reset(isolate, Private::New(isolate));
+    this->delegate.Reset(isolate, Private::New(isolate));
+    this->tag.Reset(isolate, Private::New(isolate));
   }
 
   ~js_env_s() {
+    auto scope = HandleScope(isolate);
+
+    this->wrapper.Reset();
+    this->delegate.Reset();
+    this->tag.Reset();
+
     auto context = this->context.Get(isolate);
 
     context->Exit();

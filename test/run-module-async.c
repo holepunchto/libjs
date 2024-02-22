@@ -52,6 +52,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *source;
   e = js_create_string_utf8(env, (utf8_t *) "import { foo } from 'foo.js'; await foo", -1, &source);
   assert(e == 0);
@@ -85,6 +89,9 @@ main () {
   assert(e == 0);
 
   e = js_delete_module(env, synthetic_module);
+  assert(e == 0);
+
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);

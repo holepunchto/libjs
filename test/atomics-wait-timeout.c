@@ -21,6 +21,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *script;
   e = js_create_string_utf8(env, atomics_wait_timeout_js, atomics_wait_timeout_js_len, &script);
   assert(e == 0);
@@ -40,6 +44,9 @@ main () {
   assert(e == 0);
 
   assert(strcmp((char *) value, "timed-out") == 0);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

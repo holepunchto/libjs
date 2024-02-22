@@ -44,6 +44,10 @@ main () {
   e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *script;
   e = js_create_string_utf8(env, (utf8_t *) "() => { throw 'err' }", -1, &script);
   assert(e == 0);
@@ -61,6 +65,9 @@ main () {
   assert(e == -1);
 
   assert(uncaught_called == 1);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

@@ -30,6 +30,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *source;
   e = js_create_string_utf8(env, (utf8_t *) "export const foo = import.meta.foo", -1, &source);
   assert(e == 0);
@@ -66,6 +70,9 @@ main () {
   assert(value == 42);
 
   e = js_delete_module(env, module);
+  assert(e == 0);
+
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);

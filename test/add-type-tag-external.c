@@ -17,6 +17,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *external;
   e = js_create_external(env, (void *) 42, NULL, NULL, &external);
   assert(e == 0);
@@ -30,6 +34,9 @@ main () {
   assert(e == 0);
 
   assert(result);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

@@ -17,6 +17,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_deferred_t *deferred;
   js_value_t *promise;
   e = js_create_promise(env, &deferred, &promise);
@@ -39,6 +43,9 @@ main () {
   assert(e == 0);
 
   assert(state == js_promise_rejected);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

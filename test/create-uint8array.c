@@ -18,6 +18,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   uint8_t *data;
 
   js_value_t *arraybuffer;
@@ -26,6 +30,9 @@ main () {
 
   js_value_t *typedarray;
   e = js_create_typedarray(env, js_uint8_array, 10, arraybuffer, 0, &typedarray);
+  assert(e == 0);
+
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);

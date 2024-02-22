@@ -19,6 +19,10 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   uint8_t *data_a, *data_b;
 
   js_arraybuffer_backing_store_t *backing_store;
@@ -43,6 +47,9 @@ main () {
   assert(data_b[0] == 42);
 
   e = js_release_arraybuffer_backing_store(env, backing_store);
+  assert(e == 0);
+
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);

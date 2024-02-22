@@ -55,12 +55,19 @@ main () {
   e = js_on_dynamic_import(env, on_import, NULL);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_value_t *script;
   e = js_create_string_utf8(env, (utf8_t *) "const foo = import('foo.js')", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
   e = js_run_script(env, "test.js", -1, 0, script, &result);
+  assert(e == 0);
+
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   e = js_destroy_env(env);
