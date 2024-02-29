@@ -1457,7 +1457,7 @@ struct js_env_s {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
-      else exception.Reset(isolate, error);
+      else try_catch.ReThrow();
     }
 
     return std::move(result);
