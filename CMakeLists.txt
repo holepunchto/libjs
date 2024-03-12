@@ -75,6 +75,13 @@ if(MSVC)
     PUBLIC
       /GR-
       /X
+      /MT$<$<CONFIG:Debug>:d>
+  )
+
+  target_link_options(
+    js
+    PUBLIC
+      /DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>
   )
 else()
   target_compile_options(
