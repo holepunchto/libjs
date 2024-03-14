@@ -1397,6 +1397,8 @@ struct js_env_s {
 
   inline void
   run_microtasks () {
+    if (isolate->IsExecutionTerminating()) return;
+
     isolate->PerformMicrotaskCheckpoint();
 
     if (callbacks.unhandled_rejection) {
