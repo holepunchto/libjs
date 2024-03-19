@@ -1740,7 +1740,23 @@ struct js_module_s {
 
     module->callbacks.evaluate(env, module, module->callbacks.evaluate_data);
 
-    return Undefined(env->isolate);
+    if (env->exception.IsEmpty()) {
+      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+      auto success = resolver->Resolve(context, Undefined(env->isolate));
+
+      success.Check();
+
+      return resolver->GetPromise();
+    }
+
+    auto exception = env->exception.Get(env->isolate);
+
+    env->exception.Reset();
+
+    env->isolate->ThrowException(exception);
+
+    return MaybeLocal<Value>();
   }
 
   static MaybeLocal<Promise>
