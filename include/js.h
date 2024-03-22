@@ -962,6 +962,12 @@ js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, si
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_get_sharedarraybuffer_info (js_env_t *env, js_value_t *sharedarraybuffer, void **data, size_t *len);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
 /**

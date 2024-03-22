@@ -4968,6 +4968,23 @@ js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, si
 }
 
 extern "C" int
+js_get_sharedarraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
+  // Allow continuing even with a pending exception
+
+  auto local = js_to_local(arraybuffer).As<SharedArrayBuffer>();
+
+  if (data) {
+    *data = local->Data();
+  }
+
+  if (len) {
+    *len = local->ByteLength();
+  }
+
+  return 0;
+}
+
+extern "C" int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
 
