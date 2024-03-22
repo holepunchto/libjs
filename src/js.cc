@@ -3976,48 +3976,51 @@ js_set_arraybuffer_zero_fill_enabled (bool enabled) {
   return 0;
 }
 
+namespace {
+
+template <typename T>
+static inline Local<TypedArray>
+js_create_typedarray (js_typedarray_type_t type, T arraybuffer, size_t offset, size_t len) {
+  switch (type) {
+  case js_int8_array:
+    return Int8Array::New(arraybuffer, offset, len);
+  case js_uint8_array:
+    return Uint8Array::New(arraybuffer, offset, len);
+  case js_uint8_clamped_array:
+    return Uint8ClampedArray::New(arraybuffer, offset, len);
+  case js_int16_array:
+    return Int16Array::New(arraybuffer, offset, len);
+  case js_uint16_array:
+    return Uint16Array::New(arraybuffer, offset, len);
+  case js_int32_array:
+    return Int32Array::New(arraybuffer, offset, len);
+  case js_uint32_array:
+    return Uint32Array::New(arraybuffer, offset, len);
+  case js_float32_array:
+    return Float32Array::New(arraybuffer, offset, len);
+  case js_float64_array:
+    return Float64Array::New(arraybuffer, offset, len);
+  case js_bigint64_array:
+    return BigInt64Array::New(arraybuffer, offset, len);
+  case js_biguint64_array:
+    return BigUint64Array::New(arraybuffer, offset, len);
+  }
+}
+
+} // namespace
+
 extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local(arraybuffer);
 
   Local<TypedArray> typedarray;
 
-  switch (type) {
-  case js_int8_array:
-    typedarray = Int8Array::New(local, offset, len);
-    break;
-  case js_uint8_array:
-    typedarray = Uint8Array::New(local, offset, len);
-    break;
-  case js_uint8_clamped_array:
-    typedarray = Uint8ClampedArray::New(local, offset, len);
-    break;
-  case js_int16_array:
-    typedarray = Int16Array::New(local, offset, len);
-    break;
-  case js_uint16_array:
-    typedarray = Uint16Array::New(local, offset, len);
-    break;
-  case js_int32_array:
-    typedarray = Int32Array::New(local, offset, len);
-    break;
-  case js_uint32_array:
-    typedarray = Uint32Array::New(local, offset, len);
-    break;
-  case js_float32_array:
-    typedarray = Float32Array::New(local, offset, len);
-    break;
-  case js_float64_array:
-    typedarray = Float64Array::New(local, offset, len);
-    break;
-  case js_bigint64_array:
-    typedarray = BigInt64Array::New(local, offset, len);
-    break;
-  case js_biguint64_array:
-    typedarray = BigUint64Array::New(local, offset, len);
-    break;
+  if (local->IsArrayBuffer()) {
+    typedarray = js_create_typedarray(type, local.As<ArrayBuffer>(), offset, len);
+  } else {
+    typedarray = js_create_typedarray(type, local.As<SharedArrayBuffer>(), offset, len);
   }
 
   *result = js_from_local(typedarray);
@@ -4025,13 +4028,29 @@ js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_v
   return 0;
 }
 
+namespace {
+
+template <typename T>
+static inline Local<DataView>
+js_create_dataview (T arraybuffer, size_t offset, size_t len) {
+  return DataView::New(arraybuffer, offset, len);
+}
+
+} // namespace
+
 extern "C" int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local(arraybuffer);
 
-  auto dataview = DataView::New(local, offset, len);
+  Local<DataView> dataview;
+
+  if (local->IsArrayBuffer()) {
+    dataview = js_create_dataview(local.As<ArrayBuffer>(), offset, len);
+  } else {
+    dataview = js_create_dataview(local.As<SharedArrayBuffer>(), offset, len);
+  }
 
   *result = js_from_local(dataview);
 
