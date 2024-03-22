@@ -12,7 +12,6 @@
 #include <vector>
 
 #include <assert.h>
-#include <mem.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -924,22 +923,13 @@ private:
 };
 
 struct js_heap_s {
-  mem_heap_t *heap;
   bool zero_fill;
 
 private:
-  js_heap_s()
-      : heap(nullptr),
-        zero_fill(true) {
-    mem_heap_init(nullptr, &heap);
-  }
+  js_heap_s() : zero_fill(true) {}
 
 public:
   js_heap_s(const js_heap_s &) = delete;
-
-  ~js_heap_s() {
-    mem_heap_destroy(heap);
-  }
 
   js_heap_s &
   operator=(const js_heap_s &) = delete;
@@ -953,29 +943,31 @@ public:
 
   inline void *
   alloc (size_t size) {
-    if (zero_fill) return mem_zalloc(heap, size);
-    return mem_alloc(heap, size);
+    void *ptr = alloc_unsafe(size);
+    if (zero_fill) memset(ptr, 0, size);
+    return ptr;
   }
 
   inline void *
   alloc_unsafe (size_t size) {
-    return mem_alloc(heap, size);
+    return ::malloc(size);
   }
 
   inline void *
-  realloc (void *ptr, size_t size) {
-    if (zero_fill) return mem_rezalloc(heap, ptr, size);
-    return mem_realloc(heap, ptr, size);
+  realloc (void *ptr, size_t old_size, size_t new_size) {
+    ptr = realloc_unsafe(ptr, new_size);
+    if (zero_fill && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
+    return ptr;
   }
 
   inline void *
   realloc_unsafe (void *ptr, size_t size) {
-    return mem_realloc(heap, ptr, size);
+    return ::realloc(ptr, size);
   }
 
   inline void
   free (void *ptr) {
-    mem_free(ptr);
+    ::free(ptr);
   }
 };
 
@@ -1005,7 +997,7 @@ private: // V8 embedder API
 
   void *
   Reallocate (void *data, size_t old_length, size_t new_length) override {
-    return js_heap_t::local()->realloc(data, new_length);
+    return js_heap_t::local()->realloc(data, old_length, new_length);
   }
 };
 

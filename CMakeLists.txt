@@ -18,10 +18,6 @@ if(NOT TARGET v8)
   )
 endif()
 
-if(NOT TARGET mem)
-  add_subdirectory(vendor/libmem EXCLUDE_FROM_ALL)
-endif()
-
 if(NOT TARGET uv)
   add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)
 endif()
@@ -58,7 +54,6 @@ target_include_directories(
     $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(
@@ -107,7 +102,6 @@ target_link_libraries(
     js
     uv
     v8
-    mem_shared
     utf_shared
 )
 
@@ -126,7 +120,6 @@ target_link_libraries(
     js
     uv_a
     v8
-    mem_static
     utf_static
 )
 
