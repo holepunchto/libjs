@@ -719,6 +719,24 @@ js_is_function (js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_is_async_function (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_generator_function (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_generator_object (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_is_array (js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -755,6 +773,12 @@ js_is_date (js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_is_regexp (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_is_error (js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -762,6 +786,54 @@ js_is_error (js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_promise (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_proxy (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_map (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_map_iterator (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_set (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_set_iterator (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_weak_map (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_weak_set (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_weak_ref (js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -792,6 +864,12 @@ js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_dataview (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_module_namespace (js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

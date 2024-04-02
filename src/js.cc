@@ -4247,10 +4247,28 @@ js_is_function (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
-js_is_native_function (js_env_t *env, js_value_t *value, bool *result) {
+js_is_async_function (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  *result = js_to_local(value)->IsFunction();
+  *result = js_to_local(value)->IsAsyncFunction();
+
+  return 0;
+}
+
+extern "C" int
+js_is_generator_function (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsGeneratorFunction();
+
+  return 0;
+}
+
+extern "C" int
+js_is_generator_object (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsGeneratorObject();
 
   return 0;
 }
@@ -4322,6 +4340,15 @@ js_is_date (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_regexp (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsRegExp();
+
+  return 0;
+}
+
+extern "C" int
 js_is_error (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
@@ -4335,6 +4362,78 @@ js_is_promise (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = js_to_local(value)->IsPromise();
+
+  return 0;
+}
+
+extern "C" int
+js_is_proxy (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsProxy();
+
+  return 0;
+}
+
+extern "C" int
+js_is_map (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsMap();
+
+  return 0;
+}
+
+extern "C" int
+js_is_map_iterator (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsMapIterator();
+
+  return 0;
+}
+
+extern "C" int
+js_is_set (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsSet();
+
+  return 0;
+}
+
+extern "C" int
+js_is_set_iterator (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsSetIterator();
+
+  return 0;
+}
+
+extern "C" int
+js_is_weak_map (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsWeakMap();
+
+  return 0;
+}
+
+extern "C" int
+js_is_weak_set (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsWeakSet();
+
+  return 0;
+}
+
+extern "C" int
+js_is_weak_ref (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsWeakRef();
 
   return 0;
 }
@@ -4382,6 +4481,15 @@ js_is_dataview (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = js_to_local(value)->IsDataView();
+
+  return 0;
+}
+
+extern "C" int
+js_is_module_namespace (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsModuleNamespaceObject();
 
   return 0;
 }
