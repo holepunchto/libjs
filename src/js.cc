@@ -5599,6 +5599,8 @@ js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
     v8_type = CTypeInfo::Type::kUint8;
     v8_sequence_type = CTypeInfo::SequenceType::kIsTypedArray;
     break;
+  default:
+    return -1;
   }
 
   auto v8_type_info = CTypeInfo(v8_type, v8_sequence_type, v8_flags);

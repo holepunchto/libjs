@@ -46,36 +46,36 @@ typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
 typedef enum {
-  js_undefined,
-  js_null,
-  js_boolean,
-  js_number,
-  js_string,
-  js_symbol,
-  js_object,
-  js_function,
-  js_external,
-  js_bigint,
+  js_undefined = 0,
+  js_null = 1,
+  js_boolean = 2,
+  js_number = 3,
+  js_string = 4,
+  js_symbol = 5,
+  js_object = 6,
+  js_function = 7,
+  js_external = 8,
+  js_bigint = 9,
 } js_value_type_t;
 
 typedef enum {
-  js_int8_array,
-  js_uint8_array,
-  js_uint8_clamped_array,
-  js_int16_array,
-  js_uint16_array,
-  js_int32_array,
-  js_uint32_array,
-  js_float32_array,
-  js_float64_array,
-  js_bigint64_array,
-  js_biguint64_array,
+  js_int8_array = 0,
+  js_uint8_array = 1,
+  js_uint8_clamped_array = 2,
+  js_int16_array = 3,
+  js_uint16_array = 4,
+  js_int32_array = 5,
+  js_uint32_array = 6,
+  js_float32_array = 7,
+  js_float64_array = 8,
+  js_bigint64_array = 9,
+  js_biguint64_array = 10,
 } js_typedarray_type_t;
 
 typedef enum {
-  js_promise_pending,
-  js_promise_fulfilled,
-  js_promise_rejected,
+  js_promise_pending = 0,
+  js_promise_fulfilled = 1,
+  js_promise_rejected = 2,
 } js_promise_state_t;
 
 enum {

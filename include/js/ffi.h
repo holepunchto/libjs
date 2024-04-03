@@ -21,25 +21,34 @@ typedef struct js_ffi_arraybuffer_s js_ffi_arraybuffer_t;
 typedef struct js_ffi_typedarray_s js_ffi_typedarray_t;
 
 typedef enum {
-  js_ffi_receiver,
+  js_ffi_receiver = 0,
 
   // Primitives
-  js_ffi_void,
-  js_ffi_bool,
-  js_ffi_uint32,
-  js_ffi_uint64,
-  js_ffi_int32,
-  js_ffi_int64,
-  js_ffi_float32,
-  js_ffi_float64,
-  js_ffi_pointer,
+  js_ffi_void = 1,
+  js_ffi_bool = 2,
+  js_ffi_uint32 = 3,
+  js_ffi_uint64 = 4,
+  js_ffi_int32 = 5,
+  js_ffi_int64 = 6,
+  js_ffi_float32 = 7,
+  js_ffi_float64 = 8,
+  js_ffi_pointer = 9,
 
   // Objects
-  js_ffi_string,
-  js_ffi_arraybuffer,
+  js_ffi_string = 10,
+  js_ffi_arraybuffer = 11,
 
   // Typed arrays
-  js_ffi_uint8array,
+  js_ffi_uint8array = 12,
+  js_ffi_uint16array = 13,
+  js_ffi_uint32array = 14,
+  js_ffi_uint64array = 15,
+  js_ffi_int8array = 16,
+  js_ffi_int16array = 17,
+  js_ffi_int32array = 18,
+  js_ffi_int64array = 19,
+  js_ffi_float32array = 20,
+  js_ffi_float64array = 21,
 } js_ffi_type_t;
 
 struct js_ffi_string_s {
@@ -56,6 +65,15 @@ struct js_ffi_typedarray_s {
   size_t len;
   union {
     uint8_t *u8;
+    uint16_t *u16;
+    uint32_t *u32;
+    uint64_t *u64;
+    int8_t *i8;
+    int16_t *i16;
+    int32_t *i32;
+    int64_t *i64;
+    float *f32;
+    double *f64;
   } data;
 };
 
