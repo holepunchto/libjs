@@ -731,7 +731,13 @@ js_is_generator_function (js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_is_generator_object (js_env_t *env, js_value_t *value, bool *result);
+js_is_generator (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_arguments (js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

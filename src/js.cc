@@ -4265,10 +4265,19 @@ js_is_generator_function (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
-js_is_generator_object (js_env_t *env, js_value_t *value, bool *result) {
+js_is_generator (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = js_to_local(value)->IsGeneratorObject();
+
+  return 0;
+}
+
+extern "C" int
+js_is_arguments (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsArgumentsObject();
 
   return 0;
 }
