@@ -59,17 +59,31 @@ typedef enum {
 } js_value_type_t;
 
 typedef enum {
-  js_int8_array = 0,
-  js_uint8_array = 1,
-  js_uint8_clamped_array = 2,
-  js_int16_array = 3,
-  js_uint16_array = 4,
-  js_int32_array = 5,
-  js_uint32_array = 6,
-  js_float32_array = 7,
-  js_float64_array = 8,
-  js_bigint64_array = 9,
-  js_biguint64_array = 10,
+  js_int8array = 0,
+  js_uint8array = 1,
+  js_uint8clampedarray = 2,
+  js_int16array = 3,
+  js_uint16array = 4,
+  js_int32array = 5,
+  js_uint32array = 6,
+  js_float32array = 7,
+  js_float64array = 8,
+  js_bigint64array = 9,
+  js_biguint64array = 10,
+
+  // Legacy aliases
+
+  /** @deprecated */ js_int8_array = js_int8array,
+  /** @deprecated */ js_uint8_array = js_uint8array,
+  /** @deprecated */ js_uint8_clamped_array = js_uint8clampedarray,
+  /** @deprecated */ js_int16_array = js_int16array,
+  /** @deprecated */ js_uint16_array = js_uint16array,
+  /** @deprecated */ js_int32_array = js_int32array,
+  /** @deprecated */ js_uint32_array = js_uint32array,
+  /** @deprecated */ js_float32_array = js_float32array,
+  /** @deprecated */ js_float64_array = js_float64array,
+  /** @deprecated */ js_bigint64_array = js_bigint64array,
+  /** @deprecated */ js_biguint64_array = js_biguint64array,
 } js_typedarray_type_t;
 
 typedef enum {
@@ -695,6 +709,18 @@ js_is_number (js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_is_int32 (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_uint32 (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_is_string (js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -864,6 +890,72 @@ js_is_sharedarraybuffer (js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_typedarray (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_int8array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_uint8array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_uint8clampedarray (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_int16array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_uint16array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_int32array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_uint32array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_float32array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_float64array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_bigint64array (js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_biguint64array (js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

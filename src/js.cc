@@ -4211,6 +4211,24 @@ js_is_number (js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_int32 (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsInt32();
+
+  return 0;
+}
+
+extern "C" int
+js_is_uint32 (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsUint32();
+
+  return 0;
+}
+
+extern "C" int
 js_is_string (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
@@ -4481,6 +4499,105 @@ js_is_typedarray (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = js_to_local(value)->IsTypedArray();
+
+  return 0;
+}
+
+extern "C" int
+js_is_int8array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsInt8Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_uint8array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsUint8Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_uint8clampedarray (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsUint8ClampedArray();
+
+  return 0;
+}
+
+extern "C" int
+js_is_int16array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsInt16Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_uint16array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsUint16Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_int32array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsInt32Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_uint32array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsUint32Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_float32array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsFloat32Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_float64array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsFloat64Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_bigint64array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsBigInt64Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_biguint64array (js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsBigUint64Array();
 
   return 0;
 }
