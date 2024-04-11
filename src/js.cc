@@ -1210,19 +1210,19 @@ private: // V8 embedder API
     return foreground[isolate];
   }
 
+  std::unique_ptr<JobHandle>
+  CreateJobImpl (TaskPriority priority, std::unique_ptr<JobTask> task, const SourceLocation &location) override {
+    return std::make_unique<js_job_handle_t>(priority, std::move(task), background, workers.size());
+  }
+
   void
-  CallOnWorkerThread (std::unique_ptr<Task> task) override {
+  PostTaskOnWorkerThreadImpl (TaskPriority priority, std::unique_ptr<Task> task, const SourceLocation &location) override {
     background->push_task(js_task_handle_t(std::move(task), js_task_nestable));
   }
 
   void
-  CallDelayedOnWorkerThread (std::unique_ptr<Task> task, double delay) override {
+  PostDelayedTaskOnWorkerThreadImpl (TaskPriority priority, std::unique_ptr<Task> task, double delay, const SourceLocation &location) override {
     background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, background->now() + (delay * 1000)));
-  }
-
-  std::unique_ptr<JobHandle>
-  CreateJob (TaskPriority priority, std::unique_ptr<JobTask> task) override {
-    return std::make_unique<js_job_handle_t>(priority, std::move(task), background, workers.size());
   }
 
   double
@@ -2739,9 +2739,9 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
   auto local = Module::CreateSyntheticModule(
     env->isolate,
     local_name.ToLocalChecked(),
-    std::vector(
-      local_export_names,
-      local_export_names + export_names_len
+    MemorySpan<const Local<String>>(
+      std::vector(local_export_names, local_export_names + export_names_len).begin(),
+      export_names_len
     ),
     js_module_t::on_evaluate
   );
@@ -3652,14 +3652,14 @@ js_create_date (js_env_t *env, double time, js_value_t **result) {
 
 namespace {
 
-template <Local<Value> Error(Local<String> message)>
+template <Local<Value> Error(Local<String> message, Local<Value> options)>
 static inline int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   auto context = env->context.Get(env->isolate);
 
-  auto error = Error(js_to_local(message).As<String>()).As<Object>();
+  auto error = Error(js_to_local(message).As<String>(), {}).As<Object>();
 
   if (code) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
@@ -5415,7 +5415,7 @@ js_throw (js_env_t *env, js_value_t *error) {
 
 namespace {
 
-template <Local<Value> Error(Local<String> message)>
+template <Local<Value> Error(Local<String> message, Local<Value> options)>
 static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   if (env->is_exception_pending()) return -1;
@@ -5426,7 +5426,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 
   assert(!local.IsEmpty());
 
-  auto error = Error(local.ToLocalChecked()).As<Object>();
+  auto error = Error(local.ToLocalChecked(), {}).As<Object>();
 
   if (code) {
     auto local = String::NewFromUtf8(env->isolate, code);
@@ -5439,7 +5439,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
   return js_throw(env, js_from_local(error));
 }
 
-template <Local<Value> Error(Local<String> message)>
+template <Local<Value> Error(Local<String> message, Local<Value> options)>
 static inline int
 js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
   if (env->is_exception_pending()) return -1;
