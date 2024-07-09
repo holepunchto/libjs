@@ -64,6 +64,7 @@ list(APPEND tests
   create-sharedarraybuffer-with-backing-store
   create-string-utf8
   create-string-utf8-with-null
+  create-threadsafe-function
   create-uint8array
   create-unsafe-arraybuffer
   define-class
