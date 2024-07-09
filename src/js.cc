@@ -2092,11 +2092,15 @@ private:
     if (delegate->callbacks.has) {
       auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
 
+      if (env->is_exception_pending()) return Intercepted::kNo;
+
       if (!exists) return Intercepted::kYes;
     }
 
     if (delegate->callbacks.get) {
       auto result = delegate->callbacks.get(env, js_from_local(property), delegate->data);
+
+      if (env->is_exception_pending()) return Intercepted::kNo;
 
       if (result) {
         info.GetReturnValue().Set(js_to_local(result));
@@ -2131,6 +2135,8 @@ private:
     if (delegate->callbacks.set) {
       auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
 
+      if (env->is_exception_pending()) return Intercepted::kNo;
+
       if (result) return Intercepted::kYes;
     }
 
@@ -2160,7 +2166,13 @@ private:
     if (delegate->callbacks.delete_property) {
       auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
 
-      if (result) return Intercepted::kYes;
+      if (env->is_exception_pending()) return Intercepted::kNo;
+
+      if (result) {
+        info.GetReturnValue().Set(true);
+
+        return Intercepted::kYes;
+      }
     }
 
     return Intercepted::kNo;
@@ -2187,6 +2199,8 @@ private:
 
     if (delegate->callbacks.own_keys) {
       auto result = delegate->callbacks.own_keys(env, delegate->data);
+
+      if (env->is_exception_pending()) return;
 
       if (result) {
         auto local = js_to_local(result).As<Array>();
