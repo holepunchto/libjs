@@ -2209,6 +2209,229 @@ struct js_arraybuffer_backing_store_s {
   operator=(const js_arraybuffer_backing_store_s &) = delete;
 };
 
+namespace {
+
+static const uint8_t js_threadsafe_function_idle = 0x0;
+static const uint8_t js_threadsafe_function_running = 0x1;
+static const uint8_t js_threadsafe_function_pending = 0x2;
+
+} // namespace
+
+struct js_threadsafe_function_s {
+  Persistent<Value> function;
+  js_env_t *env;
+
+  uv_async_t async;
+
+  std::queue<void *> queue;
+  std::atomic<uint8_t> state;
+
+  size_t queue_limit;
+  size_t thread_count;
+
+  std::recursive_mutex lock;
+
+  std::condition_variable_any available;
+
+  void *context;
+  js_finalize_cb finalize_cb;
+  void *finalize_hint;
+
+  js_threadsafe_function_cb cb;
+
+  js_threadsafe_function_s(js_env_t *env, size_t queue_limit, size_t thread_count, js_threadsafe_function_cb cb, void *context, js_finalize_cb finalize_cb, void *finalize_hint)
+      : function(),
+        env(env),
+        async(),
+        queue(),
+        state(js_threadsafe_function_idle),
+        queue_limit(queue_limit),
+        thread_count(thread_count),
+        lock(),
+        available(),
+        cb(cb == nullptr ? on_call : cb),
+        context(context),
+        finalize_cb(finalize_cb),
+        finalize_hint(finalize_hint) {
+    int err;
+
+    err = uv_async_init(env->loop, &async, on_async);
+    assert(err == 0);
+
+    async.data = this;
+  }
+
+  inline int
+  push (void *data, js_threadsafe_function_call_mode mode) {
+    std::unique_lock guard(lock);
+
+    while (queue.size() >= queue_limit && queue_limit > 0) {
+      if (mode == js_threadsafe_function_nonblocking) {
+        return -1;
+      }
+
+      available.wait(guard);
+
+      if (thread_count == 0) return -1;
+    }
+
+    queue.push(data);
+
+    signal();
+
+    return 0;
+  }
+
+  inline int
+  acquire () {
+    std::scoped_lock guard(lock);
+
+    if (thread_count == 0) return -1;
+
+    thread_count++;
+
+    return 0;
+  }
+
+  inline int
+  release (js_threadsafe_function_release_mode mode) {
+    std::scoped_lock guard(lock);
+
+    if (thread_count == 0) return -1;
+
+    if (mode == js_threadsafe_function_abort) thread_count = 0;
+    else thread_count--;
+
+    if (thread_count == 0) {
+      if (queue_limit > 0) available.notify_all();
+
+      signal();
+    }
+
+    return 0;
+  }
+
+  inline void
+  ref () {
+    uv_ref(reinterpret_cast<uv_handle_t *>(&async));
+  }
+
+  inline void
+  unref () {
+    uv_unref(reinterpret_cast<uv_handle_t *>(&async));
+  }
+
+private:
+  inline void
+  signal () {
+    int err;
+
+    auto current_state = state.fetch_or(js_threadsafe_function_pending);
+
+    if (current_state & js_threadsafe_function_running) {
+      return;
+    }
+
+    err = uv_async_send(&async);
+    assert(err == 0);
+  }
+
+  inline void
+  dispatch () {
+    bool has_more = true;
+
+    int iterations = 1024;
+
+    while (has_more && --iterations >= 0) {
+      state = js_threadsafe_function_running;
+
+      has_more = call();
+
+      if (state.exchange(js_threadsafe_function_idle) != js_threadsafe_function_running) {
+        has_more = true;
+      }
+    }
+
+    if (has_more) signal();
+  }
+
+  inline bool
+  call () {
+    bool has_more = false;
+
+    std::optional<void *> data = std::nullopt;
+
+    {
+      std::scoped_lock guard(lock);
+
+      if (thread_count == 0) {
+        close();
+
+        return false;
+      }
+
+      auto size = queue.size();
+
+      if (size > 0) {
+        data = queue.front();
+
+        queue.pop();
+
+        if (size == queue_limit && queue_limit > 0) {
+          available.notify_one();
+        }
+
+        size--;
+      }
+
+      has_more = size > 0;
+    }
+
+    if (data.has_value()) {
+      auto scope = HandleScope(env->isolate);
+
+      auto function = this->function.IsEmpty() ? nullptr : js_from_local(this->function.Get(env->isolate));
+
+      cb(env, function, context, data.value());
+    }
+
+    return has_more;
+  }
+
+  inline void
+  close () {
+    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
+  }
+
+private:
+  static void
+  on_async (uv_async_t *handle) {
+    auto function = reinterpret_cast<js_threadsafe_function_t *>(handle->data);
+
+    function->dispatch();
+  }
+
+  static void
+  on_close (uv_handle_t *handle) {
+    auto function = reinterpret_cast<js_threadsafe_function_t *>(handle->data);
+
+    if (function->finalize_cb) function->finalize_cb(function->env, function->context, function->finalize_hint);
+
+    delete function;
+  }
+
+  static void
+  on_call (js_env_t *env, js_value_t *function, void *context, void *data) {
+    int err;
+
+    js_value_t *receiver;
+    err = js_get_undefined(env, &receiver);
+    assert(err == 0);
+
+    js_call_function(env, receiver, function, 0, nullptr, nullptr);
+  }
+};
+
 struct js_inspector_channel_s : public V8Inspector::Channel {
   js_env_t *env;
   js_inspector_t *inspector;
@@ -5405,6 +5628,73 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
   if (local.IsEmpty()) return -1;
 
   *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_threadsafe_function (js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result) {
+  if (env->is_exception_pending()) return -1;
+
+  if (function == nullptr && cb == nullptr) return -1;
+
+  if (initial_thread_count == 0) return -1;
+
+  auto threadsafe_function = new js_threadsafe_function_t(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
+
+  if (function != nullptr) {
+    threadsafe_function->function.Reset(env->isolate, js_to_local(function));
+  }
+
+  *result = threadsafe_function;
+
+  return 0;
+}
+
+extern "C" int
+js_get_threadsafe_function_context (js_threadsafe_function_t *function, void **result) {
+  // Allow continuing even with a pending exception
+
+  *result = function->context;
+
+  return 0;
+}
+
+extern "C" int
+js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode mode) {
+  // Allow continuing even with a pending exception
+
+  return function->push(data, mode);
+}
+
+extern "C" int
+js_acquire_threadsafe_function (js_threadsafe_function_t *function) {
+  // Allow continuing even with a pending exception
+
+  return function->acquire();
+}
+
+extern "C" int
+js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode mode) {
+  // Allow continuing even with a pending exception
+
+  return function->release(mode);
+}
+
+extern "C" int
+js_ref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function) {
+  // Allow continuing even with a pending exception
+
+  function->ref();
+
+  return 0;
+}
+
+extern "C" int
+js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function) {
+  // Allow continuing even with a pending exception
+
+  function->unref();
 
   return 0;
 }

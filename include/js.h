@@ -27,6 +27,7 @@ typedef struct js_type_tag_s js_type_tag_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
+typedef struct js_threadsafe_function_s js_threadsafe_function_t;
 typedef struct js_inspector_s js_inspector_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
@@ -42,6 +43,7 @@ typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *dat
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
@@ -98,6 +100,16 @@ enum {
   js_configurable = 1 << 2,
   js_static = 1 << 10,
 };
+
+typedef enum {
+  js_threadsafe_function_release = 0,
+  js_threadsafe_function_abort = 1
+} js_threadsafe_function_release_mode;
+
+typedef enum {
+  js_threadsafe_function_nonblocking = 0,
+  js_threadsafe_function_blocking = 1
+} js_threadsafe_function_call_mode;
 
 /** @version 1 */
 struct js_platform_options_s {
@@ -1178,6 +1190,27 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
 int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result);
+
+int
+js_create_threadsafe_function (js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result);
+
+int
+js_get_threadsafe_function_context (js_threadsafe_function_t *function, void **result);
+
+int
+js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode mode);
+
+int
+js_acquire_threadsafe_function (js_threadsafe_function_t *function);
+
+int
+js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode mode);
+
+int
+js_ref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function);
+
+int
+js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function);
 
 int
 js_throw (js_env_t *env, js_value_t *error);
