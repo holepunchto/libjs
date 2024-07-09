@@ -485,27 +485,27 @@ private:
 
 private: // V8 embedder API
   void
-  PostTask (std::unique_ptr<Task> task) override {
+  PostTaskImpl (std::unique_ptr<Task> task, const SourceLocation &location = SourceLocation::Current()) override {
     push_task(js_task_handle_t(std::move(task), js_task_nestable));
   }
 
   void
-  PostNonNestableTask (std::unique_ptr<Task> task) override {
+  PostNonNestableTaskImpl (std::unique_ptr<Task> task, const SourceLocation &location = SourceLocation::Current()) override {
     push_task(js_task_handle_t(std::move(task), js_task_non_nestable));
   }
 
   void
-  PostDelayedTask (std::unique_ptr<Task> task, double delay) override {
+  PostDelayedTaskImpl (std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
     push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, now() + (delay * 1000)));
   }
 
   void
-  PostNonNestableDelayedTask (std::unique_ptr<Task> task, double delay) override {
+  PostNonNestableDelayedTaskImpl (std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
     push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nestable, now() + (delay * 1000)));
   }
 
   void
-  PostIdleTask (std::unique_ptr<IdleTask> task) override {
+  PostIdleTaskImpl (std::unique_ptr<IdleTask> task, const SourceLocation &location = SourceLocation::Current()) override {
     push_task(js_idle_task_handle_t(std::move(task)));
   }
 
@@ -2058,6 +2058,8 @@ struct js_delegate_s : js_finalizer_t {
       nullptr,
       on_delete,
       on_enumerate,
+      nullptr,
+      nullptr,
       external
     ));
 
@@ -2067,6 +2069,8 @@ struct js_delegate_s : js_finalizer_t {
       nullptr,
       on_delete,
       nullptr,
+      nullptr,
+      nullptr,
       external
     ));
 
@@ -2075,7 +2079,7 @@ struct js_delegate_s : js_finalizer_t {
 
 private:
   template <typename T>
-  static void
+  static Intercepted
   on_get (Local<T> property, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
@@ -2088,7 +2092,7 @@ private:
     if (delegate->callbacks.has) {
       auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
 
-      if (!exists) return;
+      if (!exists) return Intercepted::kYes;
     }
 
     if (delegate->callbacks.get) {
@@ -2096,22 +2100,26 @@ private:
 
       if (result) {
         info.GetReturnValue().Set(js_to_local(result));
+
+        return Intercepted::kYes;
       }
     }
+
+    return Intercepted::kNo;
   }
 
-  static void
+  static Intercepted
   on_get (uint32_t index, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
 
-    on_get(property, info);
+    return on_get(property, info);
   }
 
   template <typename T>
-  static void
-  on_set (Local<T> property, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
+  static Intercepted
+  on_set (Local<T> property, Local<Value> value, const PropertyCallbackInfo<void> &info) {
     auto isolate = info.GetIsolate();
 
     auto context = isolate->GetCurrentContext();
@@ -2123,21 +2131,23 @@ private:
     if (delegate->callbacks.set) {
       auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
 
-      info.GetReturnValue().Set(result);
+      if (result) return Intercepted::kYes;
     }
+
+    return Intercepted::kNo;
   }
 
-  static void
-  on_set (uint32_t index, Local<Value> value, const PropertyCallbackInfo<Value> &info) {
+  static Intercepted
+  on_set (uint32_t index, Local<Value> value, const PropertyCallbackInfo<void> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
 
-    on_set(property, value, info);
+    return on_set(property, value, info);
   }
 
   template <typename T>
-  static void
+  static Intercepted
   on_delete (Local<T> property, const PropertyCallbackInfo<Boolean> &info) {
     auto isolate = info.GetIsolate();
 
@@ -2150,17 +2160,19 @@ private:
     if (delegate->callbacks.delete_property) {
       auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
 
-      info.GetReturnValue().Set(result);
+      if (result) return Intercepted::kYes;
     }
+
+    return Intercepted::kNo;
   }
 
-  static void
+  static Intercepted
   on_delete (uint32_t index, const PropertyCallbackInfo<Boolean> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
 
-    on_delete(property, info);
+    return on_delete(property, info);
   }
 
   static void
@@ -2622,7 +2634,6 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
   assert(!local_file.IsEmpty());
 
   auto origin = ScriptOrigin(
-    env->isolate,
     local_file.ToLocalChecked(),
     offset,
     0,
@@ -2675,7 +2686,6 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
   assert(!local_name.IsEmpty());
 
   auto origin = ScriptOrigin(
-    env->isolate,
     local_name.ToLocalChecked(),
     offset,
     0,
@@ -3511,7 +3521,6 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
   assert(!local_file.IsEmpty());
 
   auto origin = ScriptOrigin(
-    env->isolate,
     local_file.ToLocalChecked(),
     offset,
     0,
