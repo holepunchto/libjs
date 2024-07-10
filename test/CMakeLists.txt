@@ -11,6 +11,7 @@ list(APPEND tests
   call-function-microtask-nested
   call-function-throw
   call-threadsafe-function-after-release
+  call-threadsafe-function-with-data
   coerce-number-to-string
   coerce-object-to-string
   coerce-string-to-number

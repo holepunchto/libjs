@@ -2373,33 +2373,29 @@ private:
 
   inline bool
   call () {
-    bool has_more = false;
+    std::unique_lock guard(lock);
 
     std::optional<void *> data = std::nullopt;
 
-    {
-      std::scoped_lock guard(lock);
+    auto size = queue.size();
 
-      auto size = queue.size();
+    if (size > 0) {
+      data = queue.front();
 
-      if (size > 0) {
-        data = queue.front();
+      queue.pop();
 
-        queue.pop();
-
-        if (size == queue_limit && queue_limit > 0) {
-          available.notify_one();
-        }
-
-        size--;
+      if (size == queue_limit && queue_limit > 0) {
+        available.notify_one();
       }
 
-      has_more = size > 0;
-
-      if (size == 0 && thread_count == 0) {
-        close();
-      }
+      size--;
     }
+
+    if (size == 0 && thread_count == 0) {
+      close();
+    }
+
+    guard.unlock();
 
     if (data.has_value()) {
       auto scope = HandleScope(env->isolate);
@@ -2409,7 +2405,7 @@ private:
       cb(env, function, context, data.value());
     }
 
-    return has_more;
+    return size > 0;
   }
 
   inline void
