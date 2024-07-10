@@ -320,7 +320,7 @@ struct js_task_runner_s : public TaskRunner {
 
     // Nestable delayed tasks are not allowed to execute JavaScript and should
     // therefore be safe to dispose if all other tasks have finished.
-    bool is_disposable = task.nestability == js_task_nestable;
+    auto is_disposable = task.nestability == js_task_nestable;
 
     if (is_disposable) disposable++;
 
@@ -383,7 +383,7 @@ struct js_task_runner_s : public TaskRunner {
 
     auto task = pop_task();
 
-    if (task) return std::optional(std::move(task));
+    if (task) return std::move(task);
 
     while (!closed && !can_pop_task()) {
       available.wait(guard);
@@ -399,7 +399,7 @@ struct js_task_runner_s : public TaskRunner {
     std::scoped_lock guard(lock);
 
     while (!delayed_tasks.empty()) {
-      js_delayed_task_handle_t const &task = delayed_tasks.top();
+      auto const &task = delayed_tasks.top();
 
       if (task.expiry > now()) break;
 
@@ -430,16 +430,16 @@ struct js_task_runner_s : public TaskRunner {
 private:
   void
   adjust_timer () {
-    std::scoped_lock guard(lock);
-
     int err;
+
+    std::scoped_lock guard(lock);
 
     if (delayed_tasks.empty()) {
       err = uv_timer_stop(&timer);
     } else {
-      js_delayed_task_handle_t const &task = delayed_tasks.top();
+      auto const &task = delayed_tasks.top();
 
-      uint64_t timeout = task.expiry - now();
+      auto timeout = task.expiry - now();
 
       err = uv_timer_start(&timer, on_timer, timeout, 0);
 
@@ -2354,9 +2354,9 @@ private:
 
   inline void
   dispatch () {
-    bool has_more = true;
+    auto has_more = true;
 
-    int iterations = 1024;
+    auto iterations = 1024;
 
     while (has_more && --iterations >= 0) {
       state = js_threadsafe_function_running;
