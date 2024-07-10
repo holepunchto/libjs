@@ -104,12 +104,12 @@ enum {
 typedef enum {
   js_threadsafe_function_release = 0,
   js_threadsafe_function_abort = 1
-} js_threadsafe_function_release_mode;
+} js_threadsafe_function_release_mode_t;
 
 typedef enum {
   js_threadsafe_function_nonblocking = 0,
   js_threadsafe_function_blocking = 1
-} js_threadsafe_function_call_mode;
+} js_threadsafe_function_call_mode_t;
 
 /** @version 1 */
 struct js_platform_options_s {
@@ -1198,13 +1198,13 @@ int
 js_get_threadsafe_function_context (js_threadsafe_function_t *function, void **result);
 
 int
-js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode mode);
+js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode);
 
 int
 js_acquire_threadsafe_function (js_threadsafe_function_t *function);
 
 int
-js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode mode);
+js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode);
 
 int
 js_ref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function);

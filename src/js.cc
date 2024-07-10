@@ -2276,7 +2276,7 @@ struct js_threadsafe_function_s {
   }
 
   inline int
-  push (void *data, js_threadsafe_function_call_mode mode) {
+  push (void *data, js_threadsafe_function_call_mode_t mode) {
     std::unique_lock guard(lock);
 
     if (thread_count == 0) return -1;
@@ -2310,7 +2310,7 @@ struct js_threadsafe_function_s {
   }
 
   inline int
-  release (js_threadsafe_function_release_mode mode) {
+  release (js_threadsafe_function_release_mode_t mode) {
     std::scoped_lock guard(lock);
 
     if (thread_count == 0) return -1;
@@ -5671,7 +5671,7 @@ js_get_threadsafe_function_context (js_threadsafe_function_t *function, void **r
 }
 
 extern "C" int
-js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode mode) {
+js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode) {
   // Allow continuing even with a pending exception
 
   return function->push(data, mode);
@@ -5685,7 +5685,7 @@ js_acquire_threadsafe_function (js_threadsafe_function_t *function) {
 }
 
 extern "C" int
-js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode mode) {
+js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode) {
   // Allow continuing even with a pending exception
 
   return function->release(mode);
