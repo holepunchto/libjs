@@ -68,6 +68,7 @@ list(APPEND tests
   create-string-utf8-with-null
   create-threadsafe-function
   create-threadsafe-function-with-callback
+  create-threadsafe-function-with-context
   create-threadsafe-function-with-finalizer
   create-uint8array
   create-unsafe-arraybuffer
