@@ -4217,27 +4217,27 @@ template <typename T>
 static inline Local<TypedArray>
 js_create_typedarray (js_typedarray_type_t type, T arraybuffer, size_t offset, size_t len) {
   switch (type) {
-  case js_int8_array:
+  case js_int8array:
     return Int8Array::New(arraybuffer, offset, len);
-  case js_uint8_array:
+  case js_uint8array:
     return Uint8Array::New(arraybuffer, offset, len);
-  case js_uint8_clamped_array:
+  case js_uint8clampedarray:
     return Uint8ClampedArray::New(arraybuffer, offset, len);
-  case js_int16_array:
+  case js_int16array:
     return Int16Array::New(arraybuffer, offset, len);
-  case js_uint16_array:
+  case js_uint16array:
     return Uint16Array::New(arraybuffer, offset, len);
-  case js_int32_array:
+  case js_int32array:
     return Int32Array::New(arraybuffer, offset, len);
-  case js_uint32_array:
+  case js_uint32array:
     return Uint32Array::New(arraybuffer, offset, len);
-  case js_float32_array:
+  case js_float32array:
     return Float32Array::New(arraybuffer, offset, len);
-  case js_float64_array:
+  case js_float64array:
     return Float64Array::New(arraybuffer, offset, len);
-  case js_bigint64_array:
+  case js_bigint64array:
     return BigInt64Array::New(arraybuffer, offset, len);
-  case js_biguint64_array:
+  case js_biguint64array:
     return BigUint64Array::New(arraybuffer, offset, len);
   }
 }
@@ -5480,27 +5480,27 @@ js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_typ
 
   if (type) {
     if (local->IsInt8Array()) {
-      *type = js_int8_array;
+      *type = js_int8array;
     } else if (local->IsUint8Array()) {
-      *type = js_uint8_array;
+      *type = js_uint8array;
     } else if (local->IsUint8ClampedArray()) {
-      *type = js_uint8_clamped_array;
+      *type = js_uint8clampedarray;
     } else if (local->IsInt16Array()) {
-      *type = js_int16_array;
+      *type = js_int16array;
     } else if (local->IsUint16Array()) {
-      *type = js_uint16_array;
+      *type = js_uint16array;
     } else if (local->IsInt32Array()) {
-      *type = js_int32_array;
+      *type = js_int32array;
     } else if (local->IsUint32Array()) {
-      *type = js_uint32_array;
+      *type = js_uint32array;
     } else if (local->IsFloat32Array()) {
-      *type = js_float32_array;
+      *type = js_float32array;
     } else if (local->IsFloat64Array()) {
-      *type = js_float64_array;
+      *type = js_float64array;
     } else if (local->IsBigInt64Array()) {
-      *type = js_bigint64_array;
+      *type = js_bigint64array;
     } else if (local->IsBigUint64Array()) {
-      *type = js_biguint64_array;
+      *type = js_biguint64array;
     }
   }
 
