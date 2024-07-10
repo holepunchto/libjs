@@ -2279,6 +2279,8 @@ struct js_threadsafe_function_s {
   push (void *data, js_threadsafe_function_call_mode mode) {
     std::unique_lock guard(lock);
 
+    if (thread_count == 0) return -1;
+
     while (queue.size() >= queue_limit && queue_limit > 0) {
       if (mode == js_threadsafe_function_nonblocking) {
         return -1;
@@ -2378,12 +2380,6 @@ private:
     {
       std::scoped_lock guard(lock);
 
-      if (thread_count == 0) {
-        close();
-
-        return false;
-      }
-
       auto size = queue.size();
 
       if (size > 0) {
@@ -2399,6 +2395,10 @@ private:
       }
 
       has_more = size > 0;
+
+      if (size == 0 && thread_count == 0) {
+        close();
+      }
     }
 
     if (data.has_value()) {

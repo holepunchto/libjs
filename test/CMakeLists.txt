@@ -10,6 +10,7 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  call-threadsafe-function-after-release
   coerce-number-to-string
   coerce-object-to-string
   coerce-string-to-number
@@ -65,6 +66,8 @@ list(APPEND tests
   create-string-utf8
   create-string-utf8-with-null
   create-threadsafe-function
+  create-threadsafe-function-with-callback
+  create-threadsafe-function-with-finalizer
   create-uint8array
   create-unsafe-arraybuffer
   define-class
