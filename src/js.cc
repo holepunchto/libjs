@@ -45,6 +45,9 @@ typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
+typedef struct js_threadsafe_queue_s js_threadsafe_queue_t;
+typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
+typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 
 typedef enum {
@@ -2231,21 +2234,127 @@ static const uint8_t js_threadsafe_function_pending = 0x2;
 
 } // namespace
 
+struct js_threadsafe_queue_s {
+  virtual ~js_threadsafe_queue_s() = default;
+
+  virtual bool
+  push (void *data, js_threadsafe_function_call_mode_t mode) = 0;
+
+  virtual std::optional<void *>
+  pop () = 0;
+
+  virtual void
+  close () {}
+};
+
+struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
+  std::queue<void *> queue;
+
+  std::recursive_mutex lock;
+
+  js_threadsafe_unbounded_queue_s()
+      : queue(),
+        lock() {}
+
+  bool
+  push (void *data, js_threadsafe_function_call_mode_t mode) override {
+    std::scoped_lock guard(lock);
+
+    queue.push(data);
+
+    return true;
+  }
+
+  std::optional<void *>
+  pop () override {
+    std::scoped_lock guard(lock);
+
+    if (queue.empty()) return std::nullopt;
+
+    auto data = queue.front();
+
+    queue.pop();
+
+    return data;
+  }
+};
+
+struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
+  std::vector<void *> queue;
+
+  const size_t mask;
+
+  std::atomic<size_t> read;
+  std::atomic<size_t> write;
+
+  std::atomic<bool> closed;
+
+  std::recursive_mutex lock;
+
+  std::condition_variable_any available;
+
+  js_threadsafe_bounded_queue_s(size_t queue_limit)
+      : queue(queue_limit),
+        mask(queue_limit - 1),
+        read(0),
+        write(0),
+        lock(),
+        available() {
+    assert(std::has_single_bit(queue_limit));
+  }
+
+  bool
+  push (void *data, js_threadsafe_function_call_mode_t mode) override {
+    auto next = (write + 1) & mask;
+
+    if (read == next) {
+      if (mode == js_threadsafe_function_nonblocking) {
+        return false;
+      }
+
+      available.wait(lock);
+
+      if (closed) return -1;
+    }
+
+    queue[write] = std::move(data);
+
+    write = (write + 1) & mask;
+
+    return true;
+  }
+
+  std::optional<void *>
+  pop () override {
+    if (read == write) return std::nullopt;
+
+    auto data = std::move(queue[read]);
+
+    read = (read + 1) & mask;
+
+    available.notify_one();
+
+    return data;
+  }
+
+  void
+  close () override {
+    closed = true;
+
+    available.notify_all();
+  }
+};
+
 struct js_threadsafe_function_s {
   Persistent<Value> function;
   js_env_t *env;
 
   uv_async_t async;
 
-  std::queue<void *> queue;
+  std::unique_ptr<js_threadsafe_queue_t> queue;
+
   std::atomic<uint8_t> state;
-
-  size_t queue_limit;
-  size_t thread_count;
-
-  std::recursive_mutex lock;
-
-  std::condition_variable_any available;
+  std::atomic<size_t> thread_count;
 
   void *context;
   js_finalize_cb finalize_cb;
@@ -2259,10 +2368,7 @@ struct js_threadsafe_function_s {
         async(),
         queue(),
         state(js_threadsafe_function_idle),
-        queue_limit(queue_limit),
         thread_count(thread_count),
-        lock(),
-        available(),
         cb(cb == nullptr ? on_call : cb),
         context(context),
         finalize_cb(finalize_cb),
@@ -2273,58 +2379,73 @@ struct js_threadsafe_function_s {
     assert(err == 0);
 
     async.data = this;
+
+    if (queue_limit) {
+      queue.reset(new js_threadsafe_bounded_queue_t(std::bit_ceil(queue_limit)));
+    } else {
+      queue.reset(new js_threadsafe_unbounded_queue_t());
+    }
   }
 
-  inline int
+  inline bool
   push (void *data, js_threadsafe_function_call_mode_t mode) {
-    std::unique_lock guard(lock);
+    if (thread_count == 0) return false;
 
-    if (thread_count == 0) return -1;
-
-    while (queue.size() >= queue_limit && queue_limit > 0) {
-      if (mode == js_threadsafe_function_nonblocking) {
-        return -1;
-      }
-
-      available.wait(guard);
-
-      if (thread_count == 0) return -1;
-    }
-
-    queue.push(data);
-
-    signal();
-
-    return 0;
-  }
-
-  inline int
-  acquire () {
-    std::scoped_lock guard(lock);
-
-    if (thread_count == 0) return -1;
-
-    thread_count++;
-
-    return 0;
-  }
-
-  inline int
-  release (js_threadsafe_function_release_mode_t mode) {
-    std::scoped_lock guard(lock);
-
-    if (thread_count == 0) return -1;
-
-    if (mode == js_threadsafe_function_abort) thread_count = 0;
-    else thread_count--;
-
-    if (thread_count == 0) {
-      if (queue_limit > 0) available.notify_all();
-
+    if (queue->push(data, mode)) {
       signal();
+
+      return true;
     }
 
-    return 0;
+    return false;
+  }
+
+  inline bool
+  acquire () {
+    auto thread_count = this->thread_count.load(std::memory_order_relaxed);
+
+    while (thread_count != 0) {
+      if (
+        this->thread_count.compare_exchange_weak(
+          thread_count,
+          thread_count + 1,
+          std::memory_order_acquire,
+          std::memory_order_relaxed
+        )
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  inline bool
+  release (js_threadsafe_function_release_mode_t mode) {
+    auto thread_count = this->thread_count.load(std::memory_order_relaxed);
+
+    bool abort = mode == js_threadsafe_function_abort;
+
+    while (thread_count != 0) {
+      if (
+        this->thread_count.compare_exchange_weak(
+          thread_count,
+          abort ? 0 : thread_count - 1,
+          std::memory_order_acquire,
+          std::memory_order_relaxed
+        )
+      ) {
+        if (abort || thread_count == 1) {
+          queue->close();
+
+          signal();
+        }
+
+        return true;
+      }
+    }
+
+    return false;
   }
 
   inline void
@@ -2354,48 +2475,26 @@ private:
 
   inline void
   dispatch () {
-    auto has_more = true;
+    auto done = false;
 
     auto iterations = 1024;
 
-    while (has_more && --iterations >= 0) {
+    while (!done && --iterations >= 0) {
       state = js_threadsafe_function_running;
 
-      has_more = call();
+      done = call() == false;
 
       if (state.exchange(js_threadsafe_function_idle) != js_threadsafe_function_running) {
-        has_more = true;
+        done = false;
       }
     }
 
-    if (has_more) signal();
+    if (!done) signal();
   }
 
   inline bool
   call () {
-    std::unique_lock guard(lock);
-
-    std::optional<void *> data = std::nullopt;
-
-    auto size = queue.size();
-
-    if (size > 0) {
-      data = queue.front();
-
-      queue.pop();
-
-      if (size == queue_limit && queue_limit > 0) {
-        available.notify_one();
-      }
-
-      size--;
-    }
-
-    if (size == 0 && thread_count == 0) {
-      close();
-    }
-
-    guard.unlock();
+    auto data = queue->pop();
 
     if (data.has_value()) {
       auto scope = HandleScope(env->isolate);
@@ -2403,9 +2502,13 @@ private:
       auto function = this->function.IsEmpty() ? nullptr : js_from_local(this->function.Get(env->isolate));
 
       cb(env, function, context, data.value());
+
+      return true;
     }
 
-    return size > 0;
+    if (thread_count == 0) close();
+
+    return false;
   }
 
   inline void
@@ -5674,21 +5777,21 @@ extern "C" int
 js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode) {
   // Allow continuing even with a pending exception
 
-  return function->push(data, mode);
+  return function->push(data, mode) ? 0 : -1;
 }
 
 extern "C" int
 js_acquire_threadsafe_function (js_threadsafe_function_t *function) {
   // Allow continuing even with a pending exception
 
-  return function->acquire();
+  return function->acquire() ? 0 : -1;
 }
 
 extern "C" int
 js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode) {
   // Allow continuing even with a pending exception
 
-  return function->release(mode);
+  return function->release(mode) ? 0 : -1;
 }
 
 extern "C" int

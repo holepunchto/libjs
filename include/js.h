@@ -1194,21 +1194,39 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 int
 js_create_threadsafe_function (js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_get_threadsafe_function_context (js_threadsafe_function_t *function, void **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_call_threadsafe_function (js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_acquire_threadsafe_function (js_threadsafe_function_t *function);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_release_threadsafe_function (js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_ref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function);
 
