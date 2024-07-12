@@ -2244,21 +2244,26 @@ struct js_threadsafe_queue_s {
   pop () = 0;
 
   virtual void
-  close () {}
+  close () = 0;
 };
 
 struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
   std::queue<void *> queue;
 
+  bool closed;
+
   std::recursive_mutex lock;
 
   js_threadsafe_unbounded_queue_s()
       : queue(),
+        closed(false),
         lock() {}
 
   bool
   push (void *data, js_threadsafe_function_call_mode_t mode) override {
     std::scoped_lock guard(lock);
+
+    if (closed) return false;
 
     queue.push(data);
 
@@ -2276,6 +2281,13 @@ struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
     queue.pop();
 
     return data;
+  }
+
+  void
+  close () override {
+    std::scoped_lock guard(lock);
+
+    closed = true;
   }
 };
 
@@ -2298,6 +2310,7 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
         mask(queue_limit - 1),
         read(0),
         write(0),
+        closed(false),
         lock(),
         available() {
     assert(std::has_single_bit(queue_limit));
@@ -2305,6 +2318,8 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   bool
   push (void *data, js_threadsafe_function_call_mode_t mode) override {
+    if (closed == true) return false;
+
     auto next = (write + 1) & mask;
 
     if (read == next) {
