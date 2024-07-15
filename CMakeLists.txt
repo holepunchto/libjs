@@ -5,11 +5,11 @@ project(js C CXX)
 include(cmake/gn/gn.cmake)
 
 if(NOT TARGET c++)
-  add_gn_library(c++ prebuilds:c++ STATIC)
+  add_gn_target(c++ prebuilds:c++)
 endif()
 
 if(NOT TARGET v8)
-  add_gn_library(v8 prebuilds:v8 STATIC)
+  add_gn_target(v8 prebuilds:v8)
 
   target_link_libraries(
     v8
