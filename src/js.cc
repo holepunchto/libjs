@@ -2984,6 +2984,8 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 
 extern "C" int
 js_create_context (js_env_t *env, js_context_t **result) {
+  // Allow continuing even with a pending exception
+
   *result = new js_context_t(env);
 
   return 0;
@@ -2991,6 +2993,8 @@ js_create_context (js_env_t *env, js_context_t **result) {
 
 extern "C" int
 js_destroy_context (js_env_t *env, js_context_t *context) {
+  // Allow continuing even with a pending exception
+
   delete context;
 
   return 0;

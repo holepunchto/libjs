@@ -349,9 +349,15 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_create_context (js_env_t *env, js_context_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
 int
 js_destroy_context (js_env_t *env, js_context_t *context);
 
