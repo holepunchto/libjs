@@ -1619,6 +1619,33 @@ private:
   }
 };
 
+struct js_context_s {
+  Persistent<Context> context;
+
+  js_context_s(js_env_t *env)
+      : context() {
+    auto context = Context::New(env->isolate);
+
+    context->SetAlignedPointerInEmbedderData(js_context_environment, env);
+
+    this->context.Reset(env->isolate, context);
+  }
+
+  js_context_s(const js_context_s &) = delete;
+
+  ~js_context_s() {
+    context.Reset();
+  }
+
+  js_context_s &
+  operator=(const js_context_s &) = delete;
+
+  inline Local<Context>
+  to_local (Isolate *isolate) {
+    return context.Get(isolate);
+  }
+};
+
 struct js_handle_scope_s {
   HandleScope scope;
 
@@ -2956,6 +2983,20 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
+js_create_context (js_env_t *env, js_context_t **result) {
+  *result = new js_context_t(env);
+
+  return 0;
+}
+
+extern "C" int
+js_destroy_context (js_env_t *env, js_context_t *context) {
+  delete context;
+
+  return 0;
+}
+
+extern "C" int
 js_get_bindings (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
@@ -3010,6 +3051,60 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
   auto local = env->call_into_javascript<Value>(
     [&] {
       return compiled.ToLocalChecked()->Run(context);
+    }
+  );
+
+  if (local.IsEmpty()) return -1;
+
+  if (result) *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_run_script_in_context (js_env_t *env, js_context_t *context, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
+  if (env->is_exception_pending()) return -1;
+
+  auto local_context = context->to_local(env->isolate);
+
+  auto local_source = js_to_local(source).As<String>();
+
+  MaybeLocal<String> local_file;
+
+  if (len == size_t(-1)) {
+    local_file = String::NewFromUtf8(env->isolate, file);
+  } else {
+    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
+  }
+
+  assert(!local_file.IsEmpty());
+
+  auto origin = ScriptOrigin(
+    local_file.ToLocalChecked(),
+    offset,
+    0,
+    false,
+    -1,
+    Local<Value>(),
+    false,
+    false,
+    false,
+    Local<Data>()
+  );
+
+  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+
+  auto compiled = env->try_catch<Script>(
+    [&] {
+      return ScriptCompiler::Compile(local_context, &compiler_source);
+    }
+  );
+
+  if (compiled.IsEmpty()) return -1;
+
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return compiled.ToLocalChecked()->Run(local_context);
     }
   );
 
@@ -4996,6 +5091,17 @@ js_get_global (js_env_t *env, js_value_t **result) {
   auto context = env->context.Get(env->isolate);
 
   *result = js_from_local(context->Global());
+
+  return 0;
+}
+
+extern "C" int
+js_get_global_in_context (js_env_t *env, js_context_t *context, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto local_context = context->to_local(env->isolate);
+
+  *result = js_from_local(local_context->Global());
 
   return 0;
 }

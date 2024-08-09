@@ -18,6 +18,7 @@ typedef struct js_env_s js_env_t;
 typedef struct js_env_options_s js_env_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
+typedef struct js_context_s js_context_t;
 typedef struct js_module_s js_module_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
@@ -348,6 +349,12 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
 int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
+int
+js_create_context (js_env_t *env, js_context_t **result);
+
+int
+js_destroy_context (js_env_t *env, js_context_t *context);
+
 /**
  * Get the platform specific bindings object for the specified environment.
  *
@@ -360,6 +367,9 @@ js_get_bindings (js_env_t *env, js_value_t **result);
 
 int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
+
+int
+js_run_script_in_context (js_env_t *env, js_context_t *context, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
 int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
@@ -992,6 +1002,12 @@ js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
  */
 int
 js_get_global (js_env_t *env, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_global_in_context (js_env_t *env, js_context_t *context, js_value_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
