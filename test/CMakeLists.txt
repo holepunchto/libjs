@@ -107,6 +107,7 @@ list(APPEND tests
   run-module-throw
   run-script
   run-script-ignore-return
+  run-script-in-context
   run-script-throw
   set-named-property
   terminate-execution
