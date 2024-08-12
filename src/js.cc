@@ -6100,6 +6100,20 @@ js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t 
 }
 
 extern "C" int
+js_attach_context_to_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len) {
+  inspector->attach(context->context.Get(env->isolate), name ? StringView(reinterpret_cast<const uint8_t *>(name), len) : StringView());
+
+  return 0;
+}
+
+extern "C" int
+js_detach_context_from_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context) {
+  inspector->detach(context->context.Get(env->isolate));
+
+  return 0;
+}
+
+extern "C" int
 js_ffi_create_type_info (js_ffi_type_t type, js_ffi_type_info_t **result) {
   CTypeInfo::Type v8_type;
   CTypeInfo::SequenceType v8_sequence_type = CTypeInfo::SequenceType::kScalar;

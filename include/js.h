@@ -1359,6 +1359,12 @@ js_connect_inspector (js_env_t *env, js_inspector_t *inspector);
 int
 js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message);
 
+int
+js_attach_context_to_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len);
+
+int
+js_detach_context_from_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context);
+
 #ifdef __cplusplus
 }
 #endif
