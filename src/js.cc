@@ -1444,6 +1444,11 @@ struct js_env_s {
     }
   }
 
+  inline Local<Context>
+  current_context () {
+    return isolate->GetCurrentContext();
+  }
+
   template <typename T>
   inline T
   try_catch (const std::function<T()> &fn) {
@@ -3065,7 +3070,7 @@ extern "C" int
 js_get_bindings (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   *result = js_from_local(context->GetExtrasBindingObject());
 
@@ -3076,7 +3081,7 @@ extern "C" int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local_source = js_to_local(source).As<String>();
 
@@ -3274,7 +3279,7 @@ extern "C" int
 js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   module->callbacks.resolve = cb;
   module->callbacks.resolve_data = data;
@@ -3296,7 +3301,7 @@ extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -3378,7 +3383,7 @@ extern "C" int
 js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto callback = new js_callback_t(env, constructor, data);
 
@@ -3474,7 +3479,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
   if (properties_len == 0) return 0;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -3551,7 +3556,7 @@ extern "C" int
 js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
@@ -3584,7 +3589,7 @@ extern "C" int
 js_unwrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
@@ -3609,7 +3614,7 @@ extern "C" int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
@@ -3640,7 +3645,7 @@ extern "C" int
 js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
@@ -3674,7 +3679,7 @@ extern "C" int
 js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->tag.Get(env->isolate);
 
@@ -3717,7 +3722,7 @@ extern "C" int
 js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->tag.Get(env->isolate);
 
@@ -3870,7 +3875,7 @@ extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto callback = new js_callback_t(env, cb, data);
 
@@ -3895,7 +3900,7 @@ extern "C" int
 js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local_source = js_to_local(source).As<String>();
 
@@ -3941,7 +3946,7 @@ extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto callback = new js_fast_callback_t(env, cb, data, ffi->return_info, ffi->arg_info, ffi->address);
 
@@ -4007,7 +4012,7 @@ extern "C" int
 js_create_date (js_env_t *env, double time, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto date = Date::New(context, time).ToLocalChecked();
 
@@ -4023,7 +4028,7 @@ static inline int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto error = Error(js_to_local(message).As<String>(), {}).As<Object>();
 
@@ -4062,7 +4067,7 @@ extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
@@ -4080,7 +4085,7 @@ static inline int
 js_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto resolver = deferred->resolver.Get(env->isolate);
 
@@ -4431,7 +4436,7 @@ extern "C" int
 js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4452,7 +4457,7 @@ extern "C" int
 js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4473,7 +4478,7 @@ extern "C" int
 js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4525,7 +4530,7 @@ extern "C" int
 js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto success = env->try_catch<bool>(
     [&] {
@@ -4688,7 +4693,7 @@ extern "C" int
 js_is_wrapped (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
@@ -4703,7 +4708,7 @@ extern "C" int
 js_is_delegate (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto key = env->delegate.Get(env->isolate);
 
@@ -4999,7 +5004,7 @@ extern "C" int
 js_get_global (js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  *result = js_from_local(env->isolate->GetCurrentContext()->Global());
+  *result = js_from_local(env->current_context()->Global());
 
   return 0;
 }
@@ -5214,7 +5219,7 @@ extern "C" int
 js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5252,7 +5257,7 @@ extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5273,7 +5278,7 @@ extern "C" int
 js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5294,7 +5299,7 @@ extern "C" int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5313,7 +5318,7 @@ extern "C" int
 js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5334,7 +5339,7 @@ extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5359,7 +5364,7 @@ extern "C" int
 js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5384,7 +5389,7 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5407,7 +5412,7 @@ extern "C" int
 js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5432,7 +5437,7 @@ extern "C" int
 js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5453,7 +5458,7 @@ extern "C" int
 js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5474,7 +5479,7 @@ extern "C" int
 js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5493,7 +5498,7 @@ extern "C" int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = js_to_local(object).As<Object>();
 
@@ -5686,7 +5691,7 @@ extern "C" int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local_receiver = js_to_local(receiver);
 
@@ -5714,7 +5719,7 @@ extern "C" int
 js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local_receiver = js_to_local(receiver);
 
@@ -5743,7 +5748,7 @@ extern "C" int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local_constructor = js_to_local(constructor).As<Function>();
 
@@ -5851,7 +5856,7 @@ static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->isolate->GetCurrentContext();
+  auto context = env->current_context();
 
   auto local = String::NewFromUtf8(env->isolate, message);
 
