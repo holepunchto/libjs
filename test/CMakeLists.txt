@@ -7,6 +7,7 @@ list(APPEND tests
   atomics-wait-timeout-notify
   call-function
   call-function-ignore-return
+  call-function-in-context
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
@@ -104,6 +105,7 @@ list(APPEND tests
   run-module-cyclic-import
   run-module-nested-import
   run-module-double-nested-import
+  run-module-in-context
   run-module-throw
   run-script
   run-script-ignore-return
