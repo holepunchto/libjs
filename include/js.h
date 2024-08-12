@@ -362,6 +362,18 @@ int
 js_destroy_context (js_env_t *env, js_context_t *context);
 
 /**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_enter_context (js_env_t *env, js_context_t *context);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_exit_context (js_env_t *env, js_context_t *context);
+
+/**
  * Get the platform specific bindings object for the specified environment.
  *
  * Platform implementations can use this to export any additional functionality
@@ -373,9 +385,6 @@ js_get_bindings (js_env_t *env, js_value_t **result);
 
 int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
-
-int
-js_run_script_in_context (js_env_t *env, js_context_t *context, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
 int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
@@ -1008,12 +1017,6 @@ js_strict_equals (js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
  */
 int
 js_get_global (js_env_t *env, js_value_t **result);
-
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_get_global_in_context (js_env_t *env, js_context_t *context, js_value_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

@@ -26,12 +26,30 @@ main () {
   e = js_create_context(env, &context);
   assert(e == 0);
 
+  e = js_enter_context(env, context);
+  assert(e == 0);
+
   js_value_t *script;
   e = js_create_string_utf8(env, (utf8_t *) "globalThis", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script_in_context(env, context, NULL, 0, 0, script, &result);
+  e = js_run_script(env, NULL, 0, 0, script, &result);
+  assert(e == 0);
+
+  {
+    js_value_t *global;
+    e = js_get_global(env, &global);
+    assert(e == 0);
+
+    bool equals;
+    e = js_strict_equals(env, result, global, &equals);
+    assert(e == 0);
+
+    assert(equals);
+  }
+
+  e = js_exit_context(env, context);
   assert(e == 0);
 
   {
@@ -44,18 +62,6 @@ main () {
     assert(e == 0);
 
     assert(equals == false);
-  }
-
-  {
-    js_value_t *global;
-    e = js_get_global_in_context(env, context, &global);
-    assert(e == 0);
-
-    bool equals;
-    e = js_strict_equals(env, result, global, &equals);
-    assert(e == 0);
-
-    assert(equals);
   }
 
   e = js_destroy_context(env, context);
