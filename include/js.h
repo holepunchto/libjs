@@ -18,6 +18,7 @@ typedef struct js_env_s js_env_t;
 typedef struct js_env_options_s js_env_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
+typedef struct js_context_s js_context_t;
 typedef struct js_module_s js_module_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
@@ -347,6 +348,30 @@ js_close_escapable_handle_scope (js_env_t *env, js_escapable_handle_scope_t *sco
  */
 int
 js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_context (js_env_t *env, js_context_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_destroy_context (js_env_t *env, js_context_t *context);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_enter_context (js_env_t *env, js_context_t *context);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_exit_context (js_env_t *env, js_context_t *context);
 
 /**
  * Get the platform specific bindings object for the specified environment.
@@ -1333,6 +1358,12 @@ js_connect_inspector (js_env_t *env, js_inspector_t *inspector);
 
 int
 js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message);
+
+int
+js_attach_context_to_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len);
+
+int
+js_detach_context_from_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context);
 
 #ifdef __cplusplus
 }

@@ -71,6 +71,12 @@ js_to_local (js_value_t *value) {
   return *reinterpret_cast<Local<Value> *>(&value);
 }
 
+template <typename T>
+static inline Local<T>
+js_to_local (js_value_t *value) {
+  return js_to_local(value).As<T>();
+}
+
 static inline js_value_t *
 js_from_local (Local<Value> local) {
   return reinterpret_cast<js_value_t *>(*local);
@@ -1444,6 +1450,11 @@ struct js_env_s {
     }
   }
 
+  inline Local<Context>
+  current_context () {
+    return isolate->GetCurrentContext();
+  }
+
   template <typename T>
   inline T
   try_catch (const std::function<T()> &fn) {
@@ -1523,6 +1534,7 @@ struct js_env_s {
     auto promise = message.GetPromise();
 
     auto isolate = promise->GetIsolate();
+
     auto context = isolate->GetCurrentContext();
 
     auto env = js_env_t::from_context(context);
@@ -1617,6 +1629,28 @@ private:
 
     env->dispose_maybe();
   }
+};
+
+struct js_context_s {
+  Persistent<Context> context;
+
+  js_context_s(js_env_t *env)
+      : context() {
+    auto context = Context::New(env->isolate);
+
+    context->SetAlignedPointerInEmbedderData(js_context_environment, env);
+
+    this->context.Reset(env->isolate, context);
+  }
+
+  js_context_s(const js_context_s &) = delete;
+
+  ~js_context_s() {
+    context.Reset();
+  }
+
+  js_context_s &
+  operator=(const js_context_s &) = delete;
 };
 
 struct js_handle_scope_s {
@@ -2206,9 +2240,7 @@ private:
       if (env->is_exception_pending()) return;
 
       if (result) {
-        auto local = js_to_local(result).As<Array>();
-
-        info.GetReturnValue().Set(local);
+        info.GetReturnValue().Set(js_to_local<Array>(result));
       }
     }
   }
@@ -2646,8 +2678,6 @@ struct js_inspector_s : private V8InspectorClient {
 
   inline void
   connect () {
-    auto context = env->context.Get(env->isolate);
-
     session = inspector->connect(
       1,
       &channel,
@@ -2656,7 +2686,17 @@ struct js_inspector_s : private V8InspectorClient {
       V8Inspector::kNotWaitingForDebugger
     );
 
-    inspector->contextCreated(V8ContextInfo(context, 1, StringView()));
+    attach(env->context.Get(env->isolate));
+  }
+
+  inline void
+  attach (Local<Context> context, StringView name = StringView()) {
+    inspector->contextCreated(V8ContextInfo(context, 1, name));
+  }
+
+  inline void
+  detach (Local<Context> context) {
+    inspector->contextDestroyed(context);
   }
 
   inline void
@@ -2698,6 +2738,45 @@ private: // V8 embedder API
     paused = false;
   }
 };
+
+namespace {
+
+static inline Local<String>
+js_to_string (js_env_t *env, const char *data, size_t len) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromUtf8(env->isolate, data);
+  } else {
+    string = String::NewFromUtf8(env->isolate, data, NewStringType::kNormal, len);
+  }
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
+}
+
+static inline Local<String>
+js_to_string (js_env_t *env, const utf8_t *data, size_t len) {
+  return js_to_string(env, reinterpret_cast<const char *>(data), len);
+}
+
+static inline Local<String>
+js_to_string (js_env_t *env, const utf16_t *data, size_t len) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromTwoByte(env->isolate, data);
+  } else {
+    string = String::NewFromTwoByte(env->isolate, data, NewStringType::kNormal, len);
+  }
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
+}
+
+} // namespace
 
 namespace {
 
@@ -2956,10 +3035,46 @@ js_escape_handle (js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t 
 }
 
 extern "C" int
+js_create_context (js_env_t *env, js_context_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = new js_context_t(env);
+
+  return 0;
+}
+
+extern "C" int
+js_destroy_context (js_env_t *env, js_context_t *context) {
+  // Allow continuing even with a pending exception
+
+  delete context;
+
+  return 0;
+}
+
+extern "C" int
+js_enter_context (js_env_t *env, js_context_t *context) {
+  // Allow continuing even with a pending exception
+
+  context->context.Get(env->isolate)->Enter();
+
+  return 0;
+}
+
+extern "C" int
+js_exit_context (js_env_t *env, js_context_t *context) {
+  // Allow continuing even with a pending exception
+
+  context->context.Get(env->isolate)->Exit();
+
+  return 0;
+}
+
+extern "C" int
 js_get_bindings (js_env_t *env, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   *result = js_from_local(context->GetExtrasBindingObject());
 
@@ -2970,22 +3085,10 @@ extern "C" int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
-  auto local_source = js_to_local(source).As<String>();
-
-  MaybeLocal<String> local_file;
-
-  if (len == size_t(-1)) {
-    local_file = String::NewFromUtf8(env->isolate, file);
-  } else {
-    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
-  }
-
-  assert(!local_file.IsEmpty());
+  auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    local_file.ToLocalChecked(),
+    js_to_string(env, file, len),
     offset,
     0,
     false,
@@ -2997,7 +3100,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
     Local<Data>()
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto compiled = env->try_catch<Script>(
     [&] {
@@ -3024,20 +3127,8 @@ extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local_source = js_to_local(source).As<String>();
-
-  MaybeLocal<String> local_name;
-
-  if (len == size_t(-1)) {
-    local_name = String::NewFromUtf8(env->isolate, name);
-  } else {
-    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-  }
-
-  assert(!local_name.IsEmpty());
-
   auto origin = ScriptOrigin(
-    local_name.ToLocalChecked(),
+    js_to_string(env, name, len),
     offset,
     0,
     false,
@@ -3049,7 +3140,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
     Local<Data>()
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto compiled = env->try_catch<Module>(
     [&] {
@@ -3087,19 +3178,9 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
-  MaybeLocal<String> local_name;
-
-  if (len == size_t(-1)) {
-    local_name = String::NewFromUtf8(env->isolate, name);
-  } else {
-    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-  }
-
-  assert(!local_name.IsEmpty());
-
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    local_name.ToLocalChecked(),
+    js_to_string(env, name, len),
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3179,7 +3260,7 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 
   auto success = env->try_catch<bool>(
     [&] {
-      return local->SetSyntheticModuleExport(env->isolate, js_to_local(name).As<String>(), js_to_local(value));
+      return local->SetSyntheticModuleExport(env->isolate, js_to_local<String>(name), js_to_local(value));
     }
   );
 
@@ -3192,7 +3273,7 @@ extern "C" int
 js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   module->callbacks.resolve = cb;
   module->callbacks.resolve_data = data;
@@ -3214,7 +3295,7 @@ extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -3296,25 +3377,13 @@ extern "C" int
 js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto callback = new js_callback_t(env, constructor, data);
 
   auto tpl = callback->to_function_template(env->isolate);
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    tpl->SetClassName(string.ToLocalChecked());
-  }
+  if (name) tpl->SetClassName(js_to_string(env, name, len));
 
   std::vector<js_property_descriptor_t> static_properties;
 
@@ -3404,9 +3473,9 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
   if (properties_len == 0) return 0;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
@@ -3481,11 +3550,11 @@ extern "C" int
 js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
@@ -3514,11 +3583,11 @@ extern "C" int
 js_unwrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto external = env->try_catch<Value>(
     [&] {
@@ -3539,11 +3608,11 @@ extern "C" int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto external = env->try_catch<Value>(
     [&] {
@@ -3570,7 +3639,7 @@ extern "C" int
 js_create_delegate (js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
@@ -3589,7 +3658,7 @@ extern "C" int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
@@ -3604,11 +3673,11 @@ extern "C" int
 js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->tag.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto has = env->try_catch<bool>(
     [&] {
@@ -3647,11 +3716,11 @@ extern "C" int
 js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->tag.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->try_catch<Value>(
     [&] {
@@ -3754,17 +3823,7 @@ extern "C" int
 js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  MaybeLocal<String> string;
-
-  if (len == size_t(-1)) {
-    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value));
-  } else {
-    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value), NewStringType::kNormal, len);
-  }
-
-  assert(!string.IsEmpty());
-
-  *result = js_from_local(string.ToLocalChecked());
+  *result = js_from_local(js_to_string(env, value, len));
 
   return 0;
 }
@@ -3773,17 +3832,7 @@ extern "C" int
 js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  MaybeLocal<String> string;
-
-  if (len == size_t(-1)) {
-    string = String::NewFromTwoByte(env->isolate, value);
-  } else {
-    string = String::NewFromTwoByte(env->isolate, value, NewStringType::kNormal, len);
-  }
-
-  assert(!string.IsEmpty());
-
-  *result = js_from_local(string.ToLocalChecked());
+  *result = js_from_local(js_to_string(env, value, len));
 
   return 0;
 }
@@ -3797,7 +3846,7 @@ js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result) {
   if (description == nullptr) {
     symbol = Symbol::New(env->isolate);
   } else {
-    symbol = Symbol::New(env->isolate, js_to_local(description).As<String>());
+    symbol = Symbol::New(env->isolate, js_to_local<String>(description));
   }
 
   *result = js_from_local(symbol);
@@ -3820,7 +3869,7 @@ extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto callback = new js_callback_t(env, cb, data);
 
@@ -3834,19 +3883,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, len));
 
   *result = js_from_local(local);
 
@@ -3857,22 +3894,10 @@ extern "C" int
 js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
-  auto local_source = js_to_local(source).As<String>();
-
-  MaybeLocal<String> local_file;
-
-  if (file_len == size_t(-1)) {
-    local_file = String::NewFromUtf8(env->isolate, file);
-  } else {
-    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, file_len);
-  }
-
-  assert(!local_file.IsEmpty());
+  auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    local_file.ToLocalChecked(),
+    js_to_string(env, file, file_len),
     offset,
     0,
     false,
@@ -3883,7 +3908,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     false
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto function = env->try_catch<Function>(
     [&] {
@@ -3900,19 +3925,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (name_len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, name_len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, name_len));
 
   *result = js_from_local(local);
 
@@ -3923,7 +3936,7 @@ extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto callback = new js_fast_callback_t(env, cb, data, ffi->return_info, ffi->arg_info, ffi->address);
 
@@ -3939,19 +3952,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, len));
 
   *result = js_from_local(local);
 
@@ -4001,7 +4002,7 @@ extern "C" int
 js_create_date (js_env_t *env, double time, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto date = Date::New(context, time).ToLocalChecked();
 
@@ -4017,9 +4018,9 @@ static inline int
 js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto error = Error(js_to_local(message).As<String>(), {}).As<Object>();
+  auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
@@ -4056,7 +4057,7 @@ extern "C" int
 js_create_promise (js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
@@ -4074,7 +4075,7 @@ static inline int
 js_conclude_deferred (js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto resolver = deferred->resolver.Get(env->isolate);
 
@@ -4108,7 +4109,7 @@ extern "C" int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(promise).As<Promise>();
+  auto local = js_to_local<Promise>(promise);
 
   switch (local->State()) {
   case Promise::PromiseState::kPending:
@@ -4129,7 +4130,7 @@ extern "C" int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(promise).As<Promise>();
+  auto local = js_to_local<Promise>(promise);
 
   assert(local->State() != Promise::PromiseState::kPending);
 
@@ -4234,7 +4235,7 @@ extern "C" int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   assert(local->IsDetachable());
 
@@ -4247,7 +4248,7 @@ extern "C" int
 js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -4306,7 +4307,7 @@ extern "C" int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(sharedarraybuffer).As<SharedArrayBuffer>();
+  auto local = js_to_local<SharedArrayBuffer>(sharedarraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -4425,7 +4426,7 @@ extern "C" int
 js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4446,7 +4447,7 @@ extern "C" int
 js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4467,7 +4468,7 @@ extern "C" int
 js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto local = js_to_local(value);
 
@@ -4519,11 +4520,11 @@ extern "C" int
 js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto success = env->try_catch<bool>(
     [&] {
-      return js_to_local(object)->InstanceOf(context, js_to_local(constructor).As<Function>());
+      return js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor));
     }
   );
 
@@ -4682,7 +4683,7 @@ extern "C" int
 js_is_wrapped (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
@@ -4697,7 +4698,7 @@ extern "C" int
 js_is_delegate (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto key = env->delegate.Get(env->isolate);
 
@@ -4993,9 +4994,7 @@ extern "C" int
 js_get_global (js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto context = env->context.Get(env->isolate);
-
-  *result = js_from_local(context->Global());
+  *result = js_from_local(env->current_context()->Global());
 
   return 0;
 }
@@ -5035,7 +5034,7 @@ extern "C" int
 js_get_value_bool (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Boolean>();
+  auto local = js_to_local<Boolean>(value);
 
   *result = local->Value();
 
@@ -5046,7 +5045,7 @@ extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Int32>();
+  auto local = js_to_local<Int32>(value);
 
   *result = local->Value();
 
@@ -5057,7 +5056,7 @@ extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Uint32>();
+  auto local = js_to_local<Uint32>(value);
 
   *result = local->Value();
 
@@ -5068,7 +5067,7 @@ extern "C" int
 js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Number>();
+  auto local = js_to_local<Number>(value);
 
   *result = static_cast<int64_t>(local->Value());
 
@@ -5079,7 +5078,7 @@ extern "C" int
 js_get_value_double (js_env_t *env, js_value_t *value, double *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Number>();
+  auto local = js_to_local<Number>(value);
 
   *result = local->Value();
 
@@ -5090,7 +5089,7 @@ extern "C" int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<BigInt>();
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Int64Value(lossless);
 
@@ -5103,7 +5102,7 @@ extern "C" int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<BigInt>();
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Uint64Value(lossless);
 
@@ -5116,7 +5115,7 @@ extern "C" int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<String>();
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Utf8Length(env->isolate);
@@ -5141,7 +5140,7 @@ extern "C" int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<String>();
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Length();
@@ -5166,7 +5165,7 @@ extern "C" int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<External>();
+  auto local = js_to_local<External>(value);
 
   *result = local->Value();
 
@@ -5177,7 +5176,7 @@ extern "C" int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Date>();
+  auto local = js_to_local<Date>(value);
 
   *result = local->ValueOf();
 
@@ -5188,7 +5187,7 @@ extern "C" int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Array>();
+  auto local = js_to_local<Array>(value);
 
   *result = local->Length();
 
@@ -5199,7 +5198,7 @@ extern "C" int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   *result = js_from_local(local->GetPrototype());
 
@@ -5210,9 +5209,9 @@ extern "C" int
 js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto mode = KeyCollectionMode::kIncludePrototypes;
 
@@ -5248,9 +5247,9 @@ extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -5269,9 +5268,9 @@ extern "C" int
 js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5290,9 +5289,9 @@ extern "C" int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5309,9 +5308,9 @@ extern "C" int
 js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5330,9 +5329,9 @@ extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5355,9 +5354,9 @@ extern "C" int
 js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5380,9 +5379,9 @@ extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5403,9 +5402,9 @@ extern "C" int
 js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5428,9 +5427,9 @@ extern "C" int
 js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -5449,9 +5448,9 @@ extern "C" int
 js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5470,9 +5469,9 @@ extern "C" int
 js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5489,9 +5488,9 @@ extern "C" int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5560,7 +5559,7 @@ extern "C" int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   if (data) {
     *data = local->Data();
@@ -5577,7 +5576,7 @@ extern "C" int
 js_get_sharedarraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<SharedArrayBuffer>();
+  auto local = js_to_local<SharedArrayBuffer>(arraybuffer);
 
   if (data) {
     *data = local->Data();
@@ -5594,7 +5593,7 @@ extern "C" int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(typedarray).As<TypedArray>();
+  auto local = js_to_local<TypedArray>(typedarray);
 
   if (type) {
     if (local->IsInt8Array()) {
@@ -5651,7 +5650,7 @@ extern "C" int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(dataview).As<DataView>();
+  auto local = js_to_local<DataView>(dataview);
 
   if (len) {
     *len = local->ByteLength();
@@ -5682,20 +5681,17 @@ extern "C" int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
-  auto local_receiver = js_to_local(receiver);
-
-  auto local_function = js_to_local(function).As<Function>();
+  auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
-      return local_function->Call(
-        context,
-        local_receiver,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(function)
+        ->Call(
+          context,
+          js_to_local(receiver),
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     }
   );
 
@@ -5710,20 +5706,17 @@ extern "C" int
 js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
-  auto local_receiver = js_to_local(receiver);
-
-  auto local_function = js_to_local(function).As<Function>();
+  auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
     [&] {
-      return local_function->Call(
-        context,
-        local_receiver,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(function)
+        ->Call(
+          context,
+          js_to_local(receiver),
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     },
     true /* always_checkpoint */
   );
@@ -5739,17 +5732,16 @@ extern "C" int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
-
-  auto local_constructor = js_to_local(constructor).As<Function>();
+  auto context = env->current_context();
 
   auto local = env->call_into_javascript<Object>(
     [&] {
-      return local_constructor->NewInstance(
-        context,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(constructor)
+        ->NewInstance(
+          context,
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     }
   );
 
@@ -5847,7 +5839,7 @@ static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
   if (env->is_exception_pending()) return -1;
 
-  auto context = env->context.Get(env->isolate);
+  auto context = env->current_context();
 
   auto local = String::NewFromUtf8(env->isolate, message);
 
@@ -6090,7 +6082,21 @@ js_connect_inspector (js_env_t *env, js_inspector_t *inspector) {
 
 extern "C" int
 js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message) {
-  inspector->send(js_to_local(message).As<String>());
+  inspector->send(js_to_local<String>(message));
+
+  return 0;
+}
+
+extern "C" int
+js_attach_context_to_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len) {
+  inspector->attach(context->context.Get(env->isolate), name ? StringView(reinterpret_cast<const uint8_t *>(name), len) : StringView());
+
+  return 0;
+}
+
+extern "C" int
+js_detach_context_from_inspector (js_env_t *env, js_inspector_t *inspector, js_context_t *context) {
+  inspector->detach(context->context.Get(env->isolate));
 
   return 0;
 }
