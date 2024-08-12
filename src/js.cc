@@ -1523,6 +1523,7 @@ struct js_env_s {
     auto promise = message.GetPromise();
 
     auto isolate = promise->GetIsolate();
+
     auto context = isolate->GetCurrentContext();
 
     auto env = js_env_t::from_context(context);
@@ -2728,6 +2729,45 @@ private: // V8 embedder API
 
 namespace {
 
+static inline Local<String>
+js_to_string (js_env_t *env, const char *data, size_t len) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromUtf8(env->isolate, data);
+  } else {
+    string = String::NewFromUtf8(env->isolate, data, NewStringType::kNormal, len);
+  }
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
+}
+
+static inline Local<String>
+js_to_string (js_env_t *env, const utf8_t *data, size_t len) {
+  return js_to_string(env, reinterpret_cast<const char *>(data), len);
+}
+
+static inline Local<String>
+js_to_string (js_env_t *env, const utf16_t *data, size_t len) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromTwoByte(env->isolate, data);
+  } else {
+    string = String::NewFromTwoByte(env->isolate, data, NewStringType::kNormal, len);
+  }
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
+}
+
+} // namespace
+
+namespace {
+
 static const char *js_platform_identifier = "v8";
 
 static const char *js_platform_version = V8::GetVersion();
@@ -3019,18 +3059,10 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto local_source = js_to_local(source).As<String>();
 
-  MaybeLocal<String> local_file;
-
-  if (len == size_t(-1)) {
-    local_file = String::NewFromUtf8(env->isolate, file);
-  } else {
-    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
-  }
-
-  assert(!local_file.IsEmpty());
+  auto local_file = js_to_string(env, file, len);
 
   auto origin = ScriptOrigin(
-    local_file.ToLocalChecked(),
+    local_file,
     offset,
     0,
     false,
@@ -3073,18 +3105,10 @@ js_run_script_in_context (js_env_t *env, js_context_t *context, const char *file
 
   auto local_source = js_to_local(source).As<String>();
 
-  MaybeLocal<String> local_file;
-
-  if (len == size_t(-1)) {
-    local_file = String::NewFromUtf8(env->isolate, file);
-  } else {
-    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, len);
-  }
-
-  assert(!local_file.IsEmpty());
+  auto local_file = js_to_string(env, file, len);
 
   auto origin = ScriptOrigin(
-    local_file.ToLocalChecked(),
+    local_file,
     offset,
     0,
     false,
@@ -3125,18 +3149,10 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
   auto local_source = js_to_local(source).As<String>();
 
-  MaybeLocal<String> local_name;
-
-  if (len == size_t(-1)) {
-    local_name = String::NewFromUtf8(env->isolate, name);
-  } else {
-    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-  }
-
-  assert(!local_name.IsEmpty());
+  auto local_name = js_to_string(env, name, len);
 
   auto origin = ScriptOrigin(
-    local_name.ToLocalChecked(),
+    local_name,
     offset,
     0,
     false,
@@ -3186,19 +3202,11 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
-  MaybeLocal<String> local_name;
-
-  if (len == size_t(-1)) {
-    local_name = String::NewFromUtf8(env->isolate, name);
-  } else {
-    local_name = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-  }
-
-  assert(!local_name.IsEmpty());
+  auto local_name = js_to_string(env, name, len);
 
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    local_name.ToLocalChecked(),
+    local_name,
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3401,19 +3409,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
 
   auto tpl = callback->to_function_template(env->isolate);
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    tpl->SetClassName(string.ToLocalChecked());
-  }
+  if (name) tpl->SetClassName(js_to_string(env, name, len));
 
   std::vector<js_property_descriptor_t> static_properties;
 
@@ -3853,17 +3849,7 @@ extern "C" int
 js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  MaybeLocal<String> string;
-
-  if (len == size_t(-1)) {
-    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value));
-  } else {
-    string = String::NewFromUtf8(env->isolate, reinterpret_cast<const char *>(value), NewStringType::kNormal, len);
-  }
-
-  assert(!string.IsEmpty());
-
-  *result = js_from_local(string.ToLocalChecked());
+  *result = js_from_local(js_to_string(env, value, len));
 
   return 0;
 }
@@ -3872,17 +3858,7 @@ extern "C" int
 js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  MaybeLocal<String> string;
-
-  if (len == size_t(-1)) {
-    string = String::NewFromTwoByte(env->isolate, value);
-  } else {
-    string = String::NewFromTwoByte(env->isolate, value, NewStringType::kNormal, len);
-  }
-
-  assert(!string.IsEmpty());
-
-  *result = js_from_local(string.ToLocalChecked());
+  *result = js_from_local(js_to_string(env, value, len));
 
   return 0;
 }
@@ -3933,19 +3909,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, len));
 
   *result = js_from_local(local);
 
@@ -3960,18 +3924,10 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto local_source = js_to_local(source).As<String>();
 
-  MaybeLocal<String> local_file;
-
-  if (file_len == size_t(-1)) {
-    local_file = String::NewFromUtf8(env->isolate, file);
-  } else {
-    local_file = String::NewFromUtf8(env->isolate, file, NewStringType::kNormal, file_len);
-  }
-
-  assert(!local_file.IsEmpty());
+  auto local_file = js_to_string(env, file, file_len);
 
   auto origin = ScriptOrigin(
-    local_file.ToLocalChecked(),
+    local_file,
     offset,
     0,
     false,
@@ -3999,19 +3955,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (name_len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, name_len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, name_len));
 
   *result = js_from_local(local);
 
@@ -4038,19 +3982,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto local = function.ToLocalChecked();
 
-  if (name) {
-    MaybeLocal<String> string;
-
-    if (len == size_t(-1)) {
-      string = String::NewFromUtf8(env->isolate, name);
-    } else {
-      string = String::NewFromUtf8(env->isolate, name, NewStringType::kNormal, len);
-    }
-
-    assert(!string.IsEmpty());
-
-    local->SetName(string.ToLocalChecked());
-  }
+  if (name) local->SetName(js_to_string(env, name, len));
 
   *result = js_from_local(local);
 
