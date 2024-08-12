@@ -71,6 +71,12 @@ js_to_local (js_value_t *value) {
   return *reinterpret_cast<Local<Value> *>(&value);
 }
 
+template <typename T>
+static inline Local<T>
+js_to_local (js_value_t *value) {
+  return js_to_local(value).As<T>();
+}
+
 static inline js_value_t *
 js_from_local (Local<Value> local) {
   return reinterpret_cast<js_value_t *>(*local);
@@ -2234,9 +2240,7 @@ private:
       if (env->is_exception_pending()) return;
 
       if (result) {
-        auto local = js_to_local(result).As<Array>();
-
-        info.GetReturnValue().Set(local);
+        info.GetReturnValue().Set(js_to_local<Array>(result));
       }
     }
   }
@@ -3083,12 +3087,8 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
   auto context = env->current_context();
 
-  auto local_source = js_to_local(source).As<String>();
-
-  auto local_file = js_to_string(env, file, len);
-
   auto origin = ScriptOrigin(
-    local_file,
+    js_to_string(env, file, len),
     offset,
     0,
     false,
@@ -3100,7 +3100,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
     Local<Data>()
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto compiled = env->try_catch<Script>(
     [&] {
@@ -3127,12 +3127,8 @@ extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return -1;
 
-  auto local_source = js_to_local(source).As<String>();
-
-  auto local_name = js_to_string(env, name, len);
-
   auto origin = ScriptOrigin(
-    local_name,
+    js_to_string(env, name, len),
     offset,
     0,
     false,
@@ -3144,7 +3140,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
     Local<Data>()
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto compiled = env->try_catch<Module>(
     [&] {
@@ -3182,11 +3178,9 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
-  auto local_name = js_to_string(env, name, len);
-
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    local_name,
+    js_to_string(env, name, len),
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3266,7 +3260,7 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
 
   auto success = env->try_catch<bool>(
     [&] {
-      return local->SetSyntheticModuleExport(env->isolate, js_to_local(name).As<String>(), js_to_local(value));
+      return local->SetSyntheticModuleExport(env->isolate, js_to_local<String>(name), js_to_local(value));
     }
   );
 
@@ -3481,7 +3475,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
@@ -3560,7 +3554,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
@@ -3593,7 +3587,7 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto external = env->try_catch<Value>(
     [&] {
@@ -3618,7 +3612,7 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
 
   auto key = env->wrapper.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto external = env->try_catch<Value>(
     [&] {
@@ -3664,7 +3658,7 @@ extern "C" int
 js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
@@ -3683,7 +3677,7 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
 
   auto key = env->tag.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto has = env->try_catch<bool>(
     [&] {
@@ -3726,7 +3720,7 @@ js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, 
 
   auto key = env->tag.Get(env->isolate);
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->try_catch<Value>(
     [&] {
@@ -3852,7 +3846,7 @@ js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result) {
   if (description == nullptr) {
     symbol = Symbol::New(env->isolate);
   } else {
-    symbol = Symbol::New(env->isolate, js_to_local(description).As<String>());
+    symbol = Symbol::New(env->isolate, js_to_local<String>(description));
   }
 
   *result = js_from_local(symbol);
@@ -3902,12 +3896,8 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto context = env->current_context();
 
-  auto local_source = js_to_local(source).As<String>();
-
-  auto local_file = js_to_string(env, file, file_len);
-
   auto origin = ScriptOrigin(
-    local_file,
+    js_to_string(env, file, file_len),
     offset,
     0,
     false,
@@ -3918,7 +3908,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     false
   );
 
-  auto compiler_source = ScriptCompiler::Source(local_source, origin);
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
 
   auto function = env->try_catch<Function>(
     [&] {
@@ -4030,7 +4020,7 @@ js_create_error (js_env_t *env, js_value_t *code, js_value_t *message, js_value_
 
   auto context = env->current_context();
 
-  auto error = Error(js_to_local(message).As<String>(), {}).As<Object>();
+  auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
     error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
@@ -4119,7 +4109,7 @@ extern "C" int
 js_get_promise_state (js_env_t *env, js_value_t *promise, js_promise_state_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(promise).As<Promise>();
+  auto local = js_to_local<Promise>(promise);
 
   switch (local->State()) {
   case Promise::PromiseState::kPending:
@@ -4140,7 +4130,7 @@ extern "C" int
 js_get_promise_result (js_env_t *env, js_value_t *promise, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(promise).As<Promise>();
+  auto local = js_to_local<Promise>(promise);
 
   assert(local->State() != Promise::PromiseState::kPending);
 
@@ -4245,7 +4235,7 @@ extern "C" int
 js_detach_arraybuffer (js_env_t *env, js_value_t *arraybuffer) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   assert(local->IsDetachable());
 
@@ -4258,7 +4248,7 @@ extern "C" int
 js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -4317,7 +4307,7 @@ extern "C" int
 js_get_sharedarraybuffer_backing_store (js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(sharedarraybuffer).As<SharedArrayBuffer>();
+  auto local = js_to_local<SharedArrayBuffer>(sharedarraybuffer);
 
   *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
@@ -4534,7 +4524,7 @@ js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool 
 
   auto success = env->try_catch<bool>(
     [&] {
-      return js_to_local(object)->InstanceOf(context, js_to_local(constructor).As<Function>());
+      return js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor));
     }
   );
 
@@ -5044,7 +5034,7 @@ extern "C" int
 js_get_value_bool (js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Boolean>();
+  auto local = js_to_local<Boolean>(value);
 
   *result = local->Value();
 
@@ -5055,7 +5045,7 @@ extern "C" int
 js_get_value_int32 (js_env_t *env, js_value_t *value, int32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Int32>();
+  auto local = js_to_local<Int32>(value);
 
   *result = local->Value();
 
@@ -5066,7 +5056,7 @@ extern "C" int
 js_get_value_uint32 (js_env_t *env, js_value_t *value, uint32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Uint32>();
+  auto local = js_to_local<Uint32>(value);
 
   *result = local->Value();
 
@@ -5077,7 +5067,7 @@ extern "C" int
 js_get_value_int64 (js_env_t *env, js_value_t *value, int64_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Number>();
+  auto local = js_to_local<Number>(value);
 
   *result = static_cast<int64_t>(local->Value());
 
@@ -5088,7 +5078,7 @@ extern "C" int
 js_get_value_double (js_env_t *env, js_value_t *value, double *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Number>();
+  auto local = js_to_local<Number>(value);
 
   *result = local->Value();
 
@@ -5099,7 +5089,7 @@ extern "C" int
 js_get_value_bigint_int64 (js_env_t *env, js_value_t *value, int64_t *result, bool *lossless) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<BigInt>();
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Int64Value(lossless);
 
@@ -5112,7 +5102,7 @@ extern "C" int
 js_get_value_bigint_uint64 (js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<BigInt>();
+  auto local = js_to_local<BigInt>(value);
 
   auto n = local->Uint64Value(lossless);
 
@@ -5125,7 +5115,7 @@ extern "C" int
 js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<String>();
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Utf8Length(env->isolate);
@@ -5150,7 +5140,7 @@ extern "C" int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<String>();
+  auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
     *result = local->Length();
@@ -5175,7 +5165,7 @@ extern "C" int
 js_get_value_external (js_env_t *env, js_value_t *value, void **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<External>();
+  auto local = js_to_local<External>(value);
 
   *result = local->Value();
 
@@ -5186,7 +5176,7 @@ extern "C" int
 js_get_value_date (js_env_t *env, js_value_t *value, double *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Date>();
+  auto local = js_to_local<Date>(value);
 
   *result = local->ValueOf();
 
@@ -5197,7 +5187,7 @@ extern "C" int
 js_get_array_length (js_env_t *env, js_value_t *value, uint32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(value).As<Array>();
+  auto local = js_to_local<Array>(value);
 
   *result = local->Length();
 
@@ -5208,7 +5198,7 @@ extern "C" int
 js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   *result = js_from_local(local->GetPrototype());
 
@@ -5221,7 +5211,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto mode = KeyCollectionMode::kIncludePrototypes;
 
@@ -5259,7 +5249,7 @@ js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -5280,7 +5270,7 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5301,7 +5291,7 @@ js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5320,7 +5310,7 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5341,7 +5331,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5366,7 +5356,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5391,7 +5381,7 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5414,7 +5404,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto key = String::NewFromUtf8(env->isolate, name);
 
@@ -5439,7 +5429,7 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
@@ -5460,7 +5450,7 @@ js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result)
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5481,7 +5471,7 @@ js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *v
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5500,7 +5490,7 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
 
   auto context = env->current_context();
 
-  auto local = js_to_local(object).As<Object>();
+  auto local = js_to_local<Object>(object);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -5569,7 +5559,7 @@ extern "C" int
 js_get_arraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<ArrayBuffer>();
+  auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
   if (data) {
     *data = local->Data();
@@ -5586,7 +5576,7 @@ extern "C" int
 js_get_sharedarraybuffer_info (js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(arraybuffer).As<SharedArrayBuffer>();
+  auto local = js_to_local<SharedArrayBuffer>(arraybuffer);
 
   if (data) {
     *data = local->Data();
@@ -5603,7 +5593,7 @@ extern "C" int
 js_get_typedarray_info (js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(typedarray).As<TypedArray>();
+  auto local = js_to_local<TypedArray>(typedarray);
 
   if (type) {
     if (local->IsInt8Array()) {
@@ -5660,7 +5650,7 @@ extern "C" int
 js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local(dataview).As<DataView>();
+  auto local = js_to_local<DataView>(dataview);
 
   if (len) {
     *len = local->ByteLength();
@@ -5693,18 +5683,15 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
   auto context = env->current_context();
 
-  auto local_receiver = js_to_local(receiver);
-
-  auto local_function = js_to_local(function).As<Function>();
-
   auto local = env->call_into_javascript<Value>(
     [&] {
-      return local_function->Call(
-        context,
-        local_receiver,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(function)
+        ->Call(
+          context,
+          js_to_local(receiver),
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     }
   );
 
@@ -5721,18 +5708,15 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
   auto context = env->current_context();
 
-  auto local_receiver = js_to_local(receiver);
-
-  auto local_function = js_to_local(function).As<Function>();
-
   auto local = env->call_into_javascript<Value>(
     [&] {
-      return local_function->Call(
-        context,
-        local_receiver,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(function)
+        ->Call(
+          context,
+          js_to_local(receiver),
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     },
     true /* always_checkpoint */
   );
@@ -5750,15 +5734,14 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 
   auto context = env->current_context();
 
-  auto local_constructor = js_to_local(constructor).As<Function>();
-
   auto local = env->call_into_javascript<Object>(
     [&] {
-      return local_constructor->NewInstance(
-        context,
-        argc,
-        reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
-      );
+      return js_to_local<Function>(constructor)
+        ->NewInstance(
+          context,
+          argc,
+          reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
+        );
     }
   );
 
@@ -6099,7 +6082,7 @@ js_connect_inspector (js_env_t *env, js_inspector_t *inspector) {
 
 extern "C" int
 js_send_inspector_request (js_env_t *env, js_inspector_t *inspector, js_value_t *message) {
-  inspector->send(js_to_local(message).As<String>());
+  inspector->send(js_to_local<String>(message));
 
   return 0;
 }
