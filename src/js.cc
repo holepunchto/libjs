@@ -1636,9 +1636,13 @@ struct js_context_s {
 
   js_context_s(js_env_t *env)
       : context() {
+    auto parent_context = env->context.Get(env->isolate);
+
     auto context = Context::New(env->isolate);
 
     context->SetAlignedPointerInEmbedderData(js_context_environment, env);
+
+    context->SetSecurityToken(parent_context->GetSecurityToken());
 
     this->context.Reset(env->isolate, context);
   }
