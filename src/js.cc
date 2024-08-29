@@ -6047,6 +6047,23 @@ js_request_garbage_collection (js_env_t *env) {
   return 0;
 }
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+extern "C" int
+js_get_heap_statistics (js_env_t *env, js_heap_statistics_t *result) {
+  // Allow continuing even with a pending exception
+
+  HeapStatistics heap_statistics;
+
+  env->isolate->GetHeapStatistics(&heap_statistics);
+
+  result->total_heap_size = heap_statistics.total_heap_size();
+  result->used_heap_size = heap_statistics.used_heap_size();
+
+  return 0;
+}
+
 extern "C" int
 js_create_inspector (js_env_t *env, js_inspector_t **result) {
   *result = new js_inspector_t(env);

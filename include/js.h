@@ -29,6 +29,7 @@ typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 typedef struct js_threadsafe_function_s js_threadsafe_function_t;
+typedef struct js_heap_statistics_s js_heap_statistics_t;
 typedef struct js_inspector_s js_inspector_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
@@ -252,6 +253,25 @@ struct js_type_tag_s {
 
   /** @since 0 */
   uint64_t upper;
+};
+
+/** @version 0 */
+struct js_heap_statistics_s {
+  int version;
+
+  /**
+   * The amount of memory currently committed for the heap.
+   *
+   * @since 0
+   */
+  size_t total_heap_size;
+
+  /**
+   * The size of all objects residing in the heap.
+   *
+   * @since 0
+   */
+  size_t used_heap_size;
 };
 
 int
@@ -1340,6 +1360,12 @@ js_adjust_external_memory (js_env_t *env, int64_t change_in_bytes, int64_t *resu
  */
 int
 js_request_garbage_collection (js_env_t *env);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_heap_statistics (js_env_t *env, js_heap_statistics_t *result);
 
 int
 js_create_inspector (js_env_t *env, js_inspector_t **result);
