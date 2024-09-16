@@ -255,7 +255,7 @@ struct js_type_tag_s {
   uint64_t upper;
 };
 
-/** @version 0 */
+/** @version 1 */
 struct js_heap_statistics_s {
   int version;
 
@@ -272,6 +272,13 @@ struct js_heap_statistics_s {
    * @since 0
    */
   size_t used_heap_size;
+
+  /**
+   * The size of the backing store, i.e. array buffers and external strings.
+   *
+   * @since 1
+   */
+  size_t external_memory;
 };
 
 int
