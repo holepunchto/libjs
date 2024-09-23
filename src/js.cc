@@ -1066,7 +1066,9 @@ struct js_teardown_queue_s {
   }
 
   inline void
-  drain () {
+  drain (Isolate *isolate) {
+    auto scope = SealHandleScope(isolate);
+
     draining = true;
 
     for (auto const &[cb, data] : handles) {
@@ -1444,7 +1446,7 @@ struct js_env_s {
 
   inline void
   close () {
-    teardown_queue.drain();
+    teardown_queue.drain(isolate);
 
     tasks->close();
 
