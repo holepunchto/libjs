@@ -1,5 +1,9 @@
 list(APPEND tests
   add-finalizer
+  add-teardown-callback
+  add-teardown-callback-multiple
+  add-teardown-callback-remove
+  add-teardown-callback-remove-on-call
   add-type-tag
   add-type-tag-delegate
   adjust-external-memory
