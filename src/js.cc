@@ -2,6 +2,7 @@
 #include <bit>
 #include <condition_variable>
 #include <deque>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -45,6 +46,7 @@ typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
+typedef struct js_teardown_queue_s js_teardown_queue_t;
 typedef struct js_threadsafe_queue_s js_threadsafe_queue_t;
 typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
@@ -1011,6 +1013,73 @@ private: // V8 embedder API
   }
 };
 
+struct js_teardown_queue_s {
+  using js_teardown_handle = std::pair<js_teardown_cb, void *>;
+  using js_teardown_list = std::list<js_teardown_handle>;
+  using js_teardown_index = std::map<js_teardown_handle, js_teardown_list::iterator>;
+
+  js_teardown_list handles;
+  js_teardown_index index;
+  bool draining;
+
+  js_teardown_queue_s()
+      : handles(),
+        index(),
+        draining(false) {}
+
+  inline auto
+  begin () {
+    return handles.begin();
+  }
+
+  inline auto
+  end () {
+    return handles.end();
+  }
+
+  inline bool
+  push (js_teardown_cb cb, void *data) {
+    if (draining) return false;
+
+    js_teardown_handle handle = std::make_pair(cb, data);
+
+    if (index.contains(handle)) return false;
+
+    index[handle] = handles.insert(handles.begin(), handle);
+
+    return true;
+  }
+
+  inline bool
+  pop (js_teardown_cb cb, void *data) {
+    if (draining) return false;
+
+    js_teardown_handle handle = std::make_pair(cb, data);
+
+    if (!index.contains(handle)) return false;
+
+    handles.erase(index[handle]);
+
+    index.erase(handle);
+
+    return true;
+  }
+
+  inline void
+  drain () {
+    draining = true;
+
+    for (auto const &[cb, data] : handles) {
+      cb(data);
+    }
+
+    handles.clear();
+    index.clear();
+
+    draining = false;
+  }
+};
+
 struct js_platform_s : public Platform {
   js_platform_options_t options;
 
@@ -1250,8 +1319,6 @@ private: // V8 embedder API
   }
 };
 
-using js_teardown_cb = std::function<void()>;
-
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1279,6 +1346,8 @@ struct js_env_s {
 
   std::vector<Global<Promise>> unhandled_promises;
 
+  js_teardown_queue_t teardown_queue;
+
   struct {
     js_uncaught_exception_cb uncaught_exception;
     void *uncaught_exception_data;
@@ -1305,6 +1374,7 @@ struct js_env_s {
         exception(),
         modules(),
         unhandled_promises(),
+        teardown_queue(),
         callbacks() {
     int err;
 
@@ -1374,6 +1444,8 @@ struct js_env_s {
 
   inline void
   close () {
+    teardown_queue.drain();
+
     tasks->close();
 
     uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
@@ -1516,6 +1588,16 @@ struct js_env_s {
   inline MaybeLocal<T>
   call_into_javascript (const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
+  }
+
+  inline void
+  add_teardown_callback (js_teardown_cb cb, void *data) {
+    teardown_queue.push(cb, data);
+  }
+
+  inline void
+  remove_teardown_callback (js_teardown_cb cb, void *data) {
+    teardown_queue.pop(cb, data);
   }
 
   static void
@@ -5819,6 +5901,20 @@ js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function)
   // Allow continuing even with a pending exception
 
   function->unref();
+
+  return 0;
+}
+
+extern "C" int
+js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
+  env->add_teardown_callback(callback, data);
+
+  return 0;
+}
+
+extern "C" int
+js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
+  env->remove_teardown_callback(callback, data);
 
   return 0;
 }
