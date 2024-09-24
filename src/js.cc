@@ -1018,6 +1018,13 @@ struct js_teardown_queue_s {
   using js_teardown_list = std::list<js_teardown_handle>;
   using js_teardown_index = std::map<js_teardown_handle, js_teardown_list::iterator>;
 
+  enum class status {
+    success = 0,
+    draining = 1,
+    already_registered = 2,
+    not_registered = 3,
+  };
+
   js_teardown_list handles;
   js_teardown_index index;
   bool draining;
@@ -1037,32 +1044,31 @@ struct js_teardown_queue_s {
     return handles.end();
   }
 
-  inline bool
+  inline status
   push (js_teardown_cb cb, void *data) {
-    if (draining) return false;
+    if (draining) return status::draining;
 
     js_teardown_handle handle = std::make_pair(cb, data);
 
-    if (index.contains(handle)) return false;
+    if (index.contains(handle)) return status::already_registered;
 
     index[handle] = handles.insert(handles.begin(), handle);
 
-    return true;
+    return status::success;
   }
 
-  inline bool
+  inline status
   pop (js_teardown_cb cb, void *data) {
-    if (draining) return false;
-
     js_teardown_handle handle = std::make_pair(cb, data);
 
-    if (!index.contains(handle)) return false;
+    if (!index.contains(handle)) return status::not_registered;
+
+    if (draining) return status::success;
 
     handles.erase(index[handle]);
-
     index.erase(handle);
 
-    return true;
+    return status::success;
   }
 
   inline void
@@ -1592,14 +1598,14 @@ struct js_env_s {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
-  inline void
+  inline auto
   add_teardown_callback (js_teardown_cb cb, void *data) {
-    teardown_queue.push(cb, data);
+    return teardown_queue.push(cb, data);
   }
 
-  inline void
+  inline auto
   remove_teardown_callback (js_teardown_cb cb, void *data) {
-    teardown_queue.pop(cb, data);
+    return teardown_queue.pop(cb, data);
   }
 
   static void
@@ -5909,14 +5915,52 @@ js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function)
 
 extern "C" int
 js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
-  env->add_teardown_callback(callback, data);
+  if (env->is_exception_pending()) return -1;
 
-  return 0;
+  int err;
+
+  auto status = env->add_teardown_callback(callback, data);
+
+  switch (status) {
+  case js_teardown_queue_t::status::already_registered:
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return -1;
+
+  case js_teardown_queue_t::status::draining:
+    err = js_throw_error(env, NULL, "Teardown queue is already draining");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    return 0;
+  }
 }
 
 extern "C" int
 js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
-  env->remove_teardown_callback(callback, data);
+  if (env->is_exception_pending()) return -1;
+
+  int err;
+
+  auto status = env->remove_teardown_callback(callback, data);
+
+  switch (status) {
+  case js_teardown_queue_t::status::not_registered:
+    err = js_throw_error(env, NULL, "Teardown callback has not been registered");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    return 0;
+  }
 
   return 0;
 }
