@@ -2,6 +2,7 @@
 #include <bit>
 #include <condition_variable>
 #include <deque>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -45,6 +46,7 @@ typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
+typedef struct js_teardown_queue_s js_teardown_queue_t;
 typedef struct js_threadsafe_queue_s js_threadsafe_queue_t;
 typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
@@ -1011,6 +1013,80 @@ private: // V8 embedder API
   }
 };
 
+struct js_teardown_queue_s {
+  using js_teardown_handle = std::pair<js_teardown_cb, void *>;
+  using js_teardown_list = std::list<js_teardown_handle>;
+  using js_teardown_index = std::map<js_teardown_handle, js_teardown_list::iterator>;
+
+  enum class status {
+    success = 0,
+    drained = 1,
+    already_registered = 2,
+    not_registered = 3,
+  };
+
+  js_teardown_list handles;
+  js_teardown_index index;
+  bool drained;
+
+  js_teardown_queue_s()
+      : handles(),
+        index(),
+        drained(false) {}
+
+  inline auto
+  begin () {
+    return handles.begin();
+  }
+
+  inline auto
+  end () {
+    return handles.end();
+  }
+
+  inline status
+  push (js_teardown_cb cb, void *data) {
+    if (drained) return status::drained;
+
+    js_teardown_handle handle = std::make_pair(cb, data);
+
+    if (index.contains(handle)) return status::already_registered;
+
+    index[handle] = handles.insert(handles.begin(), handle);
+
+    return status::success;
+  }
+
+  inline status
+  pop (js_teardown_cb cb, void *data) {
+    js_teardown_handle handle = std::make_pair(cb, data);
+
+    if (!index.contains(handle)) return status::not_registered;
+
+    if (drained) return status::success;
+
+    handles.erase(index[handle]);
+    index.erase(handle);
+
+    return status::success;
+  }
+
+  inline status
+  drain (js_env_t *env) {
+    if (drained) return status::drained;
+
+    drained = true;
+
+    for (auto const &[cb, data] : handles) {
+      cb(data);
+    }
+
+    handles.clear();
+
+    return status::success;
+  }
+};
+
 struct js_platform_s : public Platform {
   js_platform_options_t options;
 
@@ -1250,14 +1326,15 @@ private: // V8 embedder API
   }
 };
 
-using js_teardown_cb = std::function<void()>;
-
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
   uv_check_t check;
+  uv_async_t teardown;
 
-  int active_handles = 2;
+  int active_handles = 3;
+
+  uint32_t refs;
 
   js_platform_t *platform;
 
@@ -1279,6 +1356,8 @@ struct js_env_s {
 
   std::vector<Global<Promise>> unhandled_promises;
 
+  js_teardown_queue_t teardown_queue;
+
   struct {
     js_uncaught_exception_cb uncaught_exception;
     void *uncaught_exception_data;
@@ -1294,6 +1373,8 @@ struct js_env_s {
       : loop(loop),
         prepare(),
         check(),
+        teardown(),
+        refs(0),
         platform(platform),
         tasks(platform->foreground[isolate]),
         depth(0),
@@ -1305,6 +1386,7 @@ struct js_env_s {
         exception(),
         modules(),
         unhandled_promises(),
+        teardown_queue(),
         callbacks() {
     int err;
 
@@ -1332,6 +1414,13 @@ struct js_env_s {
     // used for running any outstanding tasks that might cause additional work
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+
+    err = uv_async_init(loop, &teardown, on_teardown);
+    assert(err == 0);
+
+    teardown.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&teardown));
 
     auto scope = HandleScope(isolate);
 
@@ -1372,17 +1461,35 @@ struct js_env_s {
     return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
   }
 
+  inline bool
+  ref () {
+    refs++;
+
+    return true;
+  }
+
+  inline bool
+  unref () {
+    int err;
+
+    if (refs == 0) return false;
+
+    if (--refs == 0 && teardown_queue.drained) {
+      err = uv_async_send(&teardown);
+      assert(err == 0);
+    }
+
+    return true;
+  }
+
   inline void
-  close () {
-    tasks->close();
+  close_maybe () {
+    teardown_queue.drain(this);
 
-    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
-
-    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
-
-    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
+    if (refs == 0) close();
+    else {
+      uv_ref(reinterpret_cast<uv_handle_t *>(&teardown));
+    }
   }
 
   inline uint64_t
@@ -1518,6 +1625,16 @@ struct js_env_s {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
+  inline auto
+  add_teardown_callback (js_teardown_cb cb, void *data) {
+    return teardown_queue.push(cb, data);
+  }
+
+  inline auto
+  remove_teardown_callback (js_teardown_cb cb, void *data) {
+    return teardown_queue.pop(cb, data);
+  }
+
   static void
   on_uncaught_exception (Local<Message> message, Local<Value> error) {
     auto isolate = message->GetIsolate();
@@ -1565,18 +1682,42 @@ struct js_env_s {
 
 private:
   inline void
+  close () {
+    std::scoped_lock guard(platform->lock);
+
+    platform->foreground.erase(isolate);
+
+    tasks->close();
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&teardown));
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&teardown), on_handle_close);
+  }
+
+  inline void
+  dispose () {
+    auto isolate = this->isolate;
+    auto platform = this->platform;
+
+    delete this;
+
+    isolate->Exit();
+    isolate->Dispose();
+
+    platform->detach(this);
+  }
+
+  inline void
   dispose_maybe () {
-    if (active_handles == 0) {
-      auto isolate = this->isolate;
-      auto platform = this->platform;
-
-      delete this;
-
-      isolate->Exit();
-      isolate->Dispose();
-
-      platform->detach(this);
-    }
+    if (active_handles == 0) dispose();
   }
 
   inline void
@@ -1619,6 +1760,13 @@ private:
     env->idle();
 
     env->check_liveness();
+  }
+
+  static void
+  on_teardown (uv_async_t *handle) {
+    auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    if (env->refs == 0) env->close();
   }
 
   static void
@@ -2596,6 +2744,23 @@ private:
   }
 };
 
+struct js_deferred_teardown_s {
+  js_env_t *env;
+  js_deferred_teardown_cb cb;
+  void *data;
+
+  js_deferred_teardown_s(js_env_t *env, js_deferred_teardown_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {
+    env->ref();
+  }
+
+  ~js_deferred_teardown_s() {
+    env->unref();
+  }
+};
+
 struct js_inspector_channel_s : public V8Inspector::Channel {
   js_env_t *env;
   js_inspector_t *inspector;
@@ -2944,11 +3109,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 
 extern "C" int
 js_destroy_env (js_env_t *env) {
-  std::scoped_lock guard(env->platform->lock);
-
-  env->platform->foreground.erase(env->isolate);
-
-  env->close();
+  env->close_maybe();
 
   return 0;
 }
@@ -5819,6 +5980,118 @@ js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function)
   // Allow continuing even with a pending exception
 
   function->unref();
+
+  return 0;
+}
+
+extern "C" int
+js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
+  if (env->is_exception_pending()) return -1;
+
+  int err;
+
+  auto status = env->add_teardown_callback(callback, data);
+
+  switch (status) {
+  case js_teardown_queue_t::status::already_registered:
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return -1;
+
+  case js_teardown_queue_t::status::drained:
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    return 0;
+  }
+}
+
+extern "C" int
+js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
+  if (env->is_exception_pending()) return -1;
+
+  int err;
+
+  auto status = env->remove_teardown_callback(callback, data);
+
+  switch (status) {
+  case js_teardown_queue_t::status::not_registered:
+    err = js_throw_error(env, NULL, "Teardown callback has not been registered");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    return 0;
+  }
+
+  return 0;
+}
+
+namespace {
+
+static void
+js_call_deferred_teardown (void *data) {
+  auto handle = reinterpret_cast<js_deferred_teardown_t *>(data);
+
+  handle->cb(handle, handle->data);
+}
+
+} // namespace
+
+extern "C" int
+js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result) {
+  if (env->is_exception_pending()) return -1;
+
+  int err;
+
+  auto handle = new js_deferred_teardown_t(env, callback, data);
+
+  auto status = env->add_teardown_callback(js_call_deferred_teardown, handle);
+
+  switch (status) {
+  case js_teardown_queue_t::status::already_registered:
+    delete handle;
+
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return -1;
+
+  case js_teardown_queue_t::status::drained:
+    delete handle;
+
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    if (result) *result = handle;
+
+    return 0;
+  }
+}
+
+extern "C" int
+js_finish_deferred_teardown_callback (js_deferred_teardown_t *handle) {
+  // Allow continuing even with a pending exception
+
+  auto status = handle->env->remove_teardown_callback(js_call_deferred_teardown, handle);
+
+  assert(status == js_teardown_queue_s::status::success);
+
+  delete handle;
 
   return 0;
 }
