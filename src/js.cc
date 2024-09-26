@@ -1020,19 +1020,19 @@ struct js_teardown_queue_s {
 
   enum class status {
     success = 0,
-    draining = 1,
+    drained = 1,
     already_registered = 2,
     not_registered = 3,
   };
 
   js_teardown_list handles;
   js_teardown_index index;
-  bool draining;
+  bool drained;
 
   js_teardown_queue_s()
       : handles(),
         index(),
-        draining(false) {}
+        drained(false) {}
 
   inline auto
   begin () {
@@ -1046,7 +1046,7 @@ struct js_teardown_queue_s {
 
   inline status
   push (js_teardown_cb cb, void *data) {
-    if (draining) return status::draining;
+    if (drained) return status::drained;
 
     js_teardown_handle handle = std::make_pair(cb, data);
 
@@ -1063,7 +1063,7 @@ struct js_teardown_queue_s {
 
     if (!index.contains(handle)) return status::not_registered;
 
-    if (draining) return status::success;
+    if (drained) return status::success;
 
     handles.erase(index[handle]);
     index.erase(handle);
@@ -1071,18 +1071,19 @@ struct js_teardown_queue_s {
     return status::success;
   }
 
-  inline void
+  inline status
   drain (js_env_t *env) {
-    draining = true;
+    if (drained) return status::drained;
+
+    drained = true;
 
     for (auto const &[cb, data] : handles) {
       cb(env, data);
     }
 
     handles.clear();
-    index.clear();
 
-    draining = false;
+    return status::success;
   }
 };
 
@@ -1329,8 +1330,11 @@ struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
   uv_check_t check;
+  uv_async_t teardown;
 
-  int active_handles = 2;
+  int active_handles = 3;
+
+  uint32_t refs;
 
   js_platform_t *platform;
 
@@ -1369,6 +1373,8 @@ struct js_env_s {
       : loop(loop),
         prepare(),
         check(),
+        teardown(),
+        refs(0),
         platform(platform),
         tasks(platform->foreground[isolate]),
         depth(0),
@@ -1409,6 +1415,13 @@ struct js_env_s {
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
+    err = uv_async_init(loop, &teardown, on_teardown);
+    assert(err == 0);
+
+    teardown.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&teardown));
+
     auto scope = HandleScope(isolate);
 
     auto context = Context::New(isolate);
@@ -1448,19 +1461,35 @@ struct js_env_s {
     return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
   }
 
+  inline bool
+  ref () {
+    refs++;
+
+    return true;
+  }
+
+  inline bool
+  unref () {
+    int err;
+
+    if (refs == 0) return false;
+
+    if (--refs == 0 && teardown_queue.drained) {
+      err = uv_async_send(&teardown);
+      assert(err == 0);
+    }
+
+    return true;
+  }
+
   inline void
-  close () {
+  close_maybe () {
     teardown_queue.drain(this);
 
-    tasks->close();
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
-
-    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
-
-    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
+    if (refs == 0) close();
+    else {
+      uv_ref(reinterpret_cast<uv_handle_t *>(&teardown));
+    }
   }
 
   inline uint64_t
@@ -1653,18 +1682,42 @@ struct js_env_s {
 
 private:
   inline void
+  close () {
+    std::scoped_lock guard(platform->lock);
+
+    platform->foreground.erase(isolate);
+
+    tasks->close();
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
+
+    uv_ref(reinterpret_cast<uv_handle_t *>(&teardown));
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&teardown), on_handle_close);
+  }
+
+  inline void
+  dispose () {
+    auto isolate = this->isolate;
+    auto platform = this->platform;
+
+    delete this;
+
+    isolate->Exit();
+    isolate->Dispose();
+
+    platform->detach(this);
+  }
+
+  inline void
   dispose_maybe () {
-    if (active_handles == 0) {
-      auto isolate = this->isolate;
-      auto platform = this->platform;
-
-      delete this;
-
-      isolate->Exit();
-      isolate->Dispose();
-
-      platform->detach(this);
-    }
+    if (active_handles == 0) dispose();
   }
 
   inline void
@@ -1707,6 +1760,13 @@ private:
     env->idle();
 
     env->check_liveness();
+  }
+
+  static void
+  on_teardown (uv_async_t *handle) {
+    auto env = reinterpret_cast<js_env_t *>(handle->data);
+
+    if (env->refs == 0) env->close();
   }
 
   static void
@@ -3032,11 +3092,7 @@ js_create_env (uv_loop_t *loop, js_platform_t *platform, const js_env_options_t 
 
 extern "C" int
 js_destroy_env (js_env_t *env) {
-  std::scoped_lock guard(env->platform->lock);
-
-  env->platform->foreground.erase(env->isolate);
-
-  env->close();
+  env->close_maybe();
 
   return 0;
 }
@@ -3063,6 +3119,16 @@ js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data) {
   env->callbacks.dynamic_import_data = data;
 
   return 0;
+}
+
+extern "C" int
+js_ref_env (js_env_t *env) {
+  return env->ref() ? 0 : -1;
+}
+
+extern "C" int
+js_unref_env (js_env_t *env) {
+  return env->unref() ? 0 : -1;
 }
 
 extern "C" int
@@ -5926,8 +5992,8 @@ js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
 
     return -1;
 
-  case js_teardown_queue_t::status::draining:
-    err = js_throw_error(env, NULL, "Teardown queue is already draining");
+  case js_teardown_queue_t::status::drained:
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
     assert(err == 0);
 
     return -1;

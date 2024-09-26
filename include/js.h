@@ -332,6 +332,12 @@ int
 js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data);
 
 int
+js_ref_env (js_env_t *env);
+
+int
+js_unref_env (js_env_t *env);
+
+int
 js_get_env_loop (js_env_t *env, uv_loop_t **result);
 
 int
