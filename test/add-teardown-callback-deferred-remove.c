@@ -5,16 +5,15 @@
 
 #include "../include/js.h"
 
+static uv_timer_t timer;
+
 static bool teardown_called = false;
 
 static void
-on_teardown (js_env_t *env, void *data) {
+on_teardown (js_deferred_teardown_t *handle, void *data) {
   int e;
 
   teardown_called = true;
-
-  e = js_remove_teardown_callback(env, on_teardown, NULL);
-  assert(e == 0);
 }
 
 int
@@ -31,13 +30,17 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_add_teardown_callback(env, on_teardown, NULL);
+  js_deferred_teardown_t *handle;
+  e = js_add_deferred_teardown_callback(env, on_teardown, (void *) env, &handle);
+  assert(e == 0);
+
+  e = js_finish_deferred_teardown_callback(handle);
   assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
 
-  assert(teardown_called);
+  assert(teardown_called == false);
 
   e = js_destroy_platform(platform);
   assert(e == 0);

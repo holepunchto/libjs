@@ -29,6 +29,7 @@ typedef struct js_deferred_s js_deferred_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 typedef struct js_threadsafe_function_s js_threadsafe_function_t;
+typedef struct js_deferred_teardown_s js_deferred_teardown_t;
 typedef struct js_heap_statistics_s js_heap_statistics_t;
 typedef struct js_inspector_s js_inspector_t;
 
@@ -46,7 +47,8 @@ typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *da
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
-typedef void (*js_teardown_cb)(js_env_t *, void *data);
+typedef void (*js_teardown_cb)(void *data);
+typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
@@ -330,12 +332,6 @@ js_on_unhandled_rejection (js_env_t *env, js_unhandled_rejection_cb cb, void *da
  */
 int
 js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data);
-
-int
-js_ref_env (js_env_t *env);
-
-int
-js_unref_env (js_env_t *env);
 
 int
 js_get_env_loop (js_env_t *env, uv_loop_t **result);
@@ -1294,6 +1290,15 @@ js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data);
 
 int
 js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data);
+
+int
+js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_finish_deferred_teardown_callback (js_deferred_teardown_t *handle);
 
 int
 js_throw (js_env_t *env, js_value_t *error);

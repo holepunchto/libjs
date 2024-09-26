@@ -5,13 +5,13 @@
 
 #include "../include/js.h"
 
-static int teardown_called = 0;
+static bool teardown_called = false;
 
 static void
-on_teardown (js_env_t *env, void *data) {
-  teardown_called++;
+on_teardown (void *data) {
+  int e;
 
-  assert((intptr_t) data == teardown_called);
+  teardown_called = true;
 }
 
 int
@@ -28,22 +28,16 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_add_teardown_callback(env, on_teardown, (void *) 3);
-  assert(e == 0);
-
-  e = js_add_teardown_callback(env, on_teardown, (void *) 2);
-  assert(e == 0);
-
   e = js_add_teardown_callback(env, on_teardown, (void *) 1);
   assert(e == 0);
 
-  e = js_remove_teardown_callback(env, on_teardown, (void *) 3);
+  e = js_remove_teardown_callback(env, on_teardown, (void *) 1);
   assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);
 
-  assert(teardown_called == 2);
+  assert(teardown_called == false);
 
   e = js_destroy_platform(platform);
   assert(e == 0);

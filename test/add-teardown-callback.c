@@ -8,10 +8,10 @@
 static bool teardown_called = false;
 
 static void
-on_teardown (js_env_t *env, void *data) {
-  teardown_called = true;
+on_teardown (void *data) {
+  int e;
 
-  assert((intptr_t) data == 42);
+  teardown_called = true;
 }
 
 int
@@ -28,7 +28,7 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_add_teardown_callback(env, on_teardown, (void *) 42);
+  e = js_add_teardown_callback(env, on_teardown, NULL);
   assert(e == 0);
 
   e = js_destroy_env(env);

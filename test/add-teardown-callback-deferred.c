@@ -10,40 +10,29 @@ static uv_timer_t timer;
 static bool teardown_called = false;
 
 static void
-on_teardown (js_env_t *env, void *data);
-
-static void
 on_timer (uv_timer_t *timer) {
   int e;
 
-  js_env_t *env = (js_env_t *) timer->data;
+  js_deferred_teardown_t *handle = (js_deferred_teardown_t *) timer->data;
 
-  e = js_remove_teardown_callback(env, on_teardown, NULL);
-  assert(e == 0);
-
-  e = js_unref_env(env);
+  e = js_finish_deferred_teardown_callback(handle);
   assert(e == 0);
 }
 
 static void
-on_teardown (js_env_t *env, void *data) {
+on_teardown (js_deferred_teardown_t *handle, void *data) {
   int e;
 
   teardown_called = true;
 
-  uv_loop_t *loop;
-  e = js_get_env_loop(env, &loop);
-  assert(e == 0);
+  uv_loop_t *loop = uv_default_loop();
 
   e = uv_timer_init(loop, &timer);
   assert(e == 0);
 
-  timer.data = (void *) env;
+  timer.data = (void *) handle;
 
-  e = uv_timer_start(&timer, on_timer, 1000, 0);
-  assert(e == 0);
-
-  e = js_ref_env(env);
+  e = uv_timer_start(&timer, on_timer, 100, 0);
   assert(e == 0);
 }
 
@@ -61,7 +50,7 @@ main () {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_add_teardown_callback(env, on_teardown, NULL);
+  e = js_add_deferred_teardown_callback(env, on_teardown, (void *) env, NULL);
   assert(e == 0);
 
   e = js_destroy_env(env);

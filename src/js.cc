@@ -1078,7 +1078,7 @@ struct js_teardown_queue_s {
     drained = true;
 
     for (auto const &[cb, data] : handles) {
-      cb(env, data);
+      cb(data);
     }
 
     handles.clear();
@@ -2744,6 +2744,23 @@ private:
   }
 };
 
+struct js_deferred_teardown_s {
+  js_env_t *env;
+  js_deferred_teardown_cb cb;
+  void *data;
+
+  js_deferred_teardown_s(js_env_t *env, js_deferred_teardown_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {
+    env->ref();
+  }
+
+  ~js_deferred_teardown_s() {
+    env->unref();
+  }
+};
+
 struct js_inspector_channel_s : public V8Inspector::Channel {
   js_env_t *env;
   js_inspector_t *inspector;
@@ -3119,16 +3136,6 @@ js_on_dynamic_import (js_env_t *env, js_dynamic_import_cb cb, void *data) {
   env->callbacks.dynamic_import_data = data;
 
   return 0;
-}
-
-extern "C" int
-js_ref_env (js_env_t *env) {
-  return env->ref() ? 0 : -1;
-}
-
-extern "C" int
-js_unref_env (js_env_t *env) {
-  return env->unref() ? 0 : -1;
 }
 
 extern "C" int
@@ -6025,6 +6032,66 @@ js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data)
 
     return 0;
   }
+
+  return 0;
+}
+
+namespace {
+
+static void
+js_call_deferred_teardown (void *data) {
+  auto handle = reinterpret_cast<js_deferred_teardown_t *>(data);
+
+  handle->cb(handle, handle->data);
+}
+
+} // namespace
+
+extern "C" int
+js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result) {
+  if (env->is_exception_pending()) return -1;
+
+  int err;
+
+  auto handle = new js_deferred_teardown_t(env, callback, data);
+
+  auto status = env->add_teardown_callback(js_call_deferred_teardown, handle);
+
+  switch (status) {
+  case js_teardown_queue_t::status::already_registered:
+    delete handle;
+
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return -1;
+
+  case js_teardown_queue_t::status::drained:
+    delete handle;
+
+    err = js_throw_error(env, NULL, "Teardown queue has already drained");
+    assert(err == 0);
+
+    return -1;
+
+  default:
+    assert(status == js_teardown_queue_s::status::success);
+
+    if (result) *result = handle;
+
+    return 0;
+  }
+}
+
+extern "C" int
+js_finish_deferred_teardown_callback (js_deferred_teardown_t *handle) {
+  // Allow continuing even with a pending exception
+
+  auto status = handle->env->remove_teardown_callback(js_call_deferred_teardown, handle);
+
+  assert(status == js_teardown_queue_s::status::success);
+
+  delete handle;
 
   return 0;
 }

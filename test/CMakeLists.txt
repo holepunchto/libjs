@@ -3,8 +3,8 @@ list(APPEND tests
   add-teardown-callback
   add-teardown-callback-multiple
   add-teardown-callback-remove
-  add-teardown-callback-remove-after-timeout
-  add-teardown-callback-remove-on-call
+  add-teardown-callback-deferred
+  add-teardown-callback-deferred-remove
   add-type-tag
   add-type-tag-delegate
   adjust-external-memory
