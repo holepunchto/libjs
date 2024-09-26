@@ -8,7 +8,7 @@
 static bool teardown_called = false;
 
 static void
-on_teardown (void *data) {
+on_teardown (js_env_t *env, void *data) {
   teardown_called = true;
 
   assert((intptr_t) data == 42);
