@@ -311,6 +311,8 @@ struct js_task_runner_s : public TaskRunner {
 
     std::scoped_lock guard(lock);
 
+    if (closed) return;
+
     outstanding++;
 
     task.on_completion = [this] { on_completion(); };
@@ -326,6 +328,8 @@ struct js_task_runner_s : public TaskRunner {
   inline void
   push_task (js_delayed_task_handle_t &&task) {
     std::scoped_lock guard(lock);
+
+    if (closed) return;
 
     outstanding++;
 
@@ -343,6 +347,8 @@ struct js_task_runner_s : public TaskRunner {
   inline void
   push_task (js_idle_task_handle_t &&task) {
     std::scoped_lock guard(lock);
+
+    if (closed) return;
 
     outstanding++;
 
@@ -418,10 +424,12 @@ struct js_task_runner_s : public TaskRunner {
 
       delayed_tasks.pop();
 
+      available.notify_one();
+
+      if (closed) continue;
+
       err = uv_async_send(&async);
       assert(err == 0);
-
-      available.notify_one();
     }
 
     adjust_timer();
@@ -444,6 +452,8 @@ private:
     int err;
 
     std::scoped_lock guard(lock);
+
+    if (closed) return;
 
     if (delayed_tasks.empty()) {
       err = uv_timer_stop(&timer);
