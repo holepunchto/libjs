@@ -2921,7 +2921,7 @@ private: // V8 embedder API
 namespace {
 
 static inline Local<String>
-js_to_string (js_env_t *env, const char *data, size_t len) {
+js_to_string_utf8 (js_env_t *env, const char *data, size_t len) {
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
@@ -2936,18 +2936,33 @@ js_to_string (js_env_t *env, const char *data, size_t len) {
 }
 
 static inline Local<String>
-js_to_string (js_env_t *env, const utf8_t *data, size_t len) {
-  return js_to_string(env, reinterpret_cast<const char *>(data), len);
+js_to_string_utf8 (js_env_t *env, const utf8_t *data, size_t len) {
+  return js_to_string_utf8(env, reinterpret_cast<const char *>(data), len);
 }
 
 static inline Local<String>
-js_to_string (js_env_t *env, const utf16_t *data, size_t len) {
+js_to_string_utf16le (js_env_t *env, const utf16_t *data, size_t len) {
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
     string = String::NewFromTwoByte(env->isolate, data);
   } else {
     string = String::NewFromTwoByte(env->isolate, data, NewStringType::kNormal, len);
+  }
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
+}
+
+static inline Local<String>
+js_to_string_latin1 (js_env_t *env, const latin1_t *data, size_t len) {
+  MaybeLocal<String> string;
+
+  if (len == size_t(-1)) {
+    string = String::NewFromOneByte(env->isolate, data);
+  } else {
+    string = String::NewFromOneByte(env->isolate, data, NewStringType::kNormal, len);
   }
 
   assert(!string.IsEmpty());
@@ -3263,7 +3278,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
   auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    js_to_string(env, file, len),
+    js_to_string_utf8(env, file, len),
     offset,
     0,
     false,
@@ -3303,7 +3318,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
   if (env->is_exception_pending()) return -1;
 
   auto origin = ScriptOrigin(
-    js_to_string(env, name, len),
+    js_to_string_utf8(env, name, len),
     offset,
     0,
     false,
@@ -3355,7 +3370,7 @@ js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_valu
 
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    js_to_string(env, name, len),
+    js_to_string_utf8(env, name, len),
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3558,7 +3573,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
 
   auto tpl = callback->to_function_template(env->isolate);
 
-  if (name) tpl->SetClassName(js_to_string(env, name, len));
+  if (name) tpl->SetClassName(js_to_string_utf8(env, name, len));
 
   std::vector<js_property_descriptor_t> static_properties;
 
@@ -3995,19 +4010,28 @@ js_create_bigint_uint64 (js_env_t *env, uint64_t value, js_value_t **result) {
 }
 
 extern "C" int
-js_create_string_utf8 (js_env_t *env, const utf8_t *value, size_t len, js_value_t **result) {
+js_create_string_utf8 (js_env_t *env, const utf8_t *str, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  *result = js_from_local(js_to_string(env, value, len));
+  *result = js_from_local(js_to_string_utf8(env, str, len));
 
   return 0;
 }
 
 extern "C" int
-js_create_string_utf16le (js_env_t *env, const utf16_t *value, size_t len, js_value_t **result) {
+js_create_string_utf16le (js_env_t *env, const utf16_t *str, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  *result = js_from_local(js_to_string(env, value, len));
+  *result = js_from_local(js_to_string_utf16le(env, str, len));
+
+  return 0;
+}
+
+extern "C" int
+js_create_string_latin1 (js_env_t *env, const latin1_t *str, size_t len, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(js_to_string_latin1(env, str, len));
 
   return 0;
 }
@@ -4058,7 +4082,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string(env, name, len));
+  if (name) local->SetName(js_to_string_utf8(env, name, len));
 
   *result = js_from_local(local);
 
@@ -4072,7 +4096,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
   auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    js_to_string(env, file, file_len),
+    js_to_string_utf8(env, file, file_len),
     offset,
     0,
     false,
@@ -4100,7 +4124,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string(env, name, name_len));
+  if (name) local->SetName(js_to_string_utf8(env, name, name_len));
 
   *result = js_from_local(local);
 
@@ -4127,7 +4151,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string(env, name, len));
+  if (name) local->SetName(js_to_string_utf8(env, name, len));
 
   *result = js_from_local(local);
 
@@ -5329,6 +5353,31 @@ js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, siz
     );
 
     if (written < len) str[written] = u'\0';
+
+    if (result) *result = written;
+  } else if (result) *result = 0;
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_string_latin1 (js_env_t *env, js_value_t *value, latin1_t *str, size_t len, size_t *result) {
+  // Allow continuing even with a pending exception
+
+  auto local = js_to_local<String>(value);
+
+  if (str == nullptr) {
+    *result = local->Length();
+  } else if (len != 0) {
+    int written = local->WriteOneByte(
+      env->isolate,
+      str,
+      0,
+      len,
+      String::NO_NULL_TERMINATION
+    );
+
+    if (written < len) str[written] = '\0';
 
     if (result) *result = written;
   } else if (result) *result = 0;
