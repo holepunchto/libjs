@@ -5519,7 +5519,7 @@ js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *r
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->HasOwnProperty(context, js_to_local(key));
+      return local->HasOwnProperty(context, js_to_local<Name>(key));
     }
   );
 
