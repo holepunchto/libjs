@@ -1154,6 +1154,9 @@ int
 js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
 
 int
+js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
+
+int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value);
 
 int
