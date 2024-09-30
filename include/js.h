@@ -570,6 +570,12 @@ js_create_string_utf16le (js_env_t *env, const utf16_t *str, size_t len, js_valu
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_create_string_latin1 (js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_create_symbol (js_env_t *env, js_value_t *description, js_value_t **result);
 
 /**
@@ -1119,6 +1125,12 @@ js_get_value_string_utf8 (js_env_t *env, js_value_t *value, utf8_t *str, size_t 
  */
 int
 js_get_value_string_utf16le (js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_value_string_latin1 (js_env_t *env, js_value_t *value, latin1_t *str, size_t len, size_t *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
