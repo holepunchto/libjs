@@ -5461,6 +5461,27 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
 }
 
 extern "C" int
+js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
+  if (env->is_exception_pending()) return -1;
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->HasOwnProperty(context, js_to_local(key));
+    }
+  );
+
+  if (success.IsNothing()) return -1;
+
+  if (result) *result = success.ToChecked();
+
+  return 0;
+}
+
+extern "C" int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
   if (env->is_exception_pending()) return -1;
 
