@@ -52,6 +52,20 @@ typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
+enum {
+  /**
+   * There's a pending exception that, unless handled, will be propagated up the
+   * JavaScript execution stack.
+   */
+  js_pending_exception = -1,
+
+  /**
+   * There was an uncaught exception that could not be propagated as the JavaScript
+   * execution stack is empty.
+   */
+  js_uncaught_exception = -2,
+};
+
 typedef enum {
   js_undefined = 0,
   js_null = 1,

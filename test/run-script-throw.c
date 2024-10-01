@@ -54,7 +54,7 @@ main () {
 
   js_value_t *result;
   e = js_run_script(env, NULL, 0, 0, script, &result);
-  assert(e == -1);
+  assert(e == js_uncaught_exception);
 
   assert(uncaught_called == 1);
 

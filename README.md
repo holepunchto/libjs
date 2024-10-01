@@ -8,9 +8,9 @@ See [`include/js.h`](include/js.h) for the public API.
 
 ### Exceptions
 
-JavaScript exceptions are used for all error handling. A negative return value therefore indicates that an exception is pending. Furthermore, certain functions will immediately return an error value if an exception is already pending when the function was called.
+JavaScript exceptions are used for all error handling. A negative return value therefore indicates that an exception is either pending in the case of `js_pending_exception`, or uncaught if the JavaScript execution stack is empty and an uncaught exception handler is installed in case of `js_uncaught_exception`. Furthermore, certain functions will immediately return an error value if an exception is already pending when the function was called.
 
-To handle a pending exception in native code, rather than defer it to JavaScript, use the `js_get_and_clear_last_exception()` function. If the exception cannot be handled, it may be rethrown with `js_throw()`. If the JavaScript execution stack becomes empty without the exception being handled, it will trigger the uncaught exception handler if installed. If no exception handler is installed, the exception will be swallowed.
+To handle a pending exception in native code, rather than defer it to JavaScript, use the `js_get_and_clear_last_exception()` function. If the exception cannot be handled, it may be rethrown with `js_throw()`. If the JavaScript execution stack becomes empty without the exception being handled, it will trigger the uncaught exception handler if installed. If no exception handler is installed and the exception isn't handled explicitly it will be swallowed.
 
 ## Building
 
