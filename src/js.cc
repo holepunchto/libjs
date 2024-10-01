@@ -1915,11 +1915,11 @@ struct js_module_s {
       return result->module.Get(env->isolate);
     }
 
-    auto exception = env->exception.Get(env->isolate);
+    auto error = env->exception.Get(env->isolate);
 
     env->exception.Reset();
 
-    env->isolate->ThrowException(exception);
+    env->isolate->ThrowException(error);
 
     return MaybeLocal<Module>();
   }
@@ -1942,11 +1942,11 @@ struct js_module_s {
       return resolver->GetPromise();
     }
 
-    auto exception = env->exception.Get(env->isolate);
+    auto error = env->exception.Get(env->isolate);
 
     env->exception.Reset();
 
-    env->isolate->ThrowException(exception);
+    env->isolate->ThrowException(error);
 
     return MaybeLocal<Value>();
   }
@@ -1996,11 +1996,11 @@ struct js_module_s {
       return resolver->GetPromise();
     }
 
-    auto exception = env->exception.Get(env->isolate);
+    auto error = env->exception.Get(env->isolate);
 
     env->exception.Reset();
 
-    env->isolate->ThrowException(exception);
+    env->isolate->ThrowException(error);
 
     return MaybeLocal<Promise>();
   }
@@ -2022,11 +2022,11 @@ struct js_module_s {
 
     if (env->exception.IsEmpty()) return;
 
-    auto exception = env->exception.Get(env->isolate);
+    auto error = env->exception.Get(env->isolate);
 
     env->exception.Reset();
 
-    env->isolate->ThrowException(exception);
+    env->isolate->ThrowException(error);
   }
 };
 
@@ -2138,9 +2138,11 @@ protected:
         info.GetReturnValue().Set(js_to_local(result));
       }
     } else {
-      env->isolate->ThrowException(env->exception.Get(env->isolate));
+      auto error = env->exception.Get(env->isolate);
 
       env->exception.Reset();
+
+      env->isolate->ThrowException(error);
     }
   }
 
@@ -6210,9 +6212,9 @@ js_throw (js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->isolate->ThrowException(local);
-
   env->exception.Reset(env->isolate, local);
+
+  env->isolate->ThrowException(local);
 
   return 0;
 }
