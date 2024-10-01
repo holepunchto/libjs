@@ -1955,8 +1955,11 @@ struct js_module_s {
   on_dynamic_import (Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
     auto env = js_env_t::from_context(context);
 
+    int err;
+
     if (env->callbacks.dynamic_import == nullptr) {
-      js_throw_error(env, nullptr, "Dynamic import() is not supported");
+      err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
+      assert(err == 0);
 
       return MaybeLocal<Promise>();
     }
@@ -3872,6 +3875,8 @@ extern "C" int
 js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   auto context = env->current_context();
 
   auto key = env->tag.Get(env->isolate);
@@ -3887,7 +3892,8 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (has.IsNothing()) return js_error(env);
 
   if (has.ToChecked()) {
-    js_throw_errorf(env, NULL, "Object is already type tagged");
+    err = js_throw_errorf(env, NULL, "Object is already type tagged");
+    assert(err == 0);
 
     return js_error(env);
   }
@@ -3903,7 +3909,8 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
   if (success.IsNothing()) return js_error(env);
 
   if (!success.ToChecked()) {
-    js_throw_errorf(env, NULL, "Could not add type tag to object");
+    err = js_throw_errorf(env, NULL, "Could not add type tag to object");
+    assert(err == 0);
 
     return js_error(env);
   }
@@ -6010,14 +6017,18 @@ extern "C" int
 js_create_threadsafe_function (js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   if (function == nullptr && cb == nullptr) {
-    js_throw_error(env, NULL, "Either a function or a callback must be provided");
+    err = js_throw_error(env, NULL, "Either a function or a callback must be provided");
+    assert(err == 0);
 
     return js_error(env);
   };
 
   if (initial_thread_count == 0) {
-    js_throw_error(env, NULL, "Initial thread count must be greater than 0");
+    err = js_throw_error(env, NULL, "Initial thread count must be greater than 0");
+    assert(err == 0);
 
     return js_error(env);
   }
