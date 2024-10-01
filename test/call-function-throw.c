@@ -62,7 +62,7 @@ main () {
 
   js_value_t *result;
   e = js_call_function(env, global, fn, 0, NULL, &result);
-  assert(e == -1);
+  assert(e == js_uncaught_exception);
 
   assert(uncaught_called == 1);
 

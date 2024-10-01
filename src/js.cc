@@ -3177,6 +3177,15 @@ js_get_env_platform (js_env_t *env, js_platform_t **result) {
   return 0;
 }
 
+namespace {
+
+static inline int
+js_error (js_env_t *env) {
+  return env->is_exception_pending() ? js_pending_exception : js_uncaught_exception;
+}
+
+} // namespace
+
 extern "C" int
 js_open_handle_scope (js_env_t *env, js_handle_scope_t **result) {
   // Allow continuing even with a pending exception
@@ -3262,7 +3271,7 @@ js_exit_context (js_env_t *env, js_context_t *context) {
 
 extern "C" int
 js_get_bindings (js_env_t *env, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3273,7 +3282,7 @@ js_get_bindings (js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3298,7 +3307,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
     }
   );
 
-  if (compiled.IsEmpty()) return -1;
+  if (compiled.IsEmpty()) return js_error(env);
 
   auto local = env->call_into_javascript<Value>(
     [&] {
@@ -3306,7 +3315,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
     }
   );
 
-  if (local.IsEmpty()) return -1;
+  if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
 
@@ -3315,7 +3324,7 @@ js_run_script (js_env_t *env, const char *file, size_t len, int offset, js_value
 
 extern "C" int
 js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto origin = ScriptOrigin(
     js_to_string_utf8(env, name, len),
@@ -3338,7 +3347,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
     }
   );
 
-  if (compiled.IsEmpty()) return -1;
+  if (compiled.IsEmpty()) return js_error(env);
 
   auto local = compiled.ToLocalChecked();
 
@@ -3364,7 +3373,7 @@ js_create_module (js_env_t *env, const char *name, size_t len, int offset, js_va
 
 extern "C" int
 js_create_synthetic_module (js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
@@ -3444,7 +3453,7 @@ js_get_module_namespace (js_env_t *env, js_module_t *module, js_value_t **result
 
 extern "C" int
 js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto local = module->module.Get(env->isolate);
 
@@ -3454,14 +3463,14 @@ js_set_module_export (js_env_t *env, js_module_t *module, js_value_t *name, js_v
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
 
 extern "C" int
 js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3476,14 +3485,14 @@ js_instantiate_module (js_env_t *env, js_module_t *module, js_module_resolve_cb 
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
 
 extern "C" int
 js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3493,7 +3502,7 @@ js_run_module (js_env_t *env, js_module_t *module, js_value_t **result) {
     }
   );
 
-  if (local.IsEmpty()) return -1;
+  if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
 
@@ -3565,7 +3574,7 @@ js_get_reference_value (js_env_t *env, js_ref_t *reference, js_value_t **result)
 
 extern "C" int
 js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3650,7 +3659,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
     }
   );
 
-  if (function.IsEmpty()) return -1;
+  if (function.IsEmpty()) return js_error(env);
 
   *result = js_from_local(function.ToLocalChecked());
 
@@ -3659,7 +3668,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
 
 extern "C" int
 js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_t const properties[], size_t properties_len) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   if (properties_len == 0) return 0;
 
@@ -3730,7 +3739,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
       );
     }
 
-    if (success.IsNothing()) return -1;
+    if (success.IsNothing()) return js_error(env);
   }
 
   return 0;
@@ -3738,7 +3747,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
 
 extern "C" int
 js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3759,7 +3768,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
   if (success.IsNothing()) {
     delete finalizer;
 
-    return -1;
+    return js_error(env);
   }
 
   finalizer->attach_to(env->isolate, local);
@@ -3771,7 +3780,7 @@ js_wrap (js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_
 
 extern "C" int
 js_unwrap (js_env_t *env, js_value_t *object, void **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3785,7 +3794,7 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
     }
   );
 
-  if (external.IsEmpty()) return -1;
+  if (external.IsEmpty()) return js_error(env);
 
   auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
 
@@ -3796,7 +3805,7 @@ js_unwrap (js_env_t *env, js_value_t *object, void **result) {
 
 extern "C" int
 js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3810,7 +3819,7 @@ js_remove_wrap (js_env_t *env, js_value_t *object, void **result) {
     }
   );
 
-  if (external.IsEmpty()) return -1;
+  if (external.IsEmpty()) return js_error(env);
 
   local->DeletePrivate(context, key).Check();
 
@@ -3861,7 +3870,7 @@ js_add_finalizer (js_env_t *env, js_value_t *object, void *data, js_finalize_cb 
 
 extern "C" int
 js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3875,12 +3884,12 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
     }
   );
 
-  if (has.IsNothing()) return -1;
+  if (has.IsNothing()) return js_error(env);
 
   if (has.ToChecked()) {
     js_throw_errorf(env, NULL, "Object is already type tagged");
 
-    return -1;
+    return js_error(env);
   }
 
   auto value = BigInt::NewFromWords(context, 0, 2, reinterpret_cast<const uint64_t *>(tag)).ToLocalChecked();
@@ -3891,12 +3900,12 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (!success.ToChecked()) {
     js_throw_errorf(env, NULL, "Could not add type tag to object");
 
-    return -1;
+    return js_error(env);
   }
 
   return 0;
@@ -3904,7 +3913,7 @@ js_add_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag) {
 
 extern "C" int
 js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -3918,7 +3927,7 @@ js_check_type_tag (js_env_t *env, js_value_t *object, const js_type_tag_t *tag, 
     }
   );
 
-  if (value.IsEmpty()) return -1;
+  if (value.IsEmpty()) return js_error(env);
 
   *result = false;
 
@@ -4066,7 +4075,7 @@ js_create_object (js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4078,7 +4087,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
     }
   );
 
-  if (function.IsEmpty()) return -1;
+  if (function.IsEmpty()) return js_error(env);
 
   auto local = function.ToLocalChecked();
 
@@ -4091,7 +4100,7 @@ js_create_function (js_env_t *env, const char *name, size_t len, js_function_cb 
 
 extern "C" int
 js_create_function_with_source (js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4120,7 +4129,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
     }
   );
 
-  if (function.IsEmpty()) return -1;
+  if (function.IsEmpty()) return js_error(env);
 
   auto local = function.ToLocalChecked();
 
@@ -4133,7 +4142,7 @@ js_create_function_with_source (js_env_t *env, const char *name, size_t name_len
 
 extern "C" int
 js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4147,7 +4156,7 @@ js_create_function_with_ffi (js_env_t *env, const char *name, size_t len, js_fun
     }
   );
 
-  if (function.IsEmpty()) return -1;
+  if (function.IsEmpty()) return js_error(env);
 
   auto local = function.ToLocalChecked();
 
@@ -4360,7 +4369,7 @@ js_finalize_external_arraybuffer (void *data, size_t len, void *deleter_data) {
 
 extern "C" int
 js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, len);
 
@@ -4373,7 +4382,7 @@ js_create_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **resu
 
 extern "C" int
 js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, backing_store->backing_store);
 
@@ -4388,7 +4397,7 @@ js_create_arraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_
 
 extern "C" int
 js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto store = ArrayBuffer::NewBackingStore(
     js_heap_t::local()->alloc_unsafe(len),
@@ -4408,7 +4417,7 @@ js_create_unsafe_arraybuffer (js_env_t *env, size_t len, void **data, js_value_t
 
 extern "C" int
 js_create_external_arraybuffer (js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   js_finalizer_t *finalizer = nullptr;
 
@@ -4456,7 +4465,7 @@ js_get_arraybuffer_backing_store (js_env_t *env, js_value_t *arraybuffer, js_arr
 
 extern "C" int
 js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, len);
 
@@ -4469,7 +4478,7 @@ js_create_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t 
 
 extern "C" int
 js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, backing_store->backing_store);
 
@@ -4484,7 +4493,7 @@ js_create_sharedarraybuffer_with_backing_store (js_env_t *env, js_arraybuffer_ba
 
 extern "C" int
 js_create_unsafe_sharedarraybuffer (js_env_t *env, size_t len, void **data, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto store = SharedArrayBuffer::NewBackingStore(
     js_heap_t::local()->alloc_unsafe(len),
@@ -4564,7 +4573,7 @@ js_create_typedarray (js_typedarray_type_t type, T arraybuffer, size_t offset, s
 
 extern "C" int
 js_create_typedarray (js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto local = js_to_local(arraybuffer);
 
@@ -4593,7 +4602,7 @@ js_create_dataview (T arraybuffer, size_t offset, size_t len) {
 
 extern "C" int
 js_create_dataview (js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto local = js_to_local(arraybuffer);
 
@@ -4623,7 +4632,7 @@ js_coerce_to_boolean (js_env_t *env, js_value_t *value, js_value_t **result) {
 
 extern "C" int
 js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4635,7 +4644,7 @@ js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
     }
   );
 
-  if (number.IsEmpty()) return -1;
+  if (number.IsEmpty()) return js_error(env);
 
   *result = js_from_local(number.ToLocalChecked());
 
@@ -4644,7 +4653,7 @@ js_coerce_to_number (js_env_t *env, js_value_t *value, js_value_t **result) {
 
 extern "C" int
 js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4656,7 +4665,7 @@ js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
     }
   );
 
-  if (string.IsEmpty()) return -1;
+  if (string.IsEmpty()) return js_error(env);
 
   *result = js_from_local(string.ToLocalChecked());
 
@@ -4665,7 +4674,7 @@ js_coerce_to_string (js_env_t *env, js_value_t *value, js_value_t **result) {
 
 extern "C" int
 js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4677,7 +4686,7 @@ js_coerce_to_object (js_env_t *env, js_value_t *value, js_value_t **result) {
     }
   );
 
-  if (object.IsEmpty()) return -1;
+  if (object.IsEmpty()) return js_error(env);
 
   *result = js_from_local(object.ToLocalChecked());
 
@@ -4717,7 +4726,7 @@ js_typeof (js_env_t *env, js_value_t *value, js_value_type_t *result) {
 
 extern "C" int
 js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4727,7 +4736,7 @@ js_instanceof (js_env_t *env, js_value_t *object, js_value_t *constructor, bool 
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   *result = success.ToChecked();
 
@@ -5431,7 +5440,7 @@ js_get_prototype (js_env_t *env, js_value_t *object, js_value_t **result) {
 
 extern "C" int
 js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5460,7 +5469,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
     }
   );
 
-  if (names.IsEmpty()) return -1;
+  if (names.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(names.ToLocalChecked());
 
@@ -5469,7 +5478,7 @@ js_get_property_names (js_env_t *env, js_value_t *object, js_value_t **result) {
 
 extern "C" int
 js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5481,7 +5490,7 @@ js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
     }
   );
 
-  if (value.IsEmpty()) return -1;
+  if (value.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(value.ToLocalChecked());
 
@@ -5490,7 +5499,7 @@ js_get_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
 
 extern "C" int
 js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5502,7 +5511,7 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (result) *result = success.ToChecked();
 
@@ -5511,7 +5520,7 @@ js_has_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *resul
 
 extern "C" int
 js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5523,7 +5532,7 @@ js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *r
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (result) *result = success.ToChecked();
 
@@ -5532,7 +5541,7 @@ js_has_own_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *r
 
 extern "C" int
 js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5544,14 +5553,14 @@ js_set_property (js_env_t *env, js_value_t *object, js_value_t *key, js_value_t 
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
 
 extern "C" int
 js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5563,7 +5572,7 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (result) *result = success.ToChecked();
 
@@ -5572,7 +5581,7 @@ js_delete_property (js_env_t *env, js_value_t *object, js_value_t *key, bool *re
 
 extern "C" int
 js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5588,7 +5597,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     }
   );
 
-  if (value.IsEmpty()) return -1;
+  if (value.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(value.ToLocalChecked());
 
@@ -5597,7 +5606,7 @@ js_get_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
 
 extern "C" int
 js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5613,7 +5622,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   *result = success.ToChecked();
 
@@ -5622,7 +5631,7 @@ js_has_named_property (js_env_t *env, js_value_t *object, const char *name, bool
 
 extern "C" int
 js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_value_t *value) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5638,14 +5647,14 @@ js_set_named_property (js_env_t *env, js_value_t *object, const char *name, js_v
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
 
 extern "C" int
 js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5661,7 +5670,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
     }
   );
 
-  if (value.IsNothing()) return -1;
+  if (value.IsNothing()) return js_error(env);
 
   if (result) *result = value.ToChecked();
 
@@ -5670,7 +5679,7 @@ js_delete_named_property (js_env_t *env, js_value_t *object, const char *name, b
 
 extern "C" int
 js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5682,7 +5691,7 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
     }
   );
 
-  if (value.IsEmpty()) return -1;
+  if (value.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(value.ToLocalChecked());
 
@@ -5691,7 +5700,7 @@ js_get_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t **
 
 extern "C" int
 js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5703,7 +5712,7 @@ js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result)
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (result) *result = success.ToChecked();
 
@@ -5712,7 +5721,7 @@ js_has_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result)
 
 extern "C" int
 js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5724,14 +5733,14 @@ js_set_element (js_env_t *env, js_value_t *object, uint32_t index, js_value_t *v
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
 
 extern "C" int
 js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5743,7 +5752,7 @@ js_delete_element (js_env_t *env, js_value_t *object, uint32_t index, bool *resu
     }
   );
 
-  if (success.IsNothing()) return -1;
+  if (success.IsNothing()) return js_error(env);
 
   if (result) *result = success.ToChecked();
 
@@ -5924,7 +5933,7 @@ js_get_dataview_info (js_env_t *env, js_value_t *dataview, void **data, size_t *
 
 extern "C" int
 js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5940,7 +5949,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
     }
   );
 
-  if (local.IsEmpty()) return -1;
+  if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
 
@@ -5949,7 +5958,7 @@ js_call_function (js_env_t *env, js_value_t *receiver, js_value_t *function, siz
 
 extern "C" int
 js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5966,7 +5975,7 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
     true /* always_checkpoint */
   );
 
-  if (local.IsEmpty()) return -1;
+  if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
 
@@ -5975,7 +5984,7 @@ js_call_function_with_checkpoint (js_env_t *env, js_value_t *receiver, js_value_
 
 extern "C" int
 js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -5990,7 +5999,7 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
     }
   );
 
-  if (local.IsEmpty()) return -1;
+  if (local.IsEmpty()) return js_error(env);
 
   *result = js_from_local(local.ToLocalChecked());
 
@@ -5999,11 +6008,19 @@ js_new_instance (js_env_t *env, js_value_t *constructor, size_t argc, js_value_t
 
 extern "C" int
 js_create_threadsafe_function (js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
-  if (function == nullptr && cb == nullptr) return -1;
+  if (function == nullptr && cb == nullptr) {
+    js_throw_error(env, NULL, "Either a function or a callback must be provided");
 
-  if (initial_thread_count == 0) return -1;
+    return js_error(env);
+  };
+
+  if (initial_thread_count == 0) {
+    js_throw_error(env, NULL, "Initial thread count must be greater than 0");
+
+    return js_error(env);
+  }
 
   auto threadsafe_function = new js_threadsafe_function_t(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
 
@@ -6066,7 +6083,7 @@ js_unref_threadsafe_function (js_env_t *env, js_threadsafe_function_t *function)
 
 extern "C" int
 js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   int err;
 
@@ -6077,13 +6094,13 @@ js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
     err = js_throw_error(env, NULL, "Teardown callback has already been registered");
     assert(err == 0);
 
-    return -1;
+    return js_error(env);
 
   case js_teardown_queue_t::status::drained:
     err = js_throw_error(env, NULL, "Teardown queue has already drained");
     assert(err == 0);
 
-    return -1;
+    return js_error(env);
 
   default:
     assert(status == js_teardown_queue_s::status::success);
@@ -6094,7 +6111,7 @@ js_add_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
 
 extern "C" int
 js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   int err;
 
@@ -6105,7 +6122,7 @@ js_remove_teardown_callback (js_env_t *env, js_teardown_cb callback, void *data)
     err = js_throw_error(env, NULL, "Teardown callback has not been registered");
     assert(err == 0);
 
-    return -1;
+    return js_error(env);
 
   default:
     assert(status == js_teardown_queue_s::status::success);
@@ -6129,7 +6146,7 @@ js_call_deferred_teardown (void *data) {
 
 extern "C" int
 js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   int err;
 
@@ -6144,7 +6161,7 @@ js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callba
     err = js_throw_error(env, NULL, "Teardown callback has already been registered");
     assert(err == 0);
 
-    return -1;
+    return js_error(env);
 
   case js_teardown_queue_t::status::drained:
     delete handle;
@@ -6152,7 +6169,7 @@ js_add_deferred_teardown_callback (js_env_t *env, js_deferred_teardown_cb callba
     err = js_throw_error(env, NULL, "Teardown queue has already drained");
     assert(err == 0);
 
-    return -1;
+    return js_error(env);
 
   default:
     assert(status == js_teardown_queue_s::status::success);
@@ -6178,7 +6195,7 @@ js_finish_deferred_teardown_callback (js_deferred_teardown_t *handle) {
 
 extern "C" int
 js_throw (js_env_t *env, js_value_t *error) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto local = js_to_local(error);
 
@@ -6194,7 +6211,7 @@ namespace {
 template <Local<Value> Error(Local<String> message, Local<Value> options)>
 static inline int
 js_throw_error (js_env_t *env, const char *code, const char *message) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -6218,7 +6235,7 @@ js_throw_error (js_env_t *env, const char *code, const char *message) {
 template <Local<Value> Error(Local<String> message, Local<Value> options)>
 static inline int
 js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list args) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   va_list args_copy;
   va_copy(args_copy, args);
@@ -6254,7 +6271,7 @@ js_throw_verrorf (js_env_t *env, const char *code, const char *message, va_list 
 
 extern "C" int
 js_throw_errorf (js_env_t *env, const char *code, const char *message, ...) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   va_list args;
   va_start(args, message);
@@ -6278,7 +6295,7 @@ js_throw_type_verrorf (js_env_t *env, const char *code, const char *message, va_
 
 extern "C" int
 js_throw_type_errorf (js_env_t *env, const char *code, const char *message, ...) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   va_list args;
   va_start(args, message);
@@ -6302,7 +6319,7 @@ js_throw_range_verrorf (js_env_t *env, const char *code, const char *message, va
 
 extern "C" int
 js_throw_range_errorf (js_env_t *env, const char *code, const char *message, ...) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   va_list args;
   va_start(args, message);
@@ -6326,7 +6343,7 @@ js_throw_syntax_verrorf (js_env_t *env, const char *code, const char *message, v
 
 extern "C" int
 js_throw_syntax_errorf (js_env_t *env, const char *code, const char *message, ...) {
-  if (env->is_exception_pending()) return -1;
+  if (env->is_exception_pending()) return js_error(env);
 
   va_list args;
   va_start(args, message);
