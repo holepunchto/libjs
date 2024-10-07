@@ -214,7 +214,7 @@ struct js_property_descriptor_s {
   int version;
 
   /** @since 0 */
-  const char *name;
+  js_value_t *name;
 
   /** @since 0 */
   void *data;

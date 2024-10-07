@@ -31,9 +31,13 @@ main () {
   e = js_create_uint32(env, 42, &property);
   assert(e == 0);
 
+  js_value_t *name;
+  e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &name);
+  assert(e == 0);
+
   js_property_descriptor_t properties[] = {
     {
-      .name = "foo",
+      .name = name,
       .value = property,
       .attributes = js_static,
     },

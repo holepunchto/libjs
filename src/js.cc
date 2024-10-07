@@ -3613,7 +3613,7 @@ js_define_class (js_env_t *env, const char *name, size_t len, js_function_cb con
       attributes |= PropertyAttribute::DontDelete;
     }
 
-    auto name = String::NewFromUtf8(env->isolate, property->name).ToLocalChecked();
+    auto name = js_to_local<Name>(property->name);
 
     if (property->getter || property->setter) {
       Local<FunctionTemplate> getter;
@@ -3684,7 +3684,7 @@ js_define_properties (js_env_t *env, js_value_t *object, js_property_descriptor_
   for (size_t i = 0; i < properties_len; i++) {
     const js_property_descriptor_t *property = &properties[i];
 
-    auto name = String::NewFromUtf8(env->isolate, property->name).ToLocalChecked();
+    auto name = js_to_local<Name>(property->name);
 
     auto success = Nothing<bool>();
 

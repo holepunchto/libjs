@@ -9,17 +9,6 @@ on_construct (js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
-static js_value_t *
-on_method (js_env_t *env, js_callback_info_t *info) {
-  int e;
-
-  js_value_t *result;
-  e = js_create_uint32(env, 42, &result);
-  assert(e == 0);
-
-  return result;
-}
-
 int
 main () {
   int e;
@@ -39,14 +28,17 @@ main () {
   assert(e == 0);
 
   js_value_t *name;
-  e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &name);
+  e = js_create_symbol(env, NULL, &name);
+  assert(e == 0);
+
+  js_value_t *property;
+  e = js_create_uint32(env, 42, &property);
   assert(e == 0);
 
   js_property_descriptor_t properties[] = {
     {
       .name = name,
-      .method = on_method,
-      .attributes = js_static,
+      .value = property,
     },
   };
 
@@ -54,12 +46,12 @@ main () {
   e = js_define_class(env, "Foo", -1, on_construct, NULL, properties, 1, &class);
   assert(e == 0);
 
-  js_value_t *method;
-  e = js_get_named_property(env, class, "foo", &method);
+  js_value_t *instance;
+  e = js_new_instance(env, class, 0, NULL, &instance);
   assert(e == 0);
 
   js_value_t *result;
-  e = js_call_function(env, class, method, 0, NULL, &result);
+  e = js_get_property(env, instance, name, &result);
   assert(e == 0);
 
   uint32_t value;

@@ -82,6 +82,7 @@ list(APPEND tests
   define-class-with-method
   define-class-with-static-method
   define-class-with-static-value
+  define-class-with-symbol-property
   define-class-with-value
   dynamic-import
   dynamic-import-without-handler

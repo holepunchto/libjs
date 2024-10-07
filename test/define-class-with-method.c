@@ -38,9 +38,13 @@ main () {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
+  js_value_t *name;
+  e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &name);
+  assert(e == 0);
+
   js_property_descriptor_t properties[] = {
     {
-      .name = "foo",
+      .name = name,
       .method = on_method,
     },
   };
