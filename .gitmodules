@@ -2,10 +2,6 @@
 	path = cmake/gn
 	url = ../../holepunchto/cmake-gn.git
 	shallow = true
-[submodule "cmake/toolchains"]
-	path = cmake/toolchains
-	url = ../../holepunchto/cmake-toolchains.git
-	shallow = true
 [submodule "vendor/libuv"]
 	path = vendor/libuv
 	url = ../../libuv/libuv.git
