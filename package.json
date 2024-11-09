@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "name": "libjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/holepunchto/libjs.git"
+  },
+  "author": "Holepunch",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/holepunchto/libjs/issues"
+  },
+  "homepage": "https://github.com/holepunchto/libjs#readme",
+  "devDependencies": {
+    "cmake-fetch": "^1.0.0",
+    "cmake-gn": "^1.0.0"
+  }
+}

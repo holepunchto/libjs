@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(js C CXX)
+find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
+find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
 
-include(cmake/gn/gn.cmake)
+project(js C CXX)
 
 if(NOT TARGET c++)
   add_gn_target(c++ prebuilds:c++)
@@ -18,13 +19,8 @@ if(NOT TARGET v8)
   )
 endif()
 
-if(NOT TARGET uv)
-  add_subdirectory(vendor/libuv EXCLUDE_FROM_ALL)
-endif()
-
-if(NOT TARGET utf)
-  add_subdirectory(vendor/libutf EXCLUDE_FROM_ALL)
-endif()
+fetch_package("github:libuv/libuv@1.48.0")
+fetch_package("github:holepunchto/libutf")
 
 add_library(js OBJECT)
 
