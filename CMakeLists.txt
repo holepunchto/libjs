@@ -22,6 +22,19 @@ endif()
 fetch_package("github:libuv/libuv@1.48.0")
 fetch_package("github:holepunchto/libutf")
 
+if(TARGET js)
+  target_include_directories(
+    js
+    INTERFACE
+      include
+      $<TARGET_PROPERTY:c++,INTERFACE_INCLUDE_DIRECTORIES>
+      $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
+      $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
+  )
+
+  return()
+endif()
+
 add_library(js OBJECT)
 
 set_target_properties(
