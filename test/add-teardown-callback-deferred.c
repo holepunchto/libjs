@@ -10,7 +10,7 @@ static uv_timer_t timer;
 static bool teardown_called = false;
 
 static void
-on_timer (uv_timer_t *timer) {
+on_timer(uv_timer_t *timer) {
   int e;
 
   js_deferred_teardown_t *handle = (js_deferred_teardown_t *) timer->data;
@@ -20,7 +20,7 @@ on_timer (uv_timer_t *timer) {
 }
 
 static void
-on_teardown (js_deferred_teardown_t *handle, void *data) {
+on_teardown(js_deferred_teardown_t *handle, void *data) {
   int e;
 
   teardown_called = true;
@@ -37,7 +37,7 @@ on_teardown (js_deferred_teardown_t *handle, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

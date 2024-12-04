@@ -8,7 +8,7 @@
 static int message_called = 0;
 
 static void
-on_response (js_env_t *env, js_inspector_t *inspector, js_value_t *message, void *data) {
+on_response(js_env_t *env, js_inspector_t *inspector, js_value_t *message, void *data) {
   int e;
 
   message_called++;
@@ -29,7 +29,7 @@ on_response (js_env_t *env, js_inspector_t *inspector, js_value_t *message, void
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

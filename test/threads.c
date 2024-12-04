@@ -6,7 +6,7 @@
 js_platform_t *platform;
 
 void
-on_thread (void *data) {
+on_thread(void *data) {
   int e;
 
   uv_loop_t loop;
@@ -31,7 +31,7 @@ on_thread (void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

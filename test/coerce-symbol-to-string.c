@@ -7,7 +7,7 @@
 #include "helpers.h"
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

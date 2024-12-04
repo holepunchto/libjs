@@ -9,7 +9,7 @@
 int uncaught_called = 0;
 
 static void
-on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+on_uncaught_exception(js_env_t *env, js_value_t *error, void *data) {
   int e;
 
   uncaught_called++;
@@ -28,7 +28,7 @@ on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

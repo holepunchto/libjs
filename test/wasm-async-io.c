@@ -9,7 +9,7 @@ static js_env_t *env;
 static js_ref_t *ref;
 
 static void
-on_timer (uv_timer_t *handle) {
+on_timer(uv_timer_t *handle) {
   int e;
 
   js_handle_scope_t *scope;
@@ -32,7 +32,7 @@ on_timer (uv_timer_t *handle) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

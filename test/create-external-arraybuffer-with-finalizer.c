@@ -7,12 +7,12 @@
 bool finalize_called;
 
 static void
-on_finalize (js_env_t *env, void *data, void *finalize_hint) {
+on_finalize(js_env_t *env, void *data, void *finalize_hint) {
   finalize_called = true;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

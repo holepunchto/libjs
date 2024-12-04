@@ -8,7 +8,7 @@
 int has_called = 0;
 
 bool
-has (js_env_t *env, js_value_t *property, void *data) {
+has(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   has_called++;
@@ -20,7 +20,7 @@ has (js_env_t *env, js_value_t *property, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

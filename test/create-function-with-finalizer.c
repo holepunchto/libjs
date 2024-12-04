@@ -8,17 +8,17 @@
 bool finalize_called = false;
 
 static void
-on_finalize (js_env_t *env, void *data, void *finalize_hint) {
+on_finalize(js_env_t *env, void *data, void *finalize_hint) {
   finalize_called = true;
 }
 
 js_value_t *
-on_call (js_env_t *env, js_callback_info_t *info) {
+on_call(js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

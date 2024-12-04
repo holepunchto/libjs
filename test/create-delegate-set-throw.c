@@ -8,7 +8,7 @@
 int set_called = 0;
 
 bool
-set (js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
+set(js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
   int e;
 
   set_called++;
@@ -20,7 +20,7 @@ set (js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -11,12 +11,12 @@ static uv_async_t async;
 static js_platform_t *platform;
 
 static void
-on_async (uv_async_t *handle) {
+on_async(uv_async_t *handle) {
   uv_close((uv_handle_t *) handle, NULL);
 }
 
 static void
-on_thread (void *data) {
+on_thread(void *data) {
   int e;
 
   uv_loop_t loop;
@@ -47,7 +47,7 @@ on_thread (void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

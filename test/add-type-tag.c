@@ -4,7 +4,7 @@
 #include "../include/js.h"
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();
@@ -36,7 +36,7 @@ main () {
 
   assert(result);
 
-  e = js_check_type_tag(env, object, &(js_type_tag_t){2, 3}, &result);
+  e = js_check_type_tag(env, object, &(js_type_tag_t) {2, 3}, &result);
   assert(e == 0);
 
   assert(!result);

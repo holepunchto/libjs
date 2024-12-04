@@ -5,7 +5,7 @@
 #include "../include/js.h"
 
 static void
-on_module_meta (js_env_t *env, js_module_t *module, js_value_t *meta, void *data) {
+on_module_meta(js_env_t *env, js_module_t *module, js_value_t *meta, void *data) {
   int e;
 
   js_value_t *value;
@@ -17,7 +17,7 @@ on_module_meta (js_env_t *env, js_module_t *module, js_value_t *meta, void *data
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

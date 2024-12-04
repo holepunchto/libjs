@@ -8,7 +8,7 @@
 int get_called = 0;
 
 js_value_t *
-get (js_env_t *env, js_value_t *property, void *data) {
+get(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   get_called++;
@@ -20,7 +20,7 @@ get (js_env_t *env, js_value_t *property, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -8,7 +8,7 @@
 #include "../include/js.h"
 
 static inline void
-js_print_pending_exception (js_env_t *env) {
+js_print_pending_exception(js_env_t *env) {
   int err;
 
   js_value_t *exception;

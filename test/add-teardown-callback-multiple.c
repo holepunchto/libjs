@@ -8,7 +8,7 @@
 static int teardown_called = 0;
 
 static void
-on_teardown (void *data) {
+on_teardown(void *data) {
   int e;
 
   teardown_called++;
@@ -17,7 +17,7 @@ on_teardown (void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -12,7 +12,7 @@ bool delete_called = false;
 bool keys_called = false;
 
 js_value_t *
-get (js_env_t *env, js_value_t *property, void *data) {
+get(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   get_called = true;
@@ -31,7 +31,7 @@ get (js_env_t *env, js_value_t *property, void *data) {
 }
 
 bool
-has (js_env_t *env, js_value_t *property, void *data) {
+has(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   has_called = true;
@@ -46,7 +46,7 @@ has (js_env_t *env, js_value_t *property, void *data) {
 }
 
 bool
-set (js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
+set(js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
   int e;
 
   set_called = true;
@@ -67,7 +67,7 @@ set (js_env_t *env, js_value_t *property, js_value_t *value, void *data) {
 }
 
 bool
-delete_property (js_env_t *env, js_value_t *property, void *data) {
+delete_property(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   delete_called = true;
@@ -82,7 +82,7 @@ delete_property (js_env_t *env, js_value_t *property, void *data) {
 }
 
 js_value_t *
-own_keys (js_env_t *env, void *data) {
+own_keys(js_env_t *env, void *data) {
   int e;
 
   keys_called = true;
@@ -102,7 +102,7 @@ own_keys (js_env_t *env, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

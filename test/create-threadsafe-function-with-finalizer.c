@@ -8,7 +8,7 @@ bool finalize_called = false;
 js_threadsafe_function_t *tsfn;
 
 void
-on_call (js_env_t *env, js_value_t *function, void *context, void *data) {
+on_call(js_env_t *env, js_value_t *function, void *context, void *data) {
   int e;
 
   e = js_release_threadsafe_function(tsfn, js_threadsafe_function_release);
@@ -16,12 +16,12 @@ on_call (js_env_t *env, js_value_t *function, void *context, void *data) {
 }
 
 void
-on_finalize (js_env_t *env, void *data, void *finalize_hint) {
+on_finalize(js_env_t *env, void *data, void *finalize_hint) {
   finalize_called = true;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -9,17 +9,17 @@
 bool finalize_called = false;
 
 static void
-on_finalize (js_env_t *env, void *data, void *finalize_hint) {
+on_finalize(js_env_t *env, void *data, void *finalize_hint) {
   finalize_called = true;
 }
 
 uint32_t
-on_fast_call (void) {
+on_fast_call(void) {
   return 42;
 }
 
 js_value_t *
-on_slow_call (js_env_t *env, js_callback_info_t *info) {
+on_slow_call(js_env_t *env, js_callback_info_t *info) {
   js_value_t *result;
   int e = js_create_uint32(env, 42, &result);
   assert(e == 0);
@@ -28,7 +28,7 @@ on_slow_call (js_env_t *env, js_callback_info_t *info) {
 }
 
 int
-main () {
+main() {
   int e;
 
   js_ffi_type_info_t *return_info;

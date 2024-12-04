@@ -11,14 +11,14 @@ static int fast_calls = 0;
 static int slow_calls = 0;
 
 uint32_t
-on_fast_call (js_ffi_receiver_t *receiver) {
+on_fast_call(js_ffi_receiver_t *receiver) {
   fast_calls++;
 
   return 42;
 }
 
 js_value_t *
-on_slow_call (js_env_t *env, js_callback_info_t *info) {
+on_slow_call(js_env_t *env, js_callback_info_t *info) {
   slow_calls++;
 
   js_value_t *result;
@@ -29,7 +29,7 @@ on_slow_call (js_env_t *env, js_callback_info_t *info) {
 }
 
 int
-main () {
+main() {
   int e;
 
   js_ffi_type_info_t *return_info;

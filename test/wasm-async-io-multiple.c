@@ -12,7 +12,7 @@ static js_env_t *env;
 static bool log_called = false;
 
 static js_value_t *
-on_log (js_env_t *env, js_callback_info_t *info) {
+on_log(js_env_t *env, js_callback_info_t *info) {
   int e;
 
   log_called = true;
@@ -35,7 +35,7 @@ on_log (js_env_t *env, js_callback_info_t *info) {
 }
 
 static void
-on_timer (uv_timer_t *handle) {
+on_timer(uv_timer_t *handle) {
   int e;
 
   js_handle_scope_t *scope;
@@ -54,10 +54,10 @@ on_timer (uv_timer_t *handle) {
 }
 
 static void
-on_async (uv_async_t *handle) {}
+on_async(uv_async_t *handle) {}
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

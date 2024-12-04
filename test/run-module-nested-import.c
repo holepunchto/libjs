@@ -9,7 +9,7 @@ static js_module_t *foo;
 static js_module_t *bar;
 
 static js_module_t *
-on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
+on_module_resolve(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
   int e;
 
   utf8_t file[1024];
@@ -29,7 +29,7 @@ on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions,
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

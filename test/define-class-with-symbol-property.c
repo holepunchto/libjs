@@ -5,12 +5,12 @@
 #include "../include/js.h"
 
 static js_value_t *
-on_construct (js_env_t *env, js_callback_info_t *info) {
+on_construct(js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

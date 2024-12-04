@@ -9,12 +9,12 @@ js_module_t *synthetic_module;
 int uncaught_called = 0;
 
 static void
-on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+on_uncaught_exception(js_env_t *env, js_value_t *error, void *data) {
   uncaught_called++;
 }
 
 static js_module_t *
-on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
+on_module_resolve(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data) {
   int e;
 
   js_value_t *export_names[1];
@@ -28,7 +28,7 @@ on_module_resolve (js_env_t *env, js_value_t *specifier, js_value_t *assertions,
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

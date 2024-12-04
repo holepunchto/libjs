@@ -8,7 +8,7 @@
 int delete_called = 0;
 
 bool
-delete_property (js_env_t *env, js_value_t *property, void *data) {
+delete_property(js_env_t *env, js_value_t *property, void *data) {
   int e;
 
   delete_called++;
@@ -20,7 +20,7 @@ delete_property (js_env_t *env, js_value_t *property, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

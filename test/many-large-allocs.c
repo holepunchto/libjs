@@ -6,7 +6,7 @@
 #include "fixtures/many-large-allocs.js.h"
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

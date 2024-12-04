@@ -5,7 +5,7 @@
 #include "../include/js.h"
 
 js_value_t *
-on_call (js_env_t *env, js_callback_info_t *info) {
+on_call(js_env_t *env, js_callback_info_t *info) {
   int e;
 
   js_value_t *global;
@@ -49,7 +49,7 @@ on_call (js_env_t *env, js_callback_info_t *info) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

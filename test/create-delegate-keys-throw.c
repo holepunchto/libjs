@@ -8,7 +8,7 @@
 int keys_called = 0;
 
 js_value_t *
-own_keys (js_env_t *env, void *data) {
+own_keys(js_env_t *env, void *data) {
   int e;
 
   keys_called++;
@@ -20,7 +20,7 @@ own_keys (js_env_t *env, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

@@ -5,7 +5,7 @@
 #include "../include/js.h"
 
 static void
-on_module_evaluate (js_env_t *env, js_module_t *module, void *data) {
+on_module_evaluate(js_env_t *env, js_module_t *module, void *data) {
   int e;
 
   js_value_t *name;
@@ -21,7 +21,7 @@ on_module_evaluate (js_env_t *env, js_module_t *module, void *data) {
 }
 
 static js_module_t *
-on_import (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data) {
+on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data) {
   int e;
 
   js_value_t *export_names[1];
@@ -39,7 +39,7 @@ on_import (js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_valu
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

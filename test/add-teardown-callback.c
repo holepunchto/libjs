@@ -8,14 +8,14 @@
 static bool teardown_called = false;
 
 static void
-on_teardown (void *data) {
+on_teardown(void *data) {
   int e;
 
   teardown_called = true;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

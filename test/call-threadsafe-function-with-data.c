@@ -8,7 +8,7 @@ bool fn_called = false;
 js_threadsafe_function_t *tsfn;
 
 void
-on_call (js_env_t *env, js_value_t *function, void *context, void *data) {
+on_call(js_env_t *env, js_value_t *function, void *context, void *data) {
   int e;
 
   fn_called = true;
@@ -20,7 +20,7 @@ on_call (js_env_t *env, js_value_t *function, void *context, void *data) {
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

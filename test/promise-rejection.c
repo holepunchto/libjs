@@ -8,17 +8,17 @@
 int unhandled_called = 0;
 
 static void
-on_uncaught_exception (js_env_t *env, js_value_t *error, void *data) {
+on_uncaught_exception(js_env_t *env, js_value_t *error, void *data) {
   assert(false);
 }
 
 static void
-on_unhandled_rejection (js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
+on_unhandled_rejection(js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
   unhandled_called++;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();

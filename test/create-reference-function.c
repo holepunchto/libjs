@@ -4,12 +4,12 @@
 #include "../include/js.h"
 
 js_value_t *
-on_call (js_env_t *env, js_callback_info_t *info) {
+on_call(js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
 int
-main () {
+main() {
   int e;
 
   uv_loop_t *loop = uv_default_loop();
