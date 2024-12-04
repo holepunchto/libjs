@@ -966,7 +966,7 @@ public:
   inline void *
   alloc(size_t size) {
     void *ptr = alloc_unsafe(size);
-    if (zero_fill) memset(ptr, 0, size);
+    if (ptr && zero_fill) memset(ptr, 0, size);
     return ptr;
   }
 
@@ -978,7 +978,7 @@ public:
   inline void *
   realloc(void *ptr, size_t old_size, size_t new_size) {
     ptr = realloc_unsafe(ptr, new_size);
-    if (zero_fill && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
+    if (ptr && zero_fill && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
     return ptr;
   }
 

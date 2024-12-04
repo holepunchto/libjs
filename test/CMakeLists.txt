@@ -23,6 +23,7 @@ list(APPEND tests
   coerce-string-to-number
   coerce-symbol-to-string
   create-arraybuffer
+  create-arraybuffer-too-large
   create-arraybuffer-with-backing-store
   create-date
   create-date-nan
@@ -149,6 +150,9 @@ list(APPEND skipped_tests
 
   # Not reliably finalized
   create-function-with-ffi-finalizer
+
+  # Craches due to expected OOM
+  create-arraybuffer-too-large
 )
 
 foreach(test IN LISTS tests)
