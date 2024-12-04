@@ -1,4 +1,3 @@
-
 #include <assert.h>
 #include <utf.h>
 #include <uv.h>
