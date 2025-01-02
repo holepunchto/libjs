@@ -33,7 +33,7 @@ main() {
   bool copied;
 
   js_value_t *string;
-  e = js_create_external_string_latin1(env, data, sizeof(data), on_finalize, NULL, &string, &copied);
+  e = js_create_external_string_latin1(env, data, 3, on_finalize, NULL, &string, &copied);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);

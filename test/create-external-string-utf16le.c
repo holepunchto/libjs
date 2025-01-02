@@ -26,7 +26,7 @@ main() {
   bool copied;
 
   js_value_t *string;
-  e = js_create_external_string_utf16le(env, data, sizeof(data), NULL, NULL, &string, &copied);
+  e = js_create_external_string_utf16le(env, data, 3, NULL, NULL, &string, &copied);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
