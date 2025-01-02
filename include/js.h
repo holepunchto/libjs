@@ -26,7 +26,12 @@ typedef struct js_property_descriptor_s js_property_descriptor_t;
 typedef struct js_delegate_callbacks_s js_delegate_callbacks_t;
 typedef struct js_type_tag_s js_type_tag_t;
 typedef struct js_deferred_s js_deferred_t;
+typedef struct js_string_view_s js_string_view_t;
+typedef struct js_typedarray_view_s js_typedarray_view_t;
+typedef struct js_dataview_view_s js_dataview_view_t;
 typedef struct js_callback_info_s js_callback_info_t;
+typedef struct js_typed_callback_info_s js_typed_callback_info_t;
+typedef struct js_callback_signature_s js_callback_signature_t;
 typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 typedef struct js_threadsafe_function_s js_threadsafe_function_t;
 typedef struct js_deferred_teardown_s js_deferred_teardown_t;
@@ -107,6 +112,23 @@ typedef enum {
   /** @deprecated */ js_biguint64_array = js_biguint64array,
 } js_typedarray_type_t;
 
+enum {
+  // Numeric types
+
+  js_int8 = 1 << 8 | js_number,
+  js_uint8 = 2 << 8 | js_number,
+  js_int16 = 3 << 8 | js_number,
+  js_uint16 = 4 << 8 | js_number,
+  js_int32 = 5 << 8 | js_number,
+  js_uint32 = 6 << 8 | js_number,
+  js_int64 = 7 << 8 | js_number,
+  js_uint64 = 8 << 8 | js_number,
+  js_float32 = 9 << 8 | js_number,
+  js_float64 = 10 << 8 | js_number,
+  js_bigint64 = 11 << 8 | js_number,
+  js_biguint64 = 12 << 8 | js_number,
+};
+
 typedef enum {
   js_promise_pending = 0,
   js_promise_fulfilled = 1,
@@ -119,6 +141,12 @@ enum {
   js_configurable = 1 << 2,
   js_static = 1 << 10,
 };
+
+typedef enum {
+  js_utf8 = 1,
+  js_utf16le = 2,
+  js_latin1 = 3,
+} js_string_encoding_t;
 
 typedef enum {
   js_threadsafe_function_release = 0,
@@ -270,6 +298,20 @@ struct js_type_tag_s {
 
   /** @since 0 */
   uint64_t upper;
+};
+
+/** @version 0 */
+struct js_callback_signature_s {
+  int version;
+
+  /** @since 0 */
+  int result;
+
+  /** @since 0 */
+  size_t args_len;
+
+  /** @since 0 */
+  int *args;
 };
 
 /** @version 1 */
@@ -590,7 +632,49 @@ js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -603,6 +687,9 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
 
 int
 js_create_function_with_source(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
+
+int
+js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -729,14 +816,6 @@ js_get_sharedarraybuffer_backing_store(js_env_t *env, js_value_t *sharedarraybuf
  */
 int
 js_release_arraybuffer_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store);
-
-/**
- * Toggle zero-fill of all array buffers allocated on the heap of the calling
- * thread, if supported. If disabled, `new ArrayBuffer()` is NOT guaranteed to
- * zero-fill the allocated memory.
- */
-int
-js_set_arraybuffer_zero_fill_enabled(bool enabled);
 
 int
 js_create_typedarray(js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
@@ -1216,7 +1295,49 @@ js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *resul
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **str, size_t *len, js_string_view_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_release_string_view(js_env_t *env, js_string_view_t *view);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_typedarray_view_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_dataview_view_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_release_dataview_view(js_env_t *env, js_dataview_view_t *view);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env, void **data);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

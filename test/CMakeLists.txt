@@ -38,20 +38,18 @@ list(APPEND tests
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
+  create-external-string-latin1
+  create-external-string-latin1-with-finalizer
+  create-external-string-utf8
+  create-external-string-utf8-with-finalizer
+  create-external-string-utf16le
+  create-external-string-utf16le-with-finalizer
   create-external-with-finalizer
   create-function
   create-function-args-extra
   create-function-args-fewer
   create-function-throw
   create-function-throw-indirect
-  create-function-with-ffi
-  create-function-with-ffi-arraybuffer
-  create-function-with-ffi-finalizer
-  create-function-with-ffi-no-jit
-  create-function-with-ffi-pointer
-  create-function-with-ffi-receiver
-  create-function-with-ffi-string
-  create-function-with-ffi-uint8array
   create-function-with-finalizer
   create-function-with-source
   create-module-import-missing
@@ -77,6 +75,24 @@ list(APPEND tests
   create-threadsafe-function-with-callback
   create-threadsafe-function-with-context
   create-threadsafe-function-with-finalizer
+  create-typed-function
+  create-typed-function-no-jit
+  create-typed-function-with-arraybuffer
+  create-typed-function-with-bigint64
+  create-typed-function-with-biguint64
+  create-typed-function-with-dataview
+  create-typed-function-with-finalizer
+  create-typed-function-with-int8array
+  create-typed-function-with-int32
+  create-typed-function-with-int64
+  create-typed-function-with-number
+  create-typed-function-with-pointer
+  create-typed-function-with-receiver
+  create-typed-function-with-string-latin1
+  create-typed-function-with-string-utf16le
+  create-typed-function-with-uint8array
+  create-typed-function-with-uint32
+  create-typed-function-with-uint64
   create-uint8array
   create-unsafe-arraybuffer
   define-class
@@ -142,17 +158,6 @@ list(APPEND tests
   wrap-remove-with-finalizer
   wrap-with-finalizer
   wrap-with-reference
-)
-
-list(APPEND skipped_tests
-  # Not implemented in V8 yet
-  create-function-with-ffi-arraybuffer
-
-  # Not reliably finalized
-  create-function-with-ffi-finalizer
-
-  # Craches due to expected OOM
-  create-arraybuffer-too-large
 )
 
 foreach(test IN LISTS tests)

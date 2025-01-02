@@ -3,6 +3,7 @@
 #include <uv.h>
 
 #include "../include/js.h"
+#include "helpers.h"
 
 int
 main() {
@@ -25,6 +26,8 @@ main() {
   js_value_t *arraybuffer;
   e = js_create_arraybuffer(env, 281474976710656, NULL, &arraybuffer);
   assert(e != 0);
+
+  js_print_pending_exception(env);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

@@ -4,7 +4,8 @@
 
 #include "../include/js.h"
 
-bool finalize_called = false;
+static bool finalize_called = false;
+
 js_threadsafe_function_t *tsfn;
 
 void

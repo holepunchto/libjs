@@ -52,15 +52,15 @@ target_sources(
   js
   INTERFACE
     include/js.h
-    include/js/ffi.h
   PRIVATE
     src/js.cc
 )
 
 target_include_directories(
   js
-  PUBLIC
+  INTERFACE
     include
+  PUBLIC
     $<TARGET_PROPERTY:c++,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
@@ -138,8 +138,6 @@ target_link_libraries(
 install(TARGETS js_shared js_static)
 
 install(FILES include/js.h DESTINATION include)
-
-install(DIRECTORY include/js DESTINATION include)
 
 if(PROJECT_IS_TOP_LEVEL)
   enable_testing()

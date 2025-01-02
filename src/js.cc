@@ -26,21 +26,21 @@
 #include <v8.h>
 
 #include "../include/js.h"
-#include "../include/js/ffi.h"
 
 using namespace v8;
 using namespace v8_inspector;
 
 typedef struct js_callback_s js_callback_t;
-typedef struct js_fast_callback_s js_fast_callback_t;
+typedef struct js_typed_callback_s js_typed_callback_t;
 typedef struct js_finalizer_s js_finalizer_t;
 typedef struct js_delegate_s js_delegate_t;
+typedef struct js_external_string_utf16le_s js_external_string_utf16le_t;
+typedef struct js_external_string_latin1_s js_external_string_latin1_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
 typedef struct js_idle_task_handle_s js_idle_task_handle_t;
 typedef struct js_task_runner_s js_task_runner_t;
-typedef struct js_task_scope_s js_task_scope_t;
 typedef struct js_job_state_s js_job_state_t;
 typedef struct js_job_handle_s js_job_handle_t;
 typedef struct js_worker_s js_worker_t;
@@ -53,13 +53,14 @@ typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 
 typedef enum {
-  js_context_environment = 1,
-} js_context_index_t;
-
-typedef enum {
   js_task_nestable,
   js_task_non_nestable,
 } js_task_nestability_t;
+
+typedef enum {
+  js_return_type,
+  js_argument_type,
+} js_type_position_t;
 
 namespace {
 
@@ -86,48 +87,6 @@ js_from_local(Local<Value> local) {
 
 } // namespace
 
-struct js_ffi_type_info_s {
-  CTypeInfo type_info;
-
-  js_ffi_type_info_s(CTypeInfo type_info)
-      : type_info(type_info) {}
-
-  js_ffi_type_info_s(const js_ffi_type_info_s &) = delete;
-
-  js_ffi_type_info_s &
-  operator=(const js_ffi_type_info_s &) = delete;
-};
-
-struct js_ffi_function_info_s {
-  CTypeInfo return_info;
-  std::vector<CTypeInfo> arg_info;
-
-  js_ffi_function_info_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info)
-      : return_info(return_info),
-        arg_info(arg_info) {}
-
-  js_ffi_function_info_s(const js_ffi_function_info_s &) = delete;
-
-  js_ffi_function_info_s &
-  operator=(const js_ffi_function_info_s &) = delete;
-};
-
-struct js_ffi_function_s {
-  CTypeInfo return_info;
-  std::vector<CTypeInfo> arg_info;
-  const void *address;
-
-  js_ffi_function_s(CTypeInfo return_info, std::vector<CTypeInfo> arg_info, const void *address)
-      : return_info(return_info),
-        arg_info(arg_info),
-        address(address) {}
-
-  js_ffi_function_s(const js_ffi_function_s &) = delete;
-
-  js_ffi_function_s &
-  operator=(const js_ffi_function_s &) = delete;
-};
-
 struct js_tracing_controller_s : public TracingController {
 private: // V8 embedder API
 };
@@ -142,7 +101,7 @@ struct js_task_handle_s {
   js_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability)
       : task(std::move(task)),
         nestability(nestability),
-        on_completion(nullptr) {}
+        on_completion() {}
 
   js_task_handle_s(const js_task_handle_s &) = delete;
 
@@ -180,7 +139,8 @@ struct js_idle_task_handle_s {
   js_task_completion_cb on_completion;
 
   js_idle_task_handle_s(std::unique_ptr<IdleTask> task)
-      : task(std::move(task)) {}
+      : task(std::move(task)),
+        on_completion() {}
 
   js_idle_task_handle_s(const js_idle_task_handle_s &) = delete;
 
@@ -205,7 +165,7 @@ struct js_task_runner_s : public TaskRunner {
   uv_timer_t timer;
   uv_async_t async;
 
-  int active_handles = 2;
+  int active_handles;
 
   // Keep a cyclic reference to the task runner itself that we'll only reset
   // once its handles have fully closed.
@@ -229,6 +189,9 @@ struct js_task_runner_s : public TaskRunner {
   js_task_runner_s(uv_loop_t *loop)
       : loop(loop),
         timer(),
+        async(),
+        active_handles(2),
+        self(),
         tasks(),
         delayed_tasks(),
         idle_tasks(),
@@ -269,10 +232,6 @@ struct js_task_runner_s : public TaskRunner {
     // the outstanding tasks to drain.
 
     available.notify_all();
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&timer));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&async));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
 
@@ -546,24 +505,6 @@ private: // V8 embedder API
   }
 };
 
-struct js_task_scope_s {
-  std::shared_ptr<js_task_runner_t> tasks;
-
-  js_task_scope_s(std::shared_ptr<js_task_runner_t> tasks)
-      : tasks(tasks) {
-    tasks->depth++;
-  }
-
-  js_task_scope_s(const js_task_scope_s &) = delete;
-
-  ~js_task_scope_s() {
-    tasks->depth--;
-  }
-
-  js_task_scope_s &
-  operator=(const js_task_scope_s &) = delete;
-};
-
 namespace {
 
 static const auto js_invalid_task_id = uint8_t(-1);
@@ -584,20 +525,20 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
   std::atomic<bool> cancelled;
 
-  std::condition_variable_any worker_released;
-
   std::recursive_mutex lock;
+  std::condition_variable_any worker_released;
 
   js_job_state_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
       : priority(priority),
         task(std::move(task)),
         task_runner(std::move(task_runner)),
-        available_parallelism(available_parallelism < 64 ? available_parallelism : 64),
+        available_parallelism(std::min<uint8_t>(available_parallelism, 64)),
         active_workers(0),
         pending_workers(0),
         task_ids(0),
         cancelled(false),
-        lock() {}
+        lock(),
+        worker_released() {}
 
   js_job_state_s(const js_job_state_s &) = delete;
 
@@ -655,7 +596,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
     active_workers++; // Reserved for the joining thread
 
-    auto wait_for_concurrency = [this, &guard]() -> uint8_t {
+    auto wait_for_concurrency = [this, &guard]() {
       auto concurrency = max_concurrency(-1);
 
       while (active_workers > concurrency && active_workers > 1) {
@@ -774,7 +715,7 @@ private:
     std::weak_ptr<js_job_state_t> state;
 
     js_job_worker_s(std::weak_ptr<js_job_state_t> state)
-        : state(state) {}
+        : state(std::move(state)) {}
 
     js_job_worker_s(const js_job_worker_s &) = delete;
 
@@ -918,7 +859,7 @@ struct js_worker_s {
   std::thread thread;
 
   js_worker_s(std::shared_ptr<js_task_runner_t> tasks)
-      : tasks(tasks),
+      : tasks(std::move(tasks)),
         thread(&js_worker_t::on_thread, this) {}
 
   js_worker_s(const js_worker_s &) = delete;
@@ -945,28 +886,17 @@ private:
 };
 
 struct js_heap_s {
-  bool zero_fill;
+  js_heap_s() {}
 
-private:
-  js_heap_s() : zero_fill(true) {}
-
-public:
   js_heap_s(const js_heap_s &) = delete;
 
   js_heap_s &
   operator=(const js_heap_s &) = delete;
 
-  static std::shared_ptr<js_heap_t>
-  local() {
-    thread_local static auto heap = std::shared_ptr<js_heap_t>(new js_heap_t());
-
-    return heap;
-  }
-
   inline void *
   alloc(size_t size) {
     void *ptr = alloc_unsafe(size);
-    if (ptr && zero_fill) memset(ptr, 0, size);
+    if (ptr) memset(ptr, 0, size);
     return ptr;
   }
 
@@ -978,7 +908,7 @@ public:
   inline void *
   realloc(void *ptr, size_t old_size, size_t new_size) {
     ptr = realloc_unsafe(ptr, new_size);
-    if (ptr && zero_fill && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
+    if (ptr && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
     return ptr;
   }
 
@@ -994,6 +924,8 @@ public:
 };
 
 struct js_allocator_s : public ArrayBuffer::Allocator {
+  js_heap_t heap;
+
   js_allocator_s() = default;
 
   js_allocator_s(const js_allocator_s &) = delete;
@@ -1004,22 +936,22 @@ struct js_allocator_s : public ArrayBuffer::Allocator {
 private: // V8 embedder API
   void *
   Allocate(size_t length) override {
-    return js_heap_t::local()->alloc(length);
+    return heap.alloc(length);
   }
 
   void *
   AllocateUninitialized(size_t length) override {
-    return js_heap_t::local()->alloc_unsafe(length);
+    return heap.alloc_unsafe(length);
   }
 
   void
   Free(void *data, size_t length) override {
-    js_heap_t::local()->free(data);
+    heap.free(data);
   }
 
   void *
   Reallocate(void *data, size_t old_length, size_t new_length) override {
-    return js_heap_t::local()->realloc(data, old_length, new_length);
+    return heap.realloc(data, old_length, new_length);
   }
 };
 
@@ -1104,7 +1036,7 @@ struct js_platform_s : public Platform {
   uv_prepare_t prepare;
   uv_check_t check;
 
-  int active_handles = 2;
+  int active_handles;
 
   std::set<js_env_t *> environments;
 
@@ -1117,10 +1049,12 @@ struct js_platform_s : public Platform {
   std::recursive_mutex lock;
 
   js_platform_s(js_platform_options_t options, uv_loop_t *loop)
-      : options(options),
+      : options(std::move(options)),
         loop(loop),
         prepare(),
         check(),
+        active_handles(2),
+        environments(),
         foreground(),
         background(new js_task_runner_t(loop)),
         workers(),
@@ -1173,10 +1107,6 @@ struct js_platform_s : public Platform {
     for (auto &worker : workers) {
       worker->join();
     }
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
@@ -1301,7 +1231,7 @@ private: // V8 embedder API
   }
 
   std::shared_ptr<TaskRunner>
-  GetForegroundTaskRunner(Isolate *isolate) override {
+  GetForegroundTaskRunner(Isolate *isolate, TaskPriority priority) override {
     return foreground[isolate];
   }
 
@@ -1342,7 +1272,7 @@ struct js_env_s {
   uv_check_t check;
   uv_async_t teardown;
 
-  int active_handles = 3;
+  int active_handles;
 
   uint32_t refs;
 
@@ -1384,6 +1314,7 @@ struct js_env_s {
         prepare(),
         check(),
         teardown(),
+        active_handles(3),
         refs(0),
         platform(platform),
         tasks(platform->foreground[isolate]),
@@ -1432,33 +1363,36 @@ struct js_env_s {
 
     uv_unref(reinterpret_cast<uv_handle_t *>(&teardown));
 
-    auto scope = HandleScope(isolate);
+    isolate->SetData(0, this);
 
-    auto context = Context::New(isolate);
+    {
+      auto scope = HandleScope(isolate);
 
-    context->SetAlignedPointerInEmbedderData(js_context_environment, this);
+      context.Reset(isolate, Context::New(isolate));
+      context.Get(isolate)->Enter();
 
-    context->Enter();
-
-    this->context.Reset(isolate, context);
-
-    this->wrapper.Reset(isolate, Private::New(isolate));
-    this->delegate.Reset(isolate, Private::New(isolate));
-    this->tag.Reset(isolate, Private::New(isolate));
+      wrapper.Reset(isolate, Private::New(isolate));
+      delegate.Reset(isolate, Private::New(isolate));
+      tag.Reset(isolate, Private::New(isolate));
+    }
   }
 
   ~js_env_s() {
-    this->wrapper.Reset();
-    this->delegate.Reset();
-    this->tag.Reset();
+    {
+      auto scope = HandleScope(isolate);
 
-    auto scope = HandleScope(isolate);
+      wrapper.Reset();
+      delegate.Reset();
+      tag.Reset();
 
-    auto context = this->context.Get(isolate);
+      context.Get(isolate)->Exit();
+      context.Reset();
+    }
 
-    context->Exit();
+    isolate->Exit();
+    isolate->Dispose();
 
-    this->context.Reset();
+    platform->detach(this);
   }
 
   js_env_s(const js_env_s &) = delete;
@@ -1467,8 +1401,13 @@ struct js_env_s {
   operator=(const js_env_s &) = delete;
 
   static inline js_env_t *
-  from_context(Local<Context> context) {
-    return reinterpret_cast<js_env_t *>(context->GetAlignedPointerFromEmbedderData(js_context_environment));
+  from(Isolate *isolate) {
+    return reinterpret_cast<js_env_t *>(isolate->GetData(0));
+  }
+
+  static inline js_env_t *
+  from(Local<Context> context) {
+    return from(context->GetIsolate());
   }
 
   inline bool
@@ -1545,11 +1484,13 @@ struct js_env_s {
     tasks->move_expired_tasks();
 
     while (auto task = tasks->pop_task()) {
-      auto scope = js_task_scope_t(tasks);
+      tasks->depth++;
 
       task->run();
 
       run_microtasks();
+
+      tasks->depth--;
     }
   }
 
@@ -1647,14 +1588,16 @@ struct js_env_s {
 
   static void
   on_uncaught_exception(Local<Message> message, Local<Value> error) {
-    auto isolate = message->GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(message->GetIsolate());
 
     env->uncaught_exception(error);
   }
+
+  static void
+  on_fatal_error(const char *location, const char *message) {}
+
+  static void
+  on_out_of_memory_error(const char *location, const OOMDetails &details) {}
 
   static void
   on_promise_reject(PromiseRejectMessage message) {
@@ -1662,9 +1605,7 @@ struct js_env_s {
 
     auto isolate = promise->GetIsolate();
 
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(isolate);
 
     switch (message.GetEvent()) {
     case kPromiseRejectAfterResolved:
@@ -1699,12 +1640,6 @@ private:
 
     tasks->close();
 
-    uv_ref(reinterpret_cast<uv_handle_t *>(&prepare));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&check));
-
-    uv_ref(reinterpret_cast<uv_handle_t *>(&teardown));
-
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
@@ -1714,15 +1649,7 @@ private:
 
   inline void
   dispose() {
-    auto isolate = this->isolate;
-    auto platform = this->platform;
-
     delete this;
-
-    isolate->Exit();
-    isolate->Dispose();
-
-    platform->detach(this);
   }
 
   inline void
@@ -1796,13 +1723,9 @@ struct js_context_s {
       : context() {
     auto parent_context = env->context.Get(env->isolate);
 
-    auto context = Context::New(env->isolate);
+    context.Reset(env->isolate, Context::New(env->isolate));
 
-    context->SetAlignedPointerInEmbedderData(js_context_environment, env);
-
-    context->SetSecurityToken(parent_context->GetSecurityToken());
-
-    this->context.Reset(env->isolate, context);
+    context.Get(env->isolate)->SetSecurityToken(parent_context->GetSecurityToken());
   }
 
   js_context_s(const js_context_s &) = delete;
@@ -1855,7 +1778,7 @@ struct js_module_s {
     void *evaluate_data;
   } callbacks;
 
-  js_module_s(Isolate *isolate, Local<Module> module, std::string &&name)
+  js_module_s(Isolate *isolate, Local<Module> module, std::string name)
       : module(isolate, module),
         name(std::move(name)),
         callbacks() {}
@@ -1867,7 +1790,7 @@ struct js_module_s {
 
   static inline js_module_t *
   from_local(Local<Context> context, Local<Module> local) {
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(context);
 
     auto range = env->modules.equal_range(local->GetIdentityHash());
 
@@ -1882,7 +1805,7 @@ struct js_module_s {
 
   static MaybeLocal<Module>
   on_resolve(Local<Context> context, Local<String> specifier, Local<FixedArray> raw_assertions, Local<Module> referrer) {
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(context);
 
     auto module = js_module_t::from_local(context, referrer);
 
@@ -1926,7 +1849,7 @@ struct js_module_s {
 
   static MaybeLocal<Value>
   on_evaluate(Local<Context> context, Local<Module> referrer) {
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(context);
 
     auto module = js_module_t::from_local(context, referrer);
 
@@ -1953,9 +1876,9 @@ struct js_module_s {
 
   static MaybeLocal<Promise>
   on_dynamic_import(Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
-    auto env = js_env_t::from_context(context);
-
     int err;
+
+    auto env = js_env_t::from(context);
 
     if (env->callbacks.dynamic_import == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
@@ -2007,7 +1930,7 @@ struct js_module_s {
 
   static void
   on_import_meta(Local<Context> context, Local<Module> local, Local<Object> meta) {
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(context);
 
     auto module = js_module_t::from_local(context, local);
 
@@ -2076,6 +1999,83 @@ struct js_deferred_s {
 
   js_deferred_s &
   operator=(const js_deferred_s &) = delete;
+};
+
+struct js_string_view_s {
+  String::ValueView view;
+
+  js_string_view_s(Isolate *isolate, Local<String> string)
+      : view(isolate, string) {}
+
+  js_string_view_s(const js_string_view_s &) = delete;
+
+  js_string_view_s &
+  operator=(const js_string_view_s &) = delete;
+
+  inline auto
+  encoding() {
+    return view.is_one_byte() ? js_latin1 : js_utf16le;
+  }
+
+  inline auto
+  data() {
+    return view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
+                              : reinterpret_cast<const void *>(view.data16());
+  }
+
+  inline auto
+  length() {
+    return view.length();
+  }
+};
+
+struct js_typedarray_view_s {
+  uint8_t storage[64]; // For on-heap buffers
+  MemorySpan<uint8_t> view;
+
+  js_typedarray_view_s(Local<TypedArray> typedarray)
+      : view(storage) {
+    view = typedarray->GetContents(view);
+  }
+
+  js_typedarray_view_s(const js_typedarray_view_s &) = delete;
+
+  js_typedarray_view_s &
+  operator=(const js_typedarray_view_s &) = delete;
+
+  inline auto
+  data() {
+    return view.data();
+  }
+
+  inline auto
+  length() {
+    return view.size();
+  }
+};
+
+struct js_dataview_view_s {
+  MemorySpan<uint8_t> view;
+
+  js_dataview_view_s(Local<DataView> dataview)
+      : view() {
+    view = dataview->GetContents(view);
+  }
+
+  js_dataview_view_s(const js_dataview_view_s &) = delete;
+
+  js_dataview_view_s &
+  operator=(const js_dataview_view_s &) = delete;
+
+  inline auto
+  data() {
+    return view.data();
+  }
+
+  inline auto
+  length() {
+    return view.size();
+  }
 };
 
 struct js_callback_s {
@@ -2156,22 +2156,27 @@ protected:
   }
 };
 
-struct js_fast_callback_s : js_callback_t {
-  CTypeInfo return_info;
-  std::vector<CTypeInfo> arg_info;
-  CFunctionInfo function_info;
+struct js_typed_callback_s : js_callback_t {
+  CTypeInfo result;
+  std::vector<CTypeInfo> args;
+  CFunctionInfo type;
   const void *address;
 
-  js_fast_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo return_info, std::vector<CTypeInfo> arg_info, const void *address)
+  js_typed_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo result, std::vector<CTypeInfo> args, const void *address, CFunctionInfo::Int64Representation integer_representation)
       : js_callback_t(env, cb, data),
-        return_info(return_info),
-        arg_info(arg_info),
-        function_info(this->return_info, this->arg_info.size(), this->arg_info.data()),
+        result(std::move(result)),
+        args(std::move(args)),
+        type(this->result, this->args.size(), this->args.data(), integer_representation),
         address(address) {}
+
+  js_typed_callback_s(const js_typed_callback_s &) = delete;
+
+  js_typed_callback_s &
+  operator=(const js_typed_callback_s &) = delete;
 
   inline Local<FunctionTemplate>
   to_function_template(Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
-    auto function = CFunction(address, &function_info);
+    auto function = CFunction(address, &type);
 
     return FunctionTemplate::New(
       isolate,
@@ -2180,7 +2185,7 @@ struct js_fast_callback_s : js_callback_t {
       signature,
       0,
       ConstructorBehavior::kThrow,
-      SideEffectType::kHasSideEffect,
+      SideEffectType::kHasNoSideEffect,
       &function
     );
   }
@@ -2208,15 +2213,15 @@ struct js_finalizer_s {
   operator=(const js_finalizer_s &) = delete;
 
   inline void
-  attach_to(Isolate *isolate, Local<Value> value) {
-    this->value.Reset(isolate, value);
+  attach_to(Isolate *isolate, Local<Value> local) {
+    value.Reset(isolate, local);
 
-    this->value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
+    value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
   }
 
   inline void
   detach() {
-    this->value.ClearWeak<js_finalizer_t>();
+    value.ClearWeak<js_finalizer_t>();
   }
 
 private:
@@ -2246,9 +2251,14 @@ private:
 struct js_delegate_s : js_finalizer_t {
   js_delegate_callbacks_t callbacks;
 
-  js_delegate_s(js_env_t *env, const js_delegate_callbacks_t &callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+  js_delegate_s(js_env_t *env, js_delegate_callbacks_t callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : js_finalizer_t(env, data, finalize_cb, finalize_hint),
-        callbacks(callbacks) {}
+        callbacks(std::move(callbacks)) {}
+
+  js_delegate_s(const js_delegate_s &) = delete;
+
+  js_delegate_s &
+  operator=(const js_delegate_s &) = delete;
 
   inline Local<ObjectTemplate>
   to_object_template(Isolate *isolate) {
@@ -2285,11 +2295,7 @@ private:
   template <typename T>
   static Intercepted
   on_get(Local<T> property, const PropertyCallbackInfo<Value> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(info.GetIsolate());
 
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
@@ -2328,11 +2334,7 @@ private:
   template <typename T>
   static Intercepted
   on_set(Local<T> property, Local<Value> value, const PropertyCallbackInfo<void> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(info.GetIsolate());
 
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
@@ -2359,11 +2361,7 @@ private:
   template <typename T>
   static Intercepted
   on_delete(Local<T> property, const PropertyCallbackInfo<Boolean> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(info.GetIsolate());
 
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
@@ -2393,11 +2391,7 @@ private:
 
   static void
   on_enumerate(const PropertyCallbackInfo<Array> &info) {
-    auto isolate = info.GetIsolate();
-
-    auto context = isolate->GetCurrentContext();
-
-    auto env = js_env_t::from_context(context);
+    auto env = js_env_t::from(info.GetIsolate());
 
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
 
@@ -2413,25 +2407,89 @@ private:
   }
 };
 
+struct js_external_string_utf16le_s : String::ExternalStringResource {
+  js_env_t *env;
+
+  utf16_t *str;
+  size_t len;
+
+  js_finalize_cb finalize_cb;
+  void *finalize_hint;
+
+  js_external_string_utf16le_s(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
+      : env(env),
+        str(str),
+        len(len),
+        finalize_cb(finalize_cb),
+        finalize_hint(finalize_hint) {}
+
+  js_external_string_utf16le_s(const js_external_string_utf16le_s &) = delete;
+
+  ~js_external_string_utf16le_s() {
+    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+  }
+
+  js_external_string_utf16le_s &
+  operator=(const js_external_string_utf16le_s &) = delete;
+
+  const uint16_t *
+  data() const override {
+    return str;
+  };
+
+  size_t
+  length() const override {
+    return len;
+  }
+};
+
+struct js_external_string_latin1_s : String::ExternalOneByteStringResource {
+  js_env_t *env;
+
+  latin1_t *str;
+  size_t len;
+
+  js_finalize_cb finalize_cb;
+  void *finalize_hint;
+
+  js_external_string_latin1_s(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
+      : env(env),
+        str(str),
+        len(len),
+        finalize_cb(finalize_cb),
+        finalize_hint(finalize_hint) {}
+
+  js_external_string_latin1_s(const js_external_string_latin1_s &) = delete;
+
+  ~js_external_string_latin1_s() {
+    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+  }
+
+  js_external_string_latin1_s &
+  operator=(const js_external_string_latin1_s &) = delete;
+
+  const char *
+  data() const override {
+    return reinterpret_cast<char *>(str);
+  };
+
+  size_t
+  length() const override {
+    return len;
+  }
+};
+
 struct js_arraybuffer_backing_store_s {
   std::shared_ptr<BackingStore> backing_store;
 
   js_arraybuffer_backing_store_s(std::shared_ptr<BackingStore> backing_store)
-      : backing_store(backing_store) {}
+      : backing_store(std::move(backing_store)) {}
 
   js_arraybuffer_backing_store_s(const js_arraybuffer_backing_store_s &) = delete;
 
   js_arraybuffer_backing_store_s &
   operator=(const js_arraybuffer_backing_store_s &) = delete;
 };
-
-namespace {
-
-static const uint8_t js_threadsafe_function_idle = 0x0;
-static const uint8_t js_threadsafe_function_running = 0x1;
-static const uint8_t js_threadsafe_function_pending = 0x2;
-
-} // namespace
 
 struct js_threadsafe_queue_s {
   virtual ~js_threadsafe_queue_s() = default;
@@ -2451,7 +2509,7 @@ struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
 
   bool closed;
 
-  std::recursive_mutex lock;
+  std::mutex lock;
 
   js_threadsafe_unbounded_queue_s()
       : queue(),
@@ -2500,8 +2558,7 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   std::atomic<bool> closed;
 
-  std::recursive_mutex lock;
-
+  std::mutex lock;
   std::condition_variable_any available;
 
   js_threadsafe_bounded_queue_s(size_t queue_limit)
@@ -2517,34 +2574,47 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   bool
   push(void *data, js_threadsafe_function_call_mode_t mode) override {
-    if (closed == true) return false;
+    if (closed.load(std::memory_order_relaxed)) return false;
 
-    auto next = (write + 1) & mask;
+    size_t write, next;
+    bool ok;
 
-    if (read == next) {
-      if (mode == js_threadsafe_function_nonblocking) {
-        return false;
+    do {
+      write = this->write.load(std::memory_order_relaxed);
+
+      next = (write + 1) & mask;
+
+      if (next == read.load(std::memory_order_acquire)) {
+        if (mode == js_threadsafe_function_nonblocking) {
+          return false;
+        }
+
+        available.wait(lock);
+
+        if (closed.load(std::memory_order_relaxed)) return false;
       }
 
-      available.wait(lock);
-
-      if (closed) return -1;
-    }
+      ok = this->write.compare_exchange_weak(write, next, std::memory_order_acq_rel);
+    } while (!ok);
 
     queue[write] = std::move(data);
-
-    write = (write + 1) & mask;
 
     return true;
   }
 
   std::optional<void *>
   pop() override {
-    if (read == write) return std::nullopt;
+    auto read = this->read.load(std::memory_order_relaxed);
+
+    if (read == write.load(std::memory_order_acquire)) {
+      return std::nullopt;
+    }
 
     auto data = std::move(queue[read]);
 
-    read = (read + 1) & mask;
+    auto next = (read + 1) & mask;
+
+    this->read.store(next, std::memory_order_release);
 
     available.notify_one();
 
@@ -2553,11 +2623,19 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   void
   close() override {
-    closed = true;
+    closed.store(true, std::memory_order_relaxed);
 
     available.notify_all();
   }
 };
+
+namespace {
+
+static const uint8_t js_threadsafe_function_idle = 0x0;
+static const uint8_t js_threadsafe_function_running = 0x1;
+static const uint8_t js_threadsafe_function_pending = 0x2;
+
+} // namespace
 
 struct js_threadsafe_function_s {
   Persistent<Value> function;
@@ -2638,7 +2716,7 @@ struct js_threadsafe_function_s {
   release(js_threadsafe_function_release_mode_t mode) {
     auto thread_count = this->thread_count.load(std::memory_order_relaxed);
 
-    bool abort = mode == js_threadsafe_function_abort;
+    auto abort = mode == js_threadsafe_function_abort;
 
     while (thread_count != 0) {
       if (
@@ -2677,9 +2755,9 @@ private:
   signal() {
     int err;
 
-    auto current_state = state.fetch_or(js_threadsafe_function_pending);
+    auto state = this->state.fetch_or(js_threadsafe_function_pending, std::memory_order_acq_rel);
 
-    if (current_state & js_threadsafe_function_running) {
+    if (state & js_threadsafe_function_running) {
       return;
     }
 
@@ -2694,11 +2772,11 @@ private:
     auto iterations = 1024;
 
     while (!done && --iterations >= 0) {
-      state = js_threadsafe_function_running;
+      state.store(js_threadsafe_function_running, std::memory_order_release);
 
       done = call() == false;
 
-      if (state.exchange(js_threadsafe_function_idle) != js_threadsafe_function_running) {
+      if (state.exchange(js_threadsafe_function_idle, std::memory_order_acq_rel) != js_threadsafe_function_running) {
         done = false;
       }
     }
@@ -2713,14 +2791,16 @@ private:
     if (data.has_value()) {
       auto scope = HandleScope(env->isolate);
 
-      auto function = this->function.IsEmpty() ? nullptr : js_from_local(this->function.Get(env->isolate));
+      auto fn = function.IsEmpty() ? nullptr : js_from_local(function.Get(env->isolate));
 
-      cb(env, function, context, data.value());
+      cb(env, fn, context, data.value());
 
       return true;
     }
 
-    if (thread_count == 0) close();
+    if (thread_count.load(std::memory_order_relaxed) == 0) {
+      close();
+    }
 
     return false;
   }
@@ -2925,14 +3005,24 @@ private: // V8 embedder API
 
 namespace {
 
+template <int N>
 static inline Local<String>
-js_to_string_utf8(js_env_t *env, const char *data, size_t len) {
+js_to_string_utf8(js_env_t *env, const char (&literal)[N], bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
+  return String::NewFromUtf8Literal(env->isolate, literal, type);
+}
+
+static inline Local<String>
+js_to_string_utf8(js_env_t *env, const char *data, size_t len, bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
-    string = String::NewFromUtf8(env->isolate, data);
+    string = String::NewFromUtf8(env->isolate, data, type);
   } else {
-    string = String::NewFromUtf8(env->isolate, data, NewStringType::kNormal, len);
+    string = String::NewFromUtf8(env->isolate, data, type, len);
   }
 
   assert(!string.IsEmpty());
@@ -2941,18 +3031,31 @@ js_to_string_utf8(js_env_t *env, const char *data, size_t len) {
 }
 
 static inline Local<String>
-js_to_string_utf8(js_env_t *env, const utf8_t *data, size_t len) {
-  return js_to_string_utf8(env, reinterpret_cast<const char *>(data), len);
+js_to_string_utf8(js_env_t *env, const char *data, bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
+  auto string = String::NewFromUtf8(env->isolate, data, type);
+
+  assert(!string.IsEmpty());
+
+  return string.ToLocalChecked();
 }
 
 static inline Local<String>
-js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len) {
+js_to_string_utf8(js_env_t *env, const utf8_t *data, size_t len, bool internalize = false) {
+  return js_to_string_utf8(env, reinterpret_cast<const char *>(data), len, internalize);
+}
+
+static inline Local<String>
+js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len, bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
-    string = String::NewFromTwoByte(env->isolate, data);
+    string = String::NewFromTwoByte(env->isolate, data, type);
   } else {
-    string = String::NewFromTwoByte(env->isolate, data, NewStringType::kNormal, len);
+    string = String::NewFromTwoByte(env->isolate, data, type, len);
   }
 
   assert(!string.IsEmpty());
@@ -2961,13 +3064,15 @@ js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len) {
 }
 
 static inline Local<String>
-js_to_string_latin1(js_env_t *env, const latin1_t *data, size_t len) {
+js_to_string_latin1(js_env_t *env, const latin1_t *data, size_t len, bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
   MaybeLocal<String> string;
 
   if (len == size_t(-1)) {
-    string = String::NewFromOneByte(env->isolate, data);
+    string = String::NewFromOneByte(env->isolate, data, type);
   } else {
-    string = String::NewFromOneByte(env->isolate, data, NewStringType::kNormal, len);
+    string = String::NewFromOneByte(env->isolate, data, type, len);
   }
 
   assert(!string.IsEmpty());
@@ -3015,7 +3120,7 @@ js_create_platform(uv_loop_t *loop, const js_platform_options_t *options, js_pla
   if (js_option<&js_platform_options_t::optimize_for_memory, bool>(options, 1)) {
     flags += " --lite-mode";
   } else if (js_option<&js_platform_options_t::disable_optimizing_compiler, bool>(options, 0)) {
-    flags += " --jitless --no-expose-wasm";
+    flags += " --jitless";
   } else {
     if (js_option<&js_platform_options_t::trace_optimizations, bool>(options, 0)) {
       flags += " --trace-opt";
@@ -3292,7 +3397,7 @@ js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_
   auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, file, len),
+    js_to_string_utf8(env, file, len, true),
     offset,
     0,
     false,
@@ -3332,7 +3437,7 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
   if (env->is_exception_pending()) return js_error(env);
 
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, name, len),
+    js_to_string_utf8(env, name, len, true),
     offset,
     0,
     false,
@@ -3384,7 +3489,7 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
 
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    js_to_string_utf8(env, name, len),
+    js_to_string_utf8(env, name, len, true),
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3587,7 +3692,7 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
 
   auto tpl = callback->to_function_template(env->isolate);
 
-  if (name) tpl->SetClassName(js_to_string_utf8(env, name, len));
+  if (name) tpl->SetClassName(js_to_string_utf8(env, name, len, true));
 
   std::vector<js_property_descriptor_t> static_properties;
 
@@ -4055,6 +4160,80 @@ js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value
 }
 
 extern "C" int
+js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
+  // Allow continuing even with a pending exception
+
+  if (copied) *copied = true;
+
+  *result = js_from_local(js_to_string_utf8(env, str, len));
+
+  if (finalize_cb) finalize_cb(env, str, finalize_hint);
+
+  return 0;
+}
+
+extern "C" int
+js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
+  // Allow continuing even with a pending exception
+
+  auto resource = new js_external_string_utf16le_t(env, str, len, finalize_cb, finalize_hint);
+
+  auto local = String::NewExternalTwoByte(env->isolate, resource);
+
+  assert(!local.IsEmpty());
+
+  if (copied) *copied = false;
+
+  *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
+  // Allow continuing even with a pending exception
+
+  auto resource = new js_external_string_latin1_t(env, str, len, finalize_cb, finalize_hint);
+
+  auto local = String::NewExternalOneByte(env->isolate, resource);
+
+  assert(!local.IsEmpty());
+
+  if (copied) *copied = false;
+
+  *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(js_to_string_utf8(env, str, len, true));
+
+  return 0;
+}
+
+extern "C" int
+js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(js_to_string_utf16le(env, str, len, true));
+
+  return 0;
+}
+
+extern "C" int
+js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(js_to_string_latin1(env, str, len, true));
+
+  return 0;
+}
+
+extern "C" int
 js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result) {
   // Allow continuing even with a pending exception
 
@@ -4065,6 +4244,17 @@ js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result) {
   } else {
     symbol = Symbol::New(env->isolate, js_to_local<String>(description));
   }
+
+  *result = js_from_local(symbol);
+
+  return 0;
+}
+
+extern "C" int
+js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto symbol = Symbol::For(env->isolate, js_to_string_utf8(env, description, len, true));
 
   *result = js_from_local(symbol);
 
@@ -4100,7 +4290,7 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, len));
+  if (name) local->SetName(js_to_string_utf8(env, name, len, true));
 
   *result = js_from_local(local);
 
@@ -4114,7 +4304,7 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
   auto context = env->current_context();
 
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, file, file_len),
+    js_to_string_utf8(env, file, file_len, true),
     offset,
     0,
     false,
@@ -4122,7 +4312,8 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
     Local<Value>(),
     false,
     false,
-    false
+    false,
+    Local<Data>()
   );
 
   auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
@@ -4142,22 +4333,129 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, name_len));
+  if (name) local->SetName(js_to_string_utf8(env, name, name_len, true));
 
   *result = js_from_local(local);
 
   return 0;
 }
 
+namespace {
+
+template <js_type_position_t position>
+static inline std::optional<CTypeInfo>
+js_to_native_type(int type, std::optional<CFunctionInfo::Int64Representation> &integer_representation) {
+  using Type = CTypeInfo::Type;
+
+  if (type == js_int64 || type == js_uint64) {
+    if (integer_representation == CFunctionInfo::Int64Representation::kBigInt) {
+      goto unsupported;
+    }
+
+    integer_representation = CFunctionInfo::Int64Representation::kNumber;
+  } else if (type == js_bigint64 || type == js_biguint64) {
+    if (integer_representation == CFunctionInfo::Int64Representation::kNumber) {
+      goto unsupported;
+    }
+
+    integer_representation = CFunctionInfo::Int64Representation::kBigInt;
+  }
+
+  switch (type) {
+  case js_undefined:
+    return CTypeInfo(Type::kVoid);
+  case js_null:
+    goto handle;
+  case js_boolean:
+    return CTypeInfo(Type::kBool);
+  case js_number:
+    goto handle;
+  case js_int8:
+    goto unsupported;
+  case js_uint8:
+    goto unsupported;
+  case js_int16:
+    goto unsupported;
+  case js_uint16:
+    goto unsupported;
+  case js_int32:
+    return CTypeInfo(Type::kInt32);
+  case js_uint32:
+    return CTypeInfo(Type::kUint32);
+  case js_int64:
+    return CTypeInfo(Type::kInt64);
+  case js_uint64:
+    return CTypeInfo(Type::kUint64);
+  case js_float32:
+    return CTypeInfo(Type::kFloat32);
+  case js_float64:
+    return CTypeInfo(Type::kFloat64);
+  case js_bigint64:
+    return CTypeInfo(Type::kInt64);
+  case js_biguint64:
+    return CTypeInfo(Type::kUint64);
+  case js_string:
+    goto handle;
+  case js_symbol:
+    goto handle;
+  case js_object:
+    goto handle;
+  case js_function:
+    goto handle;
+  case js_external:
+    return CTypeInfo(Type::kPointer);
+  case js_bigint:
+    goto handle;
+  default:
+  unsupported:
+    return std::nullopt;
+  handle:
+    // Handles are not currently supported in return position
+    if (position == js_return_type) goto unsupported;
+
+    return CTypeInfo(Type::kV8Value);
+  }
+}
+
+} // namespace
+
 extern "C" int
-js_create_function_with_ffi(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_ffi_function_t *ffi, js_value_t **result) {
+js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
-  auto callback = new js_fast_callback_t(env, cb, data, ffi->return_info, ffi->arg_info, ffi->address);
+  auto integer_representation = std::optional<CFunctionInfo::Int64Representation>();
 
-  delete ffi;
+  auto return_info = js_to_native_type<js_return_type>(signature->result, integer_representation);
+
+  if (!return_info.has_value()) {
+    return js_create_function(env, name, len, cb, data, result);
+  }
+
+  auto args_info = std::vector<CTypeInfo>();
+
+  for (size_t i = 0, n = signature->args_len; i < n; i++) {
+    auto arg_info = js_to_native_type<js_argument_type>(signature->args[i], integer_representation);
+
+    if (!arg_info.has_value()) {
+      return js_create_function(env, name, len, cb, data, result);
+    }
+
+    args_info.push_back(std::move(arg_info.value()));
+  }
+
+  args_info.emplace_back(CTypeInfo::kCallbackOptionsType);
+
+  auto callback = new js_typed_callback_t(
+    env,
+    cb,
+    data,
+    std::move(return_info.value()),
+    std::move(args_info),
+    address,
+    integer_representation.value_or(CFunctionInfo::Int64Representation::kNumber)
+  );
 
   auto function = env->try_catch<Function>(
     [&] {
@@ -4169,7 +4467,7 @@ js_create_function_with_ffi(js_env_t *env, const char *name, size_t len, js_func
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, len));
+  if (name) local->SetName(js_to_string_utf8(env, name, len, true));
 
   *result = js_from_local(local);
 
@@ -4240,7 +4538,7 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
   auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), js_to_local(code)).Check();
+    error->Set(context, js_to_string_utf8(env, "code", true), js_to_local(code)).Check();
   }
 
   *result = js_from_local(error);
@@ -4356,35 +4654,26 @@ js_get_promise_result(js_env_t *env, js_value_t *promise, js_value_t **result) {
   return 0;
 }
 
-namespace {
-
-static void
-js_finalize_unsafe_arraybuffer(void *data, size_t len, void *deleter_data) {
-  js_heap_t::local()->free(data);
-}
-
-static void
-js_finalize_external_arraybuffer(void *data, size_t len, void *deleter_data) {
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
-
-  if (finalizer) {
-    finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
-
-    delete finalizer;
-  }
-}
-
-} // namespace
-
 extern "C" int
 js_create_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
-  auto arraybuffer = ArrayBuffer::New(env->isolate, len);
+  int err;
+
+  auto local = ArrayBuffer::MaybeNew(env->isolate, len);
+
+  if (local.IsEmpty()) {
+    err = js_throw_range_error(env, NULL, "Array buffer allocation failed");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto arraybuffer = local.ToLocalChecked();
 
   if (data) *data = arraybuffer->Data();
 
-  if (result) *result = js_from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -4399,7 +4688,7 @@ js_create_arraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_s
 
   if (len) *len = arraybuffer->ByteLength();
 
-  if (result) *result = js_from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
@@ -4408,21 +4697,40 @@ extern "C" int
 js_create_unsafe_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
-  auto store = ArrayBuffer::NewBackingStore(
-    js_heap_t::local()->alloc_unsafe(len),
-    len,
-    js_finalize_unsafe_arraybuffer,
-    nullptr
-  );
+  int err;
 
-  auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
+  auto local = ArrayBuffer::MaybeNew(env->isolate, len, BackingStoreInitializationMode::kUninitialized);
+
+  if (local.IsEmpty()) {
+    err = js_throw_range_error(env, NULL, "Array buffer allocation failed");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto arraybuffer = local.ToLocalChecked();
 
   if (data) *data = arraybuffer->Data();
 
-  if (result) *result = js_from_local(arraybuffer);
+  *result = js_from_local(arraybuffer);
 
   return 0;
 }
+
+namespace {
+
+static void
+js_finalize_external_arraybuffer(void *data, size_t len, void *deleter_data) {
+  if (deleter_data == nullptr) return;
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+
+  finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
+
+  delete finalizer;
+}
+
+} // namespace
 
 extern "C" int
 js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
@@ -4480,7 +4788,7 @@ js_create_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t *
 
   if (data) *data = sharedarraybuffer->Data();
 
-  if (result) *result = js_from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -4495,7 +4803,7 @@ js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_bac
 
   if (len) *len = sharedarraybuffer->ByteLength();
 
-  if (result) *result = js_from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -4504,18 +4812,11 @@ extern "C" int
 js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
-  auto store = SharedArrayBuffer::NewBackingStore(
-    js_heap_t::local()->alloc_unsafe(len),
-    len,
-    js_finalize_unsafe_arraybuffer,
-    nullptr
-  );
-
-  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, len, BackingStoreInitializationMode::kUninitialized);
 
   if (data) *data = sharedarraybuffer->Data();
 
-  if (result) *result = js_from_local(sharedarraybuffer);
+  *result = js_from_local(sharedarraybuffer);
 
   return 0;
 }
@@ -4536,13 +4837,6 @@ js_release_arraybuffer_backing_store(js_env_t *env, js_arraybuffer_backing_store
   // Allow continuing even with a pending exception
 
   delete backing_store;
-
-  return 0;
-}
-
-extern "C" int
-js_set_arraybuffer_zero_fill_enabled(bool enabled) {
-  js_heap_t::local()->zero_fill = enabled;
 
   return 0;
 }
@@ -4603,7 +4897,7 @@ namespace {
 
 template <typename T>
 static inline Local<DataView>
-js_create_dataview(T arraybuffer, size_t offset, size_t len) {
+js_create_dataview(Local<T> arraybuffer, size_t offset, size_t len) {
   return DataView::New(arraybuffer, offset, len);
 }
 
@@ -5596,13 +5890,11 @@ js_get_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto local = js_to_local<Object>(object);
 
-  auto key = String::NewFromUtf8(env->isolate, name);
-
-  assert(!key.IsEmpty());
+  auto key = js_to_string_utf8(env, name, true);
 
   auto value = env->call_into_javascript<Value>(
     [&] {
-      return local->Get(context, key.ToLocalChecked());
+      return local->Get(context, key);
     }
   );
 
@@ -5621,13 +5913,11 @@ js_has_named_property(js_env_t *env, js_value_t *object, const char *name, bool 
 
   auto local = js_to_local<Object>(object);
 
-  auto key = String::NewFromUtf8(env->isolate, name);
-
-  assert(!key.IsEmpty());
+  auto key = js_to_string_utf8(env, name, true);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Has(context, key.ToLocalChecked());
+      return local->Has(context, key);
     }
   );
 
@@ -5646,13 +5936,11 @@ js_set_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto local = js_to_local<Object>(object);
 
-  auto key = String::NewFromUtf8(env->isolate, name);
-
-  assert(!key.IsEmpty());
+  auto key = js_to_string_utf8(env, name, true);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, key.ToLocalChecked(), js_to_local(value));
+      return local->Set(context, key, js_to_local(value));
     }
   );
 
@@ -5669,13 +5957,11 @@ js_delete_named_property(js_env_t *env, js_value_t *object, const char *name, bo
 
   auto local = js_to_local<Object>(object);
 
-  auto key = String::NewFromUtf8(env->isolate, name);
-
-  assert(!key.IsEmpty());
+  auto key = js_to_string_utf8(env, name, true);
 
   auto value = env->call_into_javascript<bool>(
     [&] {
-      return local->Delete(context, key.ToLocalChecked());
+      return local->Delete(context, key);
     }
   );
 
@@ -5769,6 +6055,110 @@ js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *resul
 }
 
 extern "C" int
+js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **data, size_t *len, js_string_view_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto view = new js_string_view_t(env->isolate, js_to_local<String>(string));
+
+  if (encoding) *encoding = view->encoding();
+
+  if (data) *data = view->data();
+
+  if (len) *len = view->length();
+
+  *result = view;
+
+  return 0;
+}
+
+extern "C" int
+js_release_string_view(js_env_t *env, js_string_view_t *view) {
+  // Allow continuing even with a pending exception
+
+  delete view;
+
+  return 0;
+}
+
+extern "C" int
+js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_typedarray_view_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto local = js_to_local<TypedArray>(typedarray);
+
+  auto view = new js_typedarray_view_t(local);
+
+  if (type) {
+    if (local->IsInt8Array()) {
+      *type = js_int8array;
+    } else if (local->IsUint8Array()) {
+      *type = js_uint8array;
+    } else if (local->IsUint8ClampedArray()) {
+      *type = js_uint8clampedarray;
+    } else if (local->IsInt16Array()) {
+      *type = js_int16array;
+    } else if (local->IsUint16Array()) {
+      *type = js_uint16array;
+    } else if (local->IsInt32Array()) {
+      *type = js_int32array;
+    } else if (local->IsUint32Array()) {
+      *type = js_uint32array;
+    } else if (local->IsFloat32Array()) {
+      *type = js_float32array;
+    } else if (local->IsFloat64Array()) {
+      *type = js_float64array;
+    } else if (local->IsBigInt64Array()) {
+      *type = js_bigint64array;
+    } else if (local->IsBigUint64Array()) {
+      *type = js_biguint64array;
+    }
+  }
+
+  if (data) *data = view->data();
+
+  if (len) *len = view->length();
+
+  *result = view;
+
+  return 0;
+}
+
+extern "C" int
+js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view) {
+  // Allow continuing even with a pending exception
+
+  delete view;
+
+  return 0;
+}
+
+extern "C" int
+js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_dataview_view_t **result) {
+  // Allow continuing even with a pending exception
+
+  auto local = js_to_local<DataView>(dataview);
+
+  auto view = new js_dataview_view_t(local);
+
+  if (data) *data = view->data();
+
+  if (len) *len = view->length();
+
+  *result = view;
+
+  return 0;
+}
+
+extern "C" int
+js_release_dataview_view(js_env_t *env, js_dataview_view_t *view) {
+  // Allow continuing even with a pending exception
+
+  delete view;
+
+  return 0;
+}
+
+extern "C" int
 js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data) {
   // Allow continuing even with a pending exception
 
@@ -5792,16 +6182,27 @@ js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc
     }
   }
 
-  if (argc) {
-    *argc = v8_info.Length();
-  }
+  if (argc) *argc = v8_info.Length();
 
-  if (receiver) {
-    *receiver = js_from_local(v8_info.This());
-  }
+  if (receiver) *receiver = js_from_local(v8_info.This());
 
   if (data) {
     *data = reinterpret_cast<js_callback_t *>(v8_info.Data().As<External>()->Value())->data;
+  }
+
+  return 0;
+}
+
+extern "C" int
+js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env, void **data) {
+  // Allow continuing even with a pending exception
+
+  auto v8_info = reinterpret_cast<const FastApiCallbackOptions *>(info);
+
+  if (env) *env = js_env_t::from(v8_info->isolate);
+
+  if (data) {
+    *data = reinterpret_cast<js_typed_callback_t *>(v8_info->data.As<External>()->Value())->data;
   }
 
   return 0;
@@ -5824,13 +6225,9 @@ js_get_arraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **data, siz
 
   auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
-  if (data) {
-    *data = local->Data();
-  }
+  if (data) *data = local->Data();
 
-  if (len) {
-    *len = local->ByteLength();
-  }
+  if (len) *len = local->ByteLength();
 
   return 0;
 }
@@ -5841,13 +6238,9 @@ js_get_sharedarraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **dat
 
   auto local = js_to_local<SharedArrayBuffer>(arraybuffer);
 
-  if (data) {
-    *data = local->Data();
-  }
+  if (data) *data = local->Data();
 
-  if (len) {
-    *len = local->ByteLength();
-  }
+  if (len) *len = local->ByteLength();
 
   return 0;
 }
@@ -5884,27 +6277,17 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
     }
   }
 
-  if (len) {
-    *len = local->Length();
-  }
+  if (len) *len = local->Length();
 
   Local<ArrayBuffer> buffer;
 
-  if (data || arraybuffer) {
-    buffer = local->Buffer();
-  }
+  if (data || arraybuffer) buffer = local->Buffer();
 
-  if (data) {
-    *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
-  }
+  if (data) *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
 
-  if (arraybuffer) {
-    *arraybuffer = js_from_local(buffer);
-  }
+  if (arraybuffer) *arraybuffer = js_from_local(buffer);
 
-  if (offset) {
-    *offset = local->ByteOffset();
-  }
+  if (offset) *offset = local->ByteOffset();
 
   return 0;
 }
@@ -5915,27 +6298,17 @@ js_get_dataview_info(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 
   auto local = js_to_local<DataView>(dataview);
 
-  if (len) {
-    *len = local->ByteLength();
-  }
+  if (len) *len = local->ByteLength();
 
   Local<ArrayBuffer> buffer;
 
-  if (data || arraybuffer) {
-    buffer = local->Buffer();
-  }
+  if (data || arraybuffer) buffer = local->Buffer();
 
-  if (data) {
-    *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
-  }
+  if (data) *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
 
-  if (arraybuffer) {
-    *arraybuffer = js_from_local(buffer);
-  }
+  if (arraybuffer) *arraybuffer = js_from_local(buffer);
 
-  if (offset) {
-    *offset = local->ByteOffset();
-  }
+  if (offset) *offset = local->ByteOffset();
 
   return 0;
 }
@@ -6228,18 +6601,10 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
   auto context = env->current_context();
 
-  auto local = String::NewFromUtf8(env->isolate, message);
-
-  assert(!local.IsEmpty());
-
-  auto error = Error(local.ToLocalChecked(), {}).As<Object>();
+  auto error = Error(js_to_string_utf8(env, message, true), {}).As<Object>();
 
   if (code) {
-    auto local = String::NewFromUtf8(env->isolate, code);
-
-    assert(!local.IsEmpty());
-
-    error->Set(context, String::NewFromUtf8Literal(env->isolate, "code"), local.ToLocalChecked()).Check();
+    error->Set(context, js_to_string_utf8(env, "code", true), js_to_string_utf8(env, code, true)).Check();
   }
 
   return js_throw(env, js_from_local(error));
@@ -6505,99 +6870,6 @@ js_attach_context_to_inspector(js_env_t *env, js_inspector_t *inspector, js_cont
 extern "C" int
 js_detach_context_from_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context) {
   inspector->detach(context->context.Get(env->isolate));
-
-  return 0;
-}
-
-extern "C" int
-js_ffi_create_type_info(js_ffi_type_t type, js_ffi_type_info_t **result) {
-  CTypeInfo::Type v8_type;
-  CTypeInfo::SequenceType v8_sequence_type = CTypeInfo::SequenceType::kScalar;
-  CTypeInfo::Flags v8_flags = CTypeInfo::Flags::kNone;
-
-  switch (type) {
-  case js_ffi_receiver:
-    v8_type = CTypeInfo::Type::kV8Value;
-    break;
-  case js_ffi_void:
-    v8_type = CTypeInfo::Type::kVoid;
-    break;
-  case js_ffi_bool:
-    v8_type = CTypeInfo::Type::kBool;
-    break;
-  case js_ffi_uint32:
-    v8_type = CTypeInfo::Type::kUint32;
-    break;
-  case js_ffi_uint64:
-    v8_type = CTypeInfo::Type::kUint64;
-    break;
-  case js_ffi_int32:
-    v8_type = CTypeInfo::Type::kInt32;
-    break;
-  case js_ffi_int64:
-    v8_type = CTypeInfo::Type::kInt64;
-    break;
-  case js_ffi_float32:
-    v8_type = CTypeInfo::Type::kFloat32;
-    break;
-  case js_ffi_float64:
-    v8_type = CTypeInfo::Type::kFloat64;
-    break;
-  case js_ffi_pointer:
-    v8_type = CTypeInfo::Type::kPointer;
-    break;
-  case js_ffi_string:
-    v8_type = CTypeInfo::Type::kSeqOneByteString;
-    break;
-  case js_ffi_arraybuffer:
-    v8_type = CTypeInfo::Type::kUint8;
-    v8_sequence_type = CTypeInfo::SequenceType::kIsArrayBuffer;
-    break;
-  case js_ffi_uint8array:
-    v8_type = CTypeInfo::Type::kUint8;
-    v8_sequence_type = CTypeInfo::SequenceType::kIsTypedArray;
-    break;
-  default:
-    return -1;
-  }
-
-  auto v8_type_info = CTypeInfo(v8_type, v8_sequence_type, v8_flags);
-
-  *result = new js_ffi_type_info_t(v8_type_info);
-
-  return 0;
-}
-
-extern "C" int
-js_ffi_create_function_info(const js_ffi_type_info_t *return_info, js_ffi_type_info_t *const arg_info[], unsigned int arg_len, js_ffi_function_info_t **result) {
-  auto v8_return_info = return_info->type_info;
-
-  delete return_info;
-
-  auto v8_arg_info = std::vector<CTypeInfo>();
-
-  v8_arg_info.reserve(arg_len);
-
-  for (unsigned int i = 0; i < arg_len; i++) {
-    v8_arg_info.push_back(arg_info[i]->type_info);
-
-    delete arg_info[i];
-  }
-
-  *result = new js_ffi_function_info_t(v8_return_info, v8_arg_info);
-
-  return 0;
-}
-
-extern "C" int
-js_ffi_create_function(const void *function, const js_ffi_function_info_t *type_info, js_ffi_function_t **result) {
-  auto v8_return_info = type_info->return_info;
-
-  auto v8_arg_info = type_info->arg_info;
-
-  delete type_info;
-
-  *result = new js_ffi_function_t(v8_return_info, v8_arg_info, function);
 
   return 0;
 }

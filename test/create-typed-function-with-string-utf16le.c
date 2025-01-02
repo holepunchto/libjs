@@ -1,29 +1,47 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
-#include "../include/js/ffi.h"
 
-static int fast_calls = 0;
-static int slow_calls = 0;
+static int typed_calls = 0;
+static int untyped_calls = 0;
 
 uint32_t
-on_fast_call(js_ffi_receiver_t *receiver, js_ffi_string_t *string) {
-  fast_calls++;
+on_typed_call(js_value_t *receiver, js_value_t *string, js_typed_callback_info_t *info) {
+  int e;
 
-  assert(string->len == 3);
-  assert(strcmp(string->data, "foo") == 0);
+  typed_calls++;
+
+  js_env_t *env;
+  e = js_get_typed_callback_info(info, &env, NULL);
+  assert(e == 0);
+
+  js_string_encoding_t encoding;
+  const utf16_t *data;
+  size_t len;
+
+  js_string_view_t *view;
+  e = js_get_string_view(env, string, &encoding, (const void **) &data, &len, &view);
+  assert(e == 0);
+
+  assert(encoding == js_utf16le);
+  assert(len == 2);
+  assert(data[0] == 0xd83e);
+  assert(data[1] == 0xddf8);
+  assert(data[2] == 0x0);
+
+  e = js_release_string_view(env, view);
+  assert(e == 0);
 
   return 42;
 }
 
 js_value_t *
-on_slow_call(js_env_t *env, js_callback_info_t *info) {
-  slow_calls++;
+on_untyped_call(js_env_t *env, js_callback_info_t *info) {
+  untyped_calls++;
 
   js_value_t *result;
   int e = js_create_uint32(env, 42, &result);
@@ -35,26 +53,6 @@ on_slow_call(js_env_t *env, js_callback_info_t *info) {
 int
 main() {
   int e;
-
-  js_ffi_type_info_t *return_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, &return_info);
-  assert(e == 0);
-
-  js_ffi_type_info_t *arg_info[2];
-
-  e = js_ffi_create_type_info(js_ffi_receiver, &arg_info[0]);
-  assert(e == 0);
-
-  e = js_ffi_create_type_info(js_ffi_string, &arg_info[1]);
-  assert(e == 0);
-
-  js_ffi_function_info_t *function_info;
-  e = js_ffi_create_function_info(return_info, arg_info, 2, &function_info);
-  assert(e == 0);
-
-  js_ffi_function_t *ffi;
-  e = js_ffi_create_function(on_fast_call, function_info, &ffi);
-  assert(e == 0);
 
   uv_loop_t *loop = uv_default_loop();
 
@@ -74,8 +72,17 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
+  js_callback_signature_t signature = {
+    .result = js_uint32,
+    .args_len = 2,
+    .args = (int[]) {
+      js_object,
+      js_string,
+    },
+  };
+
   js_value_t *fn;
-  e = js_create_function_with_ffi(env, "hello", -1, on_slow_call, NULL, ffi, &fn);
+  e = js_create_typed_function(env, "hello", -1, on_untyped_call, &signature, on_typed_call, NULL, &fn);
   assert(e == 0);
 
   js_value_t *global;
@@ -86,15 +93,15 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "let i = 0, j; while (i++ < 200000) j = hello('foo')", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "let i = 0, j; while (i++ < 200000) j = hello('🧸')", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  assert(slow_calls < 200000);
-  assert(fast_calls > 0);
+  assert(untyped_calls < 200000);
+  assert(typed_calls > 0);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

@@ -3,7 +3,7 @@
 
 #include "../include/js.h"
 
-bool finalize_called = false;
+static bool finalize_called = false;
 
 static void
 on_finalize(js_env_t *env, void *data, void *finalize_hint) {

@@ -4,24 +4,33 @@
 #include <uv.h>
 
 #include "../include/js.h"
-#include "../include/js/ffi.h"
 
-static int fast_calls = 0;
-static int slow_calls = 0;
+static int typed_calls = 0;
+static int untyped_calls = 0;
 
 uint32_t
-on_fast_call(uint32_t arg) {
-  fast_calls++;
+on_typed_call(js_value_t *receiver, js_typed_callback_info_t *info) {
+  int e;
+
+  typed_calls++;
+
+  void *data;
+  e = js_get_typed_callback_info(info, NULL, &data);
+  assert(e == 0);
+
+  assert((uintptr_t) data == 42);
 
   return 42;
 }
 
 js_value_t *
-on_slow_call(js_env_t *env, js_callback_info_t *info) {
-  slow_calls++;
+on_untyped_call(js_env_t *env, js_callback_info_t *info) {
+  int e;
+
+  untyped_calls++;
 
   js_value_t *result;
-  int e = js_create_uint32(env, 42, &result);
+  e = js_create_uint32(env, 42, &result);
   assert(e == 0);
 
   return result;
@@ -30,22 +39,6 @@ on_slow_call(js_env_t *env, js_callback_info_t *info) {
 int
 main() {
   int e;
-
-  js_ffi_type_info_t *return_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, &return_info);
-  assert(e == 0);
-
-  js_ffi_type_info_t *arg_info;
-  e = js_ffi_create_type_info(js_ffi_uint32, &arg_info);
-  assert(e == 0);
-
-  js_ffi_function_info_t *function_info;
-  e = js_ffi_create_function_info(return_info, &arg_info, 1, &function_info);
-  assert(e == 0);
-
-  js_ffi_function_t *ffi;
-  e = js_ffi_create_function(on_fast_call, function_info, &ffi);
-  assert(e == 0);
 
   uv_loop_t *loop = uv_default_loop();
 
@@ -65,8 +58,16 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
+  js_callback_signature_t signature = {
+    .result = js_uint32,
+    .args_len = 1,
+    .args = (int[]) {
+      js_object,
+    },
+  };
+
   js_value_t *fn;
-  e = js_create_function_with_ffi(env, "hello", -1, on_slow_call, NULL, ffi, &fn);
+  e = js_create_typed_function(env, "hello", -1, on_untyped_call, &signature, on_typed_call, (void *) 42, &fn);
   assert(e == 0);
 
   js_value_t *global;
@@ -77,15 +78,15 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "let i = 0, j; while (i++ < 200000) j = hello(42)", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "let i = 0, j; while (i++ < 200000) j = hello()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  assert(slow_calls < 200000);
-  assert(fast_calls > 0);
+  assert(untyped_calls < 200000);
+  assert(typed_calls > 0);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
