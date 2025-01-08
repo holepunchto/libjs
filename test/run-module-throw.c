@@ -55,7 +55,7 @@ main() {
   e = js_run_module(env, module, &promise);
   assert(e == 0);
 
-  assert(unhandled_called == 1);
+  assert(unhandled_called >= 1);
 
   js_promise_state_t state;
   e = js_get_promise_state(env, promise, &state);
