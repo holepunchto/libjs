@@ -805,6 +805,9 @@ js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_bac
 int
 js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
+int
+js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
+
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */

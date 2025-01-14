@@ -4821,6 +4821,45 @@ js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_va
   return 0;
 }
 
+namespace {
+
+static void
+js_finalize_external_sharedarraybuffer(void *data, size_t len, void *deleter_data) {
+  if (deleter_data == nullptr) return;
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+
+  finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
+
+  delete finalizer;
+}
+
+} // namespace
+
+extern "C" int
+js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_finalizer_t *finalizer = nullptr;
+
+  if (finalize_cb) {
+    finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+  }
+
+  auto store = ArrayBuffer::NewBackingStore(
+    data,
+    len,
+    js_finalize_external_arraybuffer,
+    finalizer
+  );
+
+  auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
+
+  *result = js_from_local(sharedarraybuffer);
+
+  return 0;
+}
+
 extern "C" int
 js_get_sharedarraybuffer_backing_store(js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result) {
   // Allow continuing even with a pending exception
