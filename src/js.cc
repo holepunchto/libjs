@@ -4849,7 +4849,7 @@ js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_f
   auto store = ArrayBuffer::NewBackingStore(
     data,
     len,
-    js_finalize_external_arraybuffer,
+    js_finalize_external_sharedarraybuffer,
     finalizer
   );
 
