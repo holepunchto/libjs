@@ -22,7 +22,7 @@ if(NOT TARGET v8)
   )
 endif()
 
-fetch_package("github:libuv/libuv@1.48.0")
+fetch_package("github:libuv/libuv@1.50.0")
 fetch_package("github:holepunchto/libutf")
 
 if(TARGET js)
