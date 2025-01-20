@@ -359,7 +359,7 @@ struct js_task_runner_s : public TaskRunner {
 
     auto task = pop_task();
 
-    if (task) return std::move(task);
+    if (task) return task;
 
     while (!closed && !can_pop_task()) {
       available.wait(guard);
@@ -2661,10 +2661,10 @@ struct js_threadsafe_function_s {
         queue(),
         state(js_threadsafe_function_idle),
         thread_count(thread_count),
-        cb(cb == nullptr ? on_call : cb),
         context(context),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {
+        finalize_hint(finalize_hint),
+        cb(cb == nullptr ? on_call : cb) {
     int err;
 
     err = uv_async_init(env->loop, &async, on_async);
