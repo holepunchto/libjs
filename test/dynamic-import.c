@@ -4,6 +4,8 @@
 
 #include "../include/js.h"
 
+static js_module_t *module;
+
 static void
 on_module_evaluate(js_env_t *env, js_module_t *module, void *data) {
   int e;
@@ -28,7 +30,6 @@ on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value
   e = js_create_string_utf8(env, (utf8_t *) "foo", -1, &export_names[0]);
   assert(e == 0);
 
-  js_module_t *module;
   e = js_create_synthetic_module(env, "synthetic", -1, export_names, 1, on_module_evaluate, NULL, &module);
   assert(e == 0);
 
@@ -65,6 +66,9 @@ main() {
 
   js_value_t *result;
   e = js_run_script(env, "test.js", -1, 0, script, &result);
+  assert(e == 0);
+
+  e = js_delete_module(env, module);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
