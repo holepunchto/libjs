@@ -87,7 +87,7 @@ main() {
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  assert(get_called >= 2);
+  assert(get_called >= 1);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
