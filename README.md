@@ -26,7 +26,7 @@ For more information about the GN to CMake bridge, see <https://github.com/holep
 
 ## Alternatives
 
-The API is designed in a way that minimises its coupling to V8, making it possible to implement ABI compatible alternatives for cases where V8 might not be ideal. We maintain two such alternatives that might be more appropriate for your use case:
+The API is designed in a way that minimises its coupling to V8, making it possible to implement ABI compatible alternatives for cases where V8 might not be ideal. We maintain several such alternatives that might be more appropriate for your use case:
 
 - <https://github.com/holepunchto/libjsc>  
   Based on the builtin JavaScriptCore framework on Darwin.
