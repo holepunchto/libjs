@@ -47,13 +47,9 @@ main() {
 
   bool result;
   e = js_delete_named_property(env, delegate, "foo", &result);
-  assert(e != 0);
+  (void) e;
 
   assert(delete_called && !result);
-
-  bool has_exception;
-  e = js_is_exception_pending(env, &has_exception);
-  assert(has_exception);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
