@@ -29,10 +29,13 @@ For more information about the GN to CMake bridge, see <https://github.com/holep
 The API is designed in a way that minimises its coupling to V8, making it possible to implement ABI compatible alternatives for cases where V8 might not be ideal. We maintain two such alternatives that might be more appropriate for your use case:
 
 - <https://github.com/holepunchto/libjsc>  
-  Based on the builtin JavaScriptCore framework on Darwin. It implements most of the functionality available in the V8 version and is mostly suitable for iOS and iPadOS.
+  Based on the builtin JavaScriptCore framework on Darwin.
 
 - <https://github.com/holepunchto/libqjs>  
-  Based on QuickJS. It implements all of the functionality also available in the V8 version, but in a fraction of the size. The performance and memory footprint is comparable to [V8 Lite](https://v8.dev/blog/v8-lite).
+  Based on QuickJS.
+
+- <https://github.com/holepunchto/libjerry>  
+  Based on JerryScript.
 
 ## License
 
