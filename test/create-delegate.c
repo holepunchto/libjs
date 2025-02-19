@@ -208,7 +208,7 @@ main() {
     assert(value == true);
   }
 
-  e = js_create_string_utf8(env, (utf8_t *) "const keys = []; for (const key in delegate) keys.push(key); keys", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "Object.getOwnPropertyNames(delegate)", -1, &script);
   assert(e == 0);
 
   e = js_run_script(env, NULL, 0, 0, script, &result);
