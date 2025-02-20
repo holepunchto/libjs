@@ -34,14 +34,14 @@ main() {
   assert(e == 0);
 
   js_value_t *source;
-  e = js_create_string_utf8(env, (utf8_t *) "export default globalThis", -1, &source);
+  e = js_create_string_utf8(env, (utf8_t *) "export const global = globalThis", -1, &source);
+  assert(e == 0);
+
+  e = js_enter_context(env, context);
   assert(e == 0);
 
   js_module_t *module;
   e = js_create_module(env, "test.js", -1, 0, source, NULL, NULL, &module);
-  assert(e == 0);
-
-  e = js_enter_context(env, context);
   assert(e == 0);
 
   e = js_instantiate_module(env, module, on_module_resolve, NULL);
@@ -62,7 +62,7 @@ main() {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_get_named_property(env, namespace, "default", &result);
+  e = js_get_named_property(env, namespace, "global", &result);
   assert(e == 0);
 
   {
