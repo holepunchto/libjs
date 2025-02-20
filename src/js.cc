@@ -1160,7 +1160,7 @@ private:
   }
 
   inline void
-  run_macrotasks() {
+  run_tasks() {
     background->move_expired_tasks();
 
     while (auto task = background->pop_task()) {
@@ -1185,7 +1185,7 @@ private:
   on_prepare(uv_prepare_t *handle) {
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
-    platform->run_macrotasks();
+    platform->run_tasks();
 
     platform->check_liveness();
   }
