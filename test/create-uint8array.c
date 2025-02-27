@@ -29,7 +29,7 @@ main() {
   assert(e == 0);
 
   js_value_t *typedarray;
-  e = js_create_typedarray(env, js_uint8_array, 10, arraybuffer, 0, &typedarray);
+  e = js_create_typedarray(env, js_uint8array, 10, arraybuffer, 0, &typedarray);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);

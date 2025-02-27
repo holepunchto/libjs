@@ -38,7 +38,7 @@ main() {
   e = js_get_typedarray_info(env, typedarray, &type, (void **) &data, &len, &arraybuffer, &offset);
   assert(e == 0);
 
-  assert(type == js_uint8_array);
+  assert(type == js_uint8array);
   assert(len == 4);
   assert(offset == 2);
 

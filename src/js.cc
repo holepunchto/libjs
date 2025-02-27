@@ -905,18 +905,6 @@ struct js_heap_s {
     return ::malloc(size);
   }
 
-  inline void *
-  realloc(void *ptr, size_t old_size, size_t new_size) {
-    ptr = realloc_unsafe(ptr, new_size);
-    if (ptr && new_size > old_size) memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
-    return ptr;
-  }
-
-  inline void *
-  realloc_unsafe(void *ptr, size_t size) {
-    return ::realloc(ptr, size);
-  }
-
   inline void
   free(void *ptr) {
     ::free(ptr);
@@ -947,11 +935,6 @@ private: // V8 embedder API
   void
   Free(void *data, size_t length) override {
     heap.free(data);
-  }
-
-  void *
-  Reallocate(void *data, size_t old_length, size_t new_length) override {
-    return heap.realloc(data, old_length, new_length);
   }
 };
 
@@ -4386,6 +4369,8 @@ js_to_native_type(int type, std::optional<CFunctionInfo::Int64Representation> &i
     return CTypeInfo(Type::kInt64);
   case js_uint64:
     return CTypeInfo(Type::kUint64);
+  case js_float16:
+    goto unsupported;
   case js_float32:
     return CTypeInfo(Type::kFloat32);
   case js_float64:
@@ -4900,6 +4885,8 @@ js_create_typedarray(js_typedarray_type_t type, T arraybuffer, size_t offset, si
     return Int32Array::New(arraybuffer, offset, len);
   case js_uint32array:
     return Uint32Array::New(arraybuffer, offset, len);
+  case js_float16array:
+    return Float16Array::New(arraybuffer, offset, len);
   case js_float32array:
     return Float32Array::New(arraybuffer, offset, len);
   case js_float64array:
@@ -5473,6 +5460,15 @@ js_is_uint32array(js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   *result = js_to_local(value)->IsUint32Array();
+
+  return 0;
+}
+
+extern "C" int
+js_is_float16array(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_to_local(value)->IsFloat16Array();
 
   return 0;
 }
@@ -6142,6 +6138,8 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
       *type = js_int32array;
     } else if (local->IsUint32Array()) {
       *type = js_uint32array;
+    } else if (local->IsFloat16Array()) {
+      *type = js_float16array;
     } else if (local->IsFloat32Array()) {
       *type = js_float32array;
     } else if (local->IsFloat64Array()) {
@@ -6305,6 +6303,8 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
       *type = js_int32array;
     } else if (local->IsUint32Array()) {
       *type = js_uint32array;
+    } else if (local->IsFloat16Array()) {
+      *type = js_float32array;
     } else if (local->IsFloat32Array()) {
       *type = js_float32array;
     } else if (local->IsFloat64Array()) {

@@ -92,24 +92,11 @@ typedef enum {
   js_uint16array = 4,
   js_int32array = 5,
   js_uint32array = 6,
+  js_float16array = 11,
   js_float32array = 7,
   js_float64array = 8,
   js_bigint64array = 9,
   js_biguint64array = 10,
-
-  // Legacy aliases
-
-  /** @deprecated */ js_int8_array = js_int8array,
-  /** @deprecated */ js_uint8_array = js_uint8array,
-  /** @deprecated */ js_uint8_clamped_array = js_uint8clampedarray,
-  /** @deprecated */ js_int16_array = js_int16array,
-  /** @deprecated */ js_uint16_array = js_uint16array,
-  /** @deprecated */ js_int32_array = js_int32array,
-  /** @deprecated */ js_uint32_array = js_uint32array,
-  /** @deprecated */ js_float32_array = js_float32array,
-  /** @deprecated */ js_float64_array = js_float64array,
-  /** @deprecated */ js_bigint64_array = js_bigint64array,
-  /** @deprecated */ js_biguint64_array = js_biguint64array,
 } js_typedarray_type_t;
 
 enum {
@@ -123,6 +110,7 @@ enum {
   js_uint32 = 6 << 8 | js_number,
   js_int64 = 7 << 8 | js_number,
   js_uint64 = 8 << 8 | js_number,
+  js_float16 = 13 << 8 | js_number,
   js_float32 = 9 << 8 | js_number,
   js_float64 = 10 << 8 | js_number,
   js_bigint64 = 11 << 8 | js_number,
@@ -1101,6 +1089,12 @@ js_is_int32array(js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_uint32array(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_float16array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
