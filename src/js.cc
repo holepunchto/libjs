@@ -74,9 +74,20 @@ js_to_local(js_value_t *value) {
   return *reinterpret_cast<Local<Value> *>(&value);
 }
 
+static inline Local<Value>
+js_to_local(const js_value_t *value) {
+  return *reinterpret_cast<Local<Value> *>(&value);
+}
+
 template <typename T>
 static inline Local<T>
 js_to_local(js_value_t *value) {
+  return js_to_local(value).As<T>();
+}
+
+template <typename T>
+static inline Local<T>
+js_to_local(const js_value_t *value) {
   return js_to_local(value).As<T>();
 }
 
@@ -5755,12 +5766,70 @@ js_get_value_date(js_env_t *env, js_value_t *value, double *result) {
 }
 
 extern "C" int
-js_get_array_length(js_env_t *env, js_value_t *value, uint32_t *result) {
+js_get_array_length(js_env_t *env, js_value_t *array, uint32_t *result) {
   // Allow continuing even with a pending exception
 
-  auto local = js_to_local<Array>(value);
+  auto local = js_to_local<Array>(array);
 
   *result = local->Length();
+
+  return 0;
+}
+
+extern "C" int
+js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t **elements, size_t len, size_t offset, uint32_t *result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Array>(array);
+
+  uint32_t written = 0;
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      for (uint32_t i = 0, n = len, j = offset, m = local->Length(); i < n && j < m; i++, j++) {
+        auto value = local->Get(context, j);
+
+        if (value.IsEmpty()) return false;
+
+        elements[i] = js_from_local(value.ToLocalChecked());
+
+        written++;
+      }
+
+      return true;
+    }
+  );
+
+  if (!success) return js_error(env);
+
+  if (result) *result = written;
+
+  return 0;
+}
+
+extern "C" int
+js_set_array_elements(js_env_t *env, js_value_t *array, const js_value_t *elements[], size_t len, size_t offset) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Array>(array);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      for (uint32_t i = 0, n = len, j = offset; i < n; i++, j++) {
+        auto value = local->Set(context, j, js_to_local(elements[i]));
+
+        if (value.IsNothing()) return false;
+      }
+
+      return true;
+    }
+  );
+
+  if (!success) return js_error(env);
 
   return 0;
 }
