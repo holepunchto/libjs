@@ -1238,7 +1238,13 @@ js_get_value_date(js_env_t *env, js_value_t *value, double *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_get_array_length(js_env_t *env, js_value_t *value, uint32_t *result);
+js_get_array_length(js_env_t *env, js_value_t *array, uint32_t *result);
+
+int
+js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t *elements[], size_t len, size_t offset, uint32_t *result);
+
+int
+js_set_array_elements(js_env_t *env, js_value_t *array, const js_value_t *elements[], size_t len, size_t offset);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
