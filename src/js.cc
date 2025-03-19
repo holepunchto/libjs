@@ -1995,59 +1995,6 @@ struct js_deferred_s {
   operator=(const js_deferred_s &) = delete;
 };
 
-struct js_string_view_s {
-  String::ValueView view;
-
-  js_string_view_s(Isolate *isolate, Local<String> string)
-      : view(isolate, string) {}
-
-  js_string_view_s(const js_string_view_s &) = delete;
-
-  js_string_view_s &
-  operator=(const js_string_view_s &) = delete;
-
-  inline auto
-  encoding() {
-    return view.is_one_byte() ? js_latin1 : js_utf16le;
-  }
-
-  inline auto
-  data() {
-    return view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
-                              : reinterpret_cast<const void *>(view.data16());
-  }
-
-  inline auto
-  length() {
-    return view.length();
-  }
-};
-
-struct js_typedarray_view_s {
-  uint8_t storage[64]; // For on-heap buffers
-  MemorySpan<uint8_t> view;
-
-  js_typedarray_view_s(Local<TypedArray> typedarray)
-      : view(storage) {
-    view = typedarray->GetContents(view);
-  }
-
-  js_typedarray_view_s(const js_typedarray_view_s &) = delete;
-
-  js_typedarray_view_s &
-  operator=(const js_typedarray_view_s &) = delete;
-
-  inline auto
-  data() {
-    return view.data();
-  }
-
-  inline auto
-  size() {
-    return view.size();
-  }
-};
-
 struct js_callback_s {
   Persistent<External> external;
   js_env_t *env;
@@ -6148,15 +6095,20 @@ extern "C" int
 js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **data, size_t *len, js_string_view_t **result) {
   // Allow continuing even with a pending exception
 
-  auto view = new js_string_view_t(env->isolate, js_to_local<String>(string));
+  auto view = String::ValueView(env->isolate, js_to_local<String>(string));
 
-  if (encoding) *encoding = view->encoding();
+  if (encoding) {
+    *encoding = view.is_one_byte() ? js_latin1 : js_utf16le;
+  }
 
-  if (data) *data = view->data();
+  if (data) {
+    *data = view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
+                               : reinterpret_cast<const void *>(view.data16());
+  }
 
-  if (len) *len = view->length();
+  if (len) *len = view.length();
 
-  *result = view;
+  *result = nullptr;
 
   return 0;
 }
@@ -6164,8 +6116,6 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
 extern "C" int
 js_release_string_view(js_env_t *env, js_string_view_t *view) {
   // Allow continuing even with a pending exception
-
-  delete view;
 
   return 0;
 }
@@ -6204,23 +6154,25 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
     }
   }
 
-  if (local->ByteLength() <= sizeof(js_typedarray_view_t::storage)) {
-    auto view = new js_typedarray_view_t(local);
+  auto size = local->ByteLength();
 
-    if (data) *data = view->data();
+  MemorySpan<uint8_t> view;
 
-    if (len) *len = view->size();
+  uint8_t *storage = nullptr;
 
-    *result = view;
-  } else {
-    auto contents = local->GetContents(MemorySpan<uint8_t>());
+  if (size <= 64) {
+    storage = new uint8_t[size];
 
-    if (data) *data = contents.data();
-
-    if (len) *len = contents.size();
-
-    *result = nullptr;
+    view = MemorySpan<uint8_t>(storage, size);
   }
+
+  view = local->GetContents(view);
+
+  if (data) *data = view.data();
+
+  if (len) *len = view.size();
+
+  *result = reinterpret_cast<js_typedarray_view_t *>(storage);
 
   return 0;
 }
@@ -6229,7 +6181,9 @@ extern "C" int
 js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view) {
   // Allow continuing even with a pending exception
 
-  if (view) delete view;
+  auto storage = reinterpret_cast<uint8_t *>(view);
+
+  if (storage) delete[] storage;
 
   return 0;
 }
