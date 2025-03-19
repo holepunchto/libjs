@@ -6150,23 +6150,23 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
     }
   }
 
-  auto size = local->ByteLength();
-
-  MemorySpan<uint8_t> view;
+  if (len) *len = local->Length();
 
   uint8_t *storage = nullptr;
 
-  if (size <= 64) {
-    storage = new uint8_t[size];
+  if (data) {
+    MemorySpan<uint8_t> view;
 
-    view = MemorySpan<uint8_t>(storage, size);
+    auto size = local->ByteLength();
+
+    if (size <= 64) {
+      storage = new uint8_t[size];
+
+      view = MemorySpan<uint8_t>(storage, size);
+    }
+
+    *data = local->GetContents(view).data();
   }
-
-  view = local->GetContents(view);
-
-  if (data) *data = view.data();
-
-  if (len) *len = local->Length();
 
   *result = reinterpret_cast<js_typedarray_view_t *>(storage);
 
@@ -6190,11 +6190,9 @@ js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 
   auto local = js_to_local<DataView>(dataview);
 
-  auto contents = local->GetContents(MemorySpan<uint8_t>());
+  if (len) *len = local->ByteLength();
 
-  if (data) *data = contents.data();
-
-  if (len) *len = contents.size();
+  if (data) *data = local->GetContents(MemorySpan<uint8_t>()).data();
 
   *result = nullptr;
 
