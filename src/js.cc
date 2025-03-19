@@ -6166,7 +6166,7 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
 
   if (data) *data = view.data();
 
-  if (len) *len = view.size();
+  if (len) *len = local->Length();
 
   *result = reinterpret_cast<js_typedarray_view_t *>(storage);
 

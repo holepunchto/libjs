@@ -112,6 +112,8 @@ list(APPEND tests
   get-typedarray-info-uint16array
   get-typedarray-info-uint8array
   get-typedarray-info-uint8array-with-offset
+  get-typedarray-view-uint16array
+  get-typedarray-view-uint8array
   get-value-string-utf8
   get-value-string-utf8-length
   get-value-string-utf8-no-null
