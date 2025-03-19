@@ -6097,14 +6097,10 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
 
   auto view = String::ValueView(env->isolate, js_to_local<String>(string));
 
-  if (encoding) {
-    *encoding = view.is_one_byte() ? js_latin1 : js_utf16le;
-  }
+  if (encoding) *encoding = view.is_one_byte() ? js_latin1 : js_utf16le;
 
-  if (data) {
-    *data = view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
-                               : reinterpret_cast<const void *>(view.data16());
-  }
+  if (data) *data = view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
+                                       : reinterpret_cast<const void *>(view.data16());
 
   if (len) *len = view.length();
 
