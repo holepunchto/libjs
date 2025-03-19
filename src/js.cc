@@ -3831,16 +3831,26 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
     } else {
       auto value = js_to_local(property->value);
 
-      auto descriptor = PropertyDescriptor(value, (property->attributes & js_writable) != 0);
+      if ((property->attributes & js_writable) &&
+          (property->attributes & js_enumerable) &&
+          (property->attributes & js_configurable)) {
+        success = env->try_catch<bool>(
+          [&] {
+            return local->CreateDataProperty(context, name, value);
+          }
+        );
+      } else {
+        auto descriptor = PropertyDescriptor(value, (property->attributes & js_writable) != 0);
 
-      descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
-      descriptor.set_configurable((property->attributes & js_configurable) != 0);
+        descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
+        descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
-        [&] {
-          return local->DefineProperty(context, name, descriptor);
-        }
-      );
+        success = env->try_catch<bool>(
+          [&] {
+            return local->DefineProperty(context, name, descriptor);
+          }
+        );
+      }
     }
 
     if (success.IsNothing()) return js_error(env);
