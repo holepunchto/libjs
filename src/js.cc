@@ -2043,31 +2043,7 @@ struct js_typedarray_view_s {
   }
 
   inline auto
-  length() {
-    return view.size();
-  }
-};
-
-struct js_dataview_view_s {
-  MemorySpan<uint8_t> view;
-
-  js_dataview_view_s(Local<DataView> dataview)
-      : view() {
-    view = dataview->GetContents(view);
-  }
-
-  js_dataview_view_s(const js_dataview_view_s &) = delete;
-
-  js_dataview_view_s &
-  operator=(const js_dataview_view_s &) = delete;
-
-  inline auto
-  data() {
-    return view.data();
-  }
-
-  inline auto
-  length() {
+  size() {
     return view.size();
   }
 };
@@ -6200,8 +6176,6 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
 
   auto local = js_to_local<TypedArray>(typedarray);
 
-  auto view = new js_typedarray_view_t(local);
-
   if (type) {
     if (local->IsInt8Array()) {
       *type = js_int8array;
@@ -6230,11 +6204,23 @@ js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type
     }
   }
 
-  if (data) *data = view->data();
+  if (local->ByteLength() <= sizeof(js_typedarray_view_t::storage)) {
+    auto view = new js_typedarray_view_t(local);
 
-  if (len) *len = view->length();
+    if (data) *data = view->data();
 
-  *result = view;
+    if (len) *len = view->size();
+
+    *result = view;
+  } else {
+    auto contents = local->GetContents(MemorySpan<uint8_t>());
+
+    if (data) *data = contents.data();
+
+    if (len) *len = contents.size();
+
+    *result = nullptr;
+  }
 
   return 0;
 }
@@ -6243,7 +6229,7 @@ extern "C" int
 js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view) {
   // Allow continuing even with a pending exception
 
-  delete view;
+  if (view) delete view;
 
   return 0;
 }
@@ -6254,13 +6240,13 @@ js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 
   auto local = js_to_local<DataView>(dataview);
 
-  auto view = new js_dataview_view_t(local);
+  auto contents = local->GetContents(MemorySpan<uint8_t>());
 
-  if (data) *data = view->data();
+  if (data) *data = contents.data();
 
-  if (len) *len = view->length();
+  if (len) *len = contents.size();
 
-  *result = view;
+  *result = nullptr;
 
   return 0;
 }
@@ -6268,8 +6254,6 @@ js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 extern "C" int
 js_release_dataview_view(js_env_t *env, js_dataview_view_t *view) {
   // Allow continuing even with a pending exception
-
-  delete view;
 
   return 0;
 }
