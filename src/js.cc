@@ -4498,6 +4498,11 @@ js_create_syntax_error(js_env_t *env, js_value_t *code, js_value_t *message, js_
 }
 
 extern "C" int
+js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result) {
+  return js_create_error<Exception::ReferenceError>(env, code, message, result);
+}
+
+extern "C" int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   // Allow continuing even with a pending exception
 
@@ -6777,6 +6782,30 @@ js_throw_syntax_errorf(js_env_t *env, const char *code, const char *message, ...
   va_start(args, message);
 
   int err = js_throw_verrorf<Exception::SyntaxError>(env, code, message, args);
+
+  va_end(args);
+
+  return err;
+}
+
+extern "C" int
+js_throw_reference_error(js_env_t *env, const char *code, const char *message) {
+  return js_throw_error<Exception::ReferenceError>(env, code, message);
+}
+
+extern "C" int
+js_throw_reference_verrorf(js_env_t *env, const char *code, const char *message, va_list args) {
+  return js_throw_verrorf<Exception::ReferenceError>(env, code, message, args);
+}
+
+extern "C" int
+js_throw_reference_errorf(js_env_t *env, const char *code, const char *message, ...) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  va_list args;
+  va_start(args, message);
+
+  int err = js_throw_verrorf<Exception::ReferenceError>(env, code, message, args);
 
   va_end(args);
 

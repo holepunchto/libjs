@@ -731,6 +731,12 @@ js_create_syntax_error(js_env_t *env, js_value_t *code, js_value_t *message, js_
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
 
 /**
@@ -1491,6 +1497,15 @@ js_throw_syntax_verrorf(js_env_t *env, const char *code, const char *message, va
 
 int
 js_throw_syntax_errorf(js_env_t *env, const char *code, const char *message, ...);
+
+int
+js_throw_reference_error(js_env_t *env, const char *code, const char *message);
+
+int
+js_throw_reference_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
+
+int
+js_throw_reference_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
