@@ -29,6 +29,11 @@ main() {
 
   assert(external_memory == 50);
 
+  e = js_adjust_external_memory(env, -50, &external_memory);
+  assert(e == 0);
+
+  assert(external_memory == 0);
+
   e = js_destroy_env(env);
   assert(e == 0);
 

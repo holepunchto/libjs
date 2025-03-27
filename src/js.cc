@@ -21,6 +21,7 @@
 #include <utf.h>
 #include <uv.h>
 
+#include <v8-external-memory-accounter.h>
 #include <v8-fast-api-calls.h>
 #include <v8-inspector.h>
 #include <v8.h>
@@ -1285,6 +1286,8 @@ struct js_env_s {
   Persistent<Private> tag;
 
   Persistent<Value> exception;
+
+  ExternalMemoryAccounter memory;
 
   std::multimap<size_t, js_module_t *> modules;
 
@@ -6856,9 +6859,9 @@ extern "C" int
 js_adjust_external_memory(js_env_t *env, int64_t change_in_bytes, int64_t *result) {
   // Allow continuing even with a pending exception
 
-  int64_t bytes = env->isolate->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
+  env->memory.Update(env->isolate, change_in_bytes);
 
-  if (result) *result = bytes;
+  if (result) *result = ExternalMemoryAccounter::GetTotalAmountOfExternalAllocatedMemoryForTesting(env->isolate);
 
   return 0;
 }
