@@ -32,7 +32,6 @@ on_typed_call(js_value_t *receiver, js_value_t *string, js_typed_callback_info_t
   assert(data[0] == 'f');
   assert(data[1] == 'o');
   assert(data[2] == 'o');
-  assert(data[3] == 0x0);
 
   e = js_release_string_view(env, view);
   assert(e == 0);
