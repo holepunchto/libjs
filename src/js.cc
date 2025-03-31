@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <assert.h>
+#include <mem.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -898,7 +899,15 @@ private:
 };
 
 struct js_heap_s {
-  js_heap_s() {}
+  mem_heap_t *heap;
+
+  js_heap_s() {
+    mem_heap_init(NULL, &heap);
+  }
+
+  ~js_heap_s() {
+    mem_heap_destroy(heap);
+  }
 
   js_heap_s(const js_heap_s &) = delete;
 
@@ -907,25 +916,27 @@ struct js_heap_s {
 
   inline void *
   alloc(size_t size) {
-    void *ptr = alloc_unsafe(size);
-    if (ptr) memset(ptr, 0, size);
-    return ptr;
+    return mem_zalloc(heap, size);
   }
 
   inline void *
   alloc_unsafe(size_t size) {
-    return ::malloc(size);
+    return mem_alloc(heap, size);
   }
 
   inline void
   free(void *ptr) {
-    ::free(ptr);
+    mem_free(ptr);
   }
 };
 
-struct js_allocator_s : public ArrayBuffer::Allocator {
-  js_heap_t heap;
+namespace {
 
+thread_local static js_heap_t js_heap;
+
+}
+
+struct js_allocator_s : public ArrayBuffer::Allocator {
   js_allocator_s() = default;
 
   js_allocator_s(const js_allocator_s &) = delete;
@@ -936,17 +947,17 @@ struct js_allocator_s : public ArrayBuffer::Allocator {
 private: // V8 embedder API
   void *
   Allocate(size_t length) override {
-    return heap.alloc(length);
+    return js_heap.alloc(length);
   }
 
   void *
   AllocateUninitialized(size_t length) override {
-    return heap.alloc_unsafe(length);
+    return js_heap.alloc_unsafe(length);
   }
 
   void
   Free(void *data, size_t length) override {
-    heap.free(data);
+    js_heap.free(data);
   }
 };
 

@@ -11,6 +11,7 @@ project(js C CXX)
 fetch_package("github:libuv/libuv@1.50.0")
 
 fetch_package("github:holepunchto/libutf")
+fetch_package("github:holepunchto/libmem")
 
 if(TARGET js)
   target_include_directories(
@@ -52,6 +53,8 @@ target_sources(
   js
   INTERFACE
     include/js.h
+  PUBLIC
+    $<TARGET_OBJECTS:mem>
   PRIVATE
     src/js.cc
 )
@@ -66,6 +69,7 @@ target_include_directories(
     $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:mem,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(
@@ -74,6 +78,12 @@ target_compile_definitions(
     $<TARGET_PROPERTY:c++,INTERFACE_COMPILE_DEFINITIONS>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_COMPILE_DEFINITIONS>
+)
+
+target_link_libraries(
+  js
+  PUBLIC
+    mem
 )
 
 if(MSVC)
