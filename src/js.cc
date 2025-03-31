@@ -1279,13 +1279,13 @@ struct js_env_s {
 
   Isolate *isolate;
 
-  Persistent<Context> context;
+  Global<Context> context;
 
-  Persistent<Private> wrapper;
-  Persistent<Private> delegate;
-  Persistent<Private> tag;
+  Global<Private> wrapper;
+  Global<Private> delegate;
+  Global<Private> tag;
 
-  Persistent<Value> exception;
+  Global<Value> exception;
 
   ExternalMemoryAccounter memory;
 
@@ -1381,6 +1381,7 @@ struct js_env_s {
       wrapper.Reset();
       delegate.Reset();
       tag.Reset();
+      exception.Reset();
 
       context.Get(isolate)->Exit();
       context.Reset();
@@ -1714,7 +1715,7 @@ private:
 };
 
 struct js_context_s {
-  Persistent<Context> context;
+  Global<Context> context;
 
   js_context_s(js_env_t *env)
       : context() {
@@ -1726,10 +1727,6 @@ struct js_context_s {
   }
 
   js_context_s(const js_context_s &) = delete;
-
-  ~js_context_s() {
-    context.Reset();
-  }
 
   js_context_s &
   operator=(const js_context_s &) = delete;
@@ -1951,7 +1948,7 @@ struct js_module_s {
 };
 
 struct js_ref_s {
-  Persistent<Value> value;
+  Global<Value> value;
   uint32_t count;
 
   js_ref_s(Isolate *isolate, Local<Value> value, uint32_t count)
@@ -1959,10 +1956,6 @@ struct js_ref_s {
         count(count) {}
 
   js_ref_s(const js_ref_s &) = delete;
-
-  ~js_ref_s() {
-    value.Reset();
-  }
 
   js_ref_s &
   operator=(const js_ref_s &) = delete;
@@ -1987,7 +1980,7 @@ private:
 };
 
 struct js_deferred_s {
-  Persistent<Promise::Resolver> resolver;
+  Global<Promise::Resolver> resolver;
 
   js_deferred_s(Isolate *isolate, Local<Promise::Resolver> resolver)
       : resolver(isolate, resolver) {}
@@ -1999,7 +1992,7 @@ struct js_deferred_s {
 };
 
 struct js_callback_s {
-  Persistent<External> external;
+  Global<External> external;
   js_env_t *env;
   js_function_cb cb;
   void *data;
@@ -2070,8 +2063,6 @@ protected:
   on_finalize(const WeakCallbackInfo<js_callback_t> &info) {
     auto callback = info.GetParameter();
 
-    callback->external.Reset();
-
     delete callback;
   }
 };
@@ -2112,7 +2103,7 @@ struct js_typed_callback_s : js_callback_t {
 };
 
 struct js_finalizer_s {
-  Persistent<Value> value;
+  Global<Value> value;
   js_env_t *env;
   void *data;
   js_finalize_cb finalize_cb;
@@ -2558,7 +2549,7 @@ static const uint8_t js_threadsafe_function_pending = 0x2;
 } // namespace
 
 struct js_threadsafe_function_s {
-  Persistent<Value> function;
+  Global<Value> function;
   js_env_t *env;
 
   uv_async_t async;
@@ -3451,8 +3442,6 @@ js_delete_module(js_env_t *env, js_module_t *module) {
       break;
     }
   }
-
-  module->module.Reset();
 
   delete module;
 
@@ -4535,8 +4524,6 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
-
-  deferred->resolver.Reset();
 
   delete deferred;
 
