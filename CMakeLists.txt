@@ -82,7 +82,7 @@ target_compile_definitions(
 
 target_link_libraries(
   js
-  PUBLIC
+  PRIVATE
     mem
 )
 
@@ -125,6 +125,8 @@ target_link_libraries(
     uv
     v8
     utf_shared
+  PRIVATE
+    mem
 )
 
 add_library(js_static STATIC)
@@ -143,6 +145,8 @@ target_link_libraries(
     uv_a
     v8
     utf_static
+  PRIVATE
+    mem
 )
 
 install(TARGETS js_shared js_static)
