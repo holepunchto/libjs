@@ -52,6 +52,7 @@ target_sources(
   js
   INTERFACE
     include/js.h
+    include/js/template.h
   PRIVATE
     src/js.cc
 )
