@@ -4348,9 +4348,9 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
 
   auto integer_representation = std::optional<CFunctionInfo::Int64Representation>();
 
-  auto return_info = js_to_native_type<js_return_type>(signature->result, integer_representation);
+  auto result_info = js_to_native_type<js_return_type>(signature->result, integer_representation);
 
-  if (!return_info.has_value()) {
+  if (!result_info.has_value()) {
     return js_create_function(env, name, len, cb, data, result);
   }
 
@@ -4372,7 +4372,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
     env,
     cb,
     data,
-    std::move(return_info.value()),
+    std::move(result_info.value()),
     std::move(args_info),
     address,
     integer_representation.value_or(CFunctionInfo::Int64Representation::kNumber)
