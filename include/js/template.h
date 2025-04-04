@@ -44,14 +44,14 @@ struct js_typedarray_t {
   T *data;
   size_t len;
 
-  js_typedarray_t(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value)
+  js_typedarray_t(js_env_t *env, js_typed_callback_info_t *, js_value_t *value)
       : env(env) {
     int err;
     err = js_get_typedarray_view(env, value, nullptr, reinterpret_cast<void **>(&data), &len, &view);
     assert(err == 0);
   }
 
-  js_typedarray_t(js_env_t *env, js_callback_info_t *info, js_value_t *value)
+  js_typedarray_t(js_env_t *env, js_callback_info_t *, js_value_t *value)
       : env(env),
         view(nullptr) {
     int err;
@@ -92,22 +92,22 @@ struct js_type_container_t<js_value_t *> {
   }
 
   static constexpr auto
-  marshall(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value) {
+  marshall(js_env_t *, js_typed_callback_info_t *, js_value_t *value) {
     return value;
   }
 
   static auto
-  marshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  marshall(js_env_t *, js_callback_info_t *, js_value_t *value) {
     return value;
   }
 
   static constexpr auto
-  unmarshall(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *, js_typed_callback_info_t *, js_value_t *value) {
     return value;
   }
 
   static auto
-  unmarshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *, js_callback_info_t *, js_value_t *value) {
     return value;
   }
 };
@@ -122,12 +122,12 @@ struct js_type_container_t<js_receiver_t> {
   }
 
   static auto
-  unmarshall(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *, js_typed_callback_info_t *, js_value_t *value) {
     return js_receiver_t(value);
   }
 
   static auto
-  unmarshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *, js_callback_info_t *, js_value_t *value) {
     return js_receiver_t(value);
   }
 };
@@ -142,12 +142,12 @@ struct js_type_container_t<int32_t> {
   }
 
   static constexpr auto
-  marshall(js_env_t *env, js_typed_callback_info_t *info, int32_t value) {
+  marshall(js_env_t *, js_typed_callback_info_t *, int32_t value) {
     return value;
   }
 
   static auto
-  marshall(js_env_t *env, js_callback_info_t *info, int32_t value) {
+  marshall(js_env_t *env, js_callback_info_t *, int32_t value) {
     int err;
 
     js_value_t *result;
@@ -158,12 +158,12 @@ struct js_type_container_t<int32_t> {
   }
 
   static constexpr auto
-  unmarshall(js_env_t *env, js_typed_callback_info_t *info, int32_t value) {
+  unmarshall(js_env_t *, js_typed_callback_info_t *, int32_t value) {
     return value;
   }
 
   static auto
-  unmarshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
     int err;
 
     int32_t result;
@@ -184,12 +184,12 @@ struct js_type_container_t<uint32_t> {
   }
 
   static constexpr auto
-  marshall(js_env_t *env, js_typed_callback_info_t *info, uint32_t value) {
+  marshall(js_env_t *, js_typed_callback_info_t *, uint32_t value) {
     return value;
   }
 
   static auto
-  marshall(js_env_t *env, js_callback_info_t *info, uint32_t value) {
+  marshall(js_env_t *env, js_callback_info_t *, uint32_t value) {
     int err;
 
     js_value_t *result;
@@ -200,12 +200,12 @@ struct js_type_container_t<uint32_t> {
   }
 
   static constexpr auto
-  unmarshall(js_env_t *env, js_typed_callback_info_t *info, uint32_t value) {
+  unmarshall(js_env_t *env, js_typed_callback_info_t *, uint32_t value) {
     return value;
   }
 
   static auto
-  unmarshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
     int err;
 
     uint32_t result;
@@ -241,22 +241,22 @@ struct js_type_container_t<js_arraybuffer_t> {
   }
 
   static auto
-  marshall(js_env_t *env, js_typed_callback_info_t *info, js_arraybuffer_t value) {
+  marshall(js_env_t *env, js_typed_callback_info_t *, js_arraybuffer_t value) {
     return marshall(env, value);
   }
 
   static auto
-  marshall(js_env_t *env, js_callback_info_t *info, js_arraybuffer_t value) {
+  marshall(js_env_t *env, js_callback_info_t *, js_arraybuffer_t value) {
     return marshall(env, value);
   }
 
   static auto
-  unmarshall(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *env, js_typed_callback_info_t *, js_value_t *value) {
     return js_arraybuffer_t(env, value);
   }
 
   static auto
-  unmarshall(js_env_t *env, js_callback_info_t *info, js_value_t *value) {
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
     return js_arraybuffer_t(env, value);
   }
 };
@@ -299,12 +299,12 @@ struct js_type_container_t<js_typedarray_t<T>> {
   }
 
   static auto
-  marshall(js_env_t *env, js_typed_callback_info_t *info, js_typedarray_t<T> value) {
+  marshall(js_env_t *env, js_typed_callback_info_t *, js_typedarray_t<T> value) {
     return marshall(env, value);
   }
 
   static auto
-  marshall(js_env_t *env, js_callback_info_t *info, js_typedarray_t<T> value) {
+  marshall(js_env_t *env, js_callback_info_t *, js_typedarray_t<T> value) {
     return marshall(env, value);
   }
 
