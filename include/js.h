@@ -299,7 +299,7 @@ struct js_callback_signature_s {
   size_t args_len;
 
   /** @since 0 */
-  int *args;
+  const int *args;
 };
 
 /** @version 1 */
