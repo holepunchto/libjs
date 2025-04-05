@@ -12,8 +12,10 @@
 namespace {
 
 struct js_receiver_t {
+private:
   js_value_t *value;
 
+public:
   js_receiver_t(js_value_t *value)
       : value(value) {}
 
@@ -27,8 +29,14 @@ struct js_receiver_t {
 };
 
 struct js_arraybuffer_t {
+public:
   uint8_t *data;
   size_t len;
+
+public:
+  js_arraybuffer_t() : data(nullptr), len(0) {}
+
+  js_arraybuffer_t(uint8_t *data, size_t len) : data(data), len(len) {}
 
   js_arraybuffer_t(js_env_t *env, js_value_t *value) {
     int err;
@@ -39,21 +47,16 @@ struct js_arraybuffer_t {
 
 template <typename T>
 struct js_typedarray_t {
-  js_env_t *env;
-  js_typedarray_view_t *view;
+public:
   T *data;
   size_t len;
 
-  js_typedarray_t(js_env_t *env, js_typed_callback_info_t *, js_value_t *value)
-      : env(env) {
-    int err;
-    err = js_get_typedarray_view(env, value, nullptr, reinterpret_cast<void **>(&data), &len, &view);
-    assert(err == 0);
-  }
+public:
+  js_typedarray_t() : data(nullptr), len(0) {}
 
-  js_typedarray_t(js_env_t *env, js_callback_info_t *, js_value_t *value)
-      : env(env),
-        view(nullptr) {
+  js_typedarray_t(T *data, size_t len) : data(data), len(len) {}
+
+  js_typedarray_t(js_env_t *env, js_callback_info_t *, js_value_t *value) {
     int err;
     err = js_get_typedarray_info(env, value, nullptr, reinterpret_cast<void **>(&data), &len, nullptr, nullptr);
     assert(err == 0);
@@ -62,15 +65,34 @@ struct js_typedarray_t {
   js_typedarray_t(const js_typedarray_t &) = delete;
 
   js_typedarray_t(js_typedarray_t &&that)
-      : env(std::exchange(that.env, nullptr)),
-        view(std::exchange(that.view, nullptr)),
-        data(std::exchange(that.data, nullptr)),
+      : data(std::exchange(that.data, nullptr)),
         len(std::exchange(that.len, 0)) {}
+
+  virtual ~js_typedarray_t() = default;
 
   js_typedarray_t &
   operator=(const js_typedarray_t &) = delete;
+};
 
-  ~js_typedarray_t() {
+template <typename T>
+struct js_typedarray_with_view_t : js_typedarray_t<T> {
+private:
+  js_env_t *env;
+  js_typedarray_view_t *view;
+
+public:
+  js_typedarray_with_view_t(js_env_t *env, js_typed_callback_info_t *, js_value_t *value)
+      : env(env) {
+    int err;
+    err = js_get_typedarray_view(env, value, nullptr, reinterpret_cast<void **>(&this->data), &this->len, &view);
+    assert(err == 0);
+  }
+
+  js_typedarray_with_view_t(js_typedarray_with_view_t &&that)
+      : env(std::exchange(that.env, nullptr)),
+        view(std::exchange(that.view, nullptr)) {}
+
+  ~js_typedarray_with_view_t() {
     if (view == nullptr) return;
 
     int err;
@@ -81,36 +103,6 @@ struct js_typedarray_t {
 
 template <typename T>
 struct js_type_container_t;
-
-template <>
-struct js_type_container_t<js_value_t *> {
-  using type = js_value_t *;
-
-  static constexpr auto
-  signature() {
-    return js_object;
-  }
-
-  static constexpr auto
-  marshall(js_env_t *, js_typed_callback_info_t *, js_value_t *value) {
-    return value;
-  }
-
-  static auto
-  marshall(js_env_t *, js_callback_info_t *, js_value_t *value) {
-    return value;
-  }
-
-  static constexpr auto
-  unmarshall(js_env_t *, js_typed_callback_info_t *, js_value_t *value) {
-    return value;
-  }
-
-  static auto
-  unmarshall(js_env_t *, js_callback_info_t *, js_value_t *value) {
-    return value;
-  }
-};
 
 template <>
 struct js_type_container_t<js_receiver_t> {
@@ -310,7 +302,7 @@ struct js_type_container_t<js_typedarray_t<T>> {
 
   static auto
   unmarshall(js_env_t *env, js_typed_callback_info_t *info, js_value_t *value) {
-    return js_typedarray_t<T>(env, info, value);
+    return js_typedarray_with_view_t<T>(env, info, value);
   }
 
   static auto
@@ -352,13 +344,13 @@ js_untyped_callback(std::index_sequence<I...>) {
       err = js_get_callback_info(env, info, &argc, &argv[1], &argv[0], NULL);
       assert(err == 0);
 
-      assert(argc == sizeof...(A) - 1);
+      argc++;
     } else {
       err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
       assert(err == 0);
-
-      assert(argc == sizeof...(A));
     }
+
+    assert(argc == sizeof...(A));
 
     auto result = fn(js_type_container_t<A>::unmarshall(env, info, argv[I])...);
 
