@@ -125,6 +125,48 @@ struct js_type_container_t<js_receiver_t> {
 };
 
 template <>
+struct js_type_container_t<bool> {
+  using type = bool;
+
+  static constexpr auto
+  signature() {
+    return js_boolean;
+  }
+
+  static constexpr auto
+  marshall(js_env_t *, js_typed_callback_info_t *, bool value) {
+    return value;
+  }
+
+  static auto
+  marshall(js_env_t *env, js_callback_info_t *, bool value) {
+    int err;
+
+    js_value_t *result;
+    err = js_get_boolean(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+
+  static constexpr auto
+  unmarshall(js_env_t *, js_typed_callback_info_t *, bool value) {
+    return value;
+  }
+
+  static auto
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
+    int err;
+
+    bool result;
+    err = js_get_value_bool(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+};
+
+template <>
 struct js_type_container_t<int32_t> {
   using type = int32_t;
 
@@ -202,6 +244,90 @@ struct js_type_container_t<uint32_t> {
 
     uint32_t result;
     err = js_get_value_uint32(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+};
+
+template <>
+struct js_type_container_t<int64_t> {
+  using type = int64_t;
+
+  static constexpr auto
+  signature() {
+    return js_int64;
+  }
+
+  static constexpr auto
+  marshall(js_env_t *, js_typed_callback_info_t *, int64_t value) {
+    return value;
+  }
+
+  static auto
+  marshall(js_env_t *env, js_callback_info_t *, int64_t value) {
+    int err;
+
+    js_value_t *result;
+    err = js_create_int64(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+
+  static constexpr auto
+  unmarshall(js_env_t *, js_typed_callback_info_t *, int64_t value) {
+    return value;
+  }
+
+  static auto
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
+    int err;
+
+    int64_t result;
+    err = js_get_value_int64(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+};
+
+template <>
+struct js_type_container_t<double> {
+  using type = double;
+
+  static constexpr auto
+  signature() {
+    return js_float64;
+  }
+
+  static constexpr auto
+  marshall(js_env_t *, js_typed_callback_info_t *, double value) {
+    return value;
+  }
+
+  static auto
+  marshall(js_env_t *env, js_callback_info_t *, double value) {
+    int err;
+
+    js_value_t *result;
+    err = js_create_double(env, value, &result);
+    assert(err == 0);
+
+    return result;
+  }
+
+  static constexpr auto
+  unmarshall(js_env_t *, js_typed_callback_info_t *, double value) {
+    return value;
+  }
+
+  static auto
+  unmarshall(js_env_t *env, js_callback_info_t *, js_value_t *value) {
+    int err;
+
+    double result;
+    err = js_get_value_double(env, value, &result);
     assert(err == 0);
 
     return result;
