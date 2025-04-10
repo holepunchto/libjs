@@ -398,7 +398,7 @@ struct js_type_container_t<js_typedarray_t<T>> {
     if constexpr (std::is_same<T, uint8_t>()) {
       type = js_uint8array;
     } else {
-      abort();
+      static_assert(false, "Unsupported typed array element type");
     }
 
     js_value_t *arraybuffer;
