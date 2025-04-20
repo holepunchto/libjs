@@ -113,8 +113,9 @@ enum {
   js_float16 = 13 << 8 | js_number,
   js_float32 = 9 << 8 | js_number,
   js_float64 = 10 << 8 | js_number,
-  js_bigint64 = 11 << 8 | js_number,
-  js_biguint64 = 12 << 8 | js_number,
+
+  js_bigint64 = 1 << 8 | js_bigint,
+  js_biguint64 = 2 << 8 | js_bigint,
 };
 
 typedef enum {
