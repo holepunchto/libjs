@@ -110,7 +110,7 @@ enum {
   js_uint32 = 6 << 8 | js_number,
   js_int64 = 7 << 8 | js_number,
   js_uint64 = 8 << 8 | js_number,
-  js_float16 = 13 << 8 | js_number,
+  js_float16 = 11 << 8 | js_number,
   js_float32 = 9 << 8 | js_number,
   js_float64 = 10 << 8 | js_number,
 
