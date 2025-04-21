@@ -19,11 +19,13 @@ on_typed_call(js_value_t *receiver, js_value_t *dataview, js_typed_callback_info
   e = js_get_typed_callback_info(info, &env, NULL);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   uint8_t *data;
   size_t len;
-
-  js_dataview_view_t *view;
-  e = js_get_dataview_view(env, dataview, (void **) &data, &len, &view);
+  e = js_get_dataview_info(env, dataview, (void **) &data, &len, NULL, NULL);
   assert(e == 0);
 
   assert(len == 4);
@@ -32,7 +34,7 @@ on_typed_call(js_value_t *receiver, js_value_t *dataview, js_typed_callback_info
   assert(data[2] == 3);
   assert(data[3] == 4);
 
-  e = js_release_dataview_view(env, view);
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   return 42;
