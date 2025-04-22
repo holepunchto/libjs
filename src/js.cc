@@ -4344,6 +4344,8 @@ extern "C" int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  if (signature->version != 0) return js_create_function(env, name, len, cb, data, result);
+
   auto context = env->current_context();
 
   auto integer_representation = std::optional<CFunctionInfo::Int64Representation>();
