@@ -4332,7 +4332,7 @@ js_to_native_type(int type, std::optional<CFunctionInfo::Int64Representation> &i
     return std::nullopt;
   handle:
     // Handles are not currently supported in return position
-    if (position == js_return_type) goto unsupported;
+    if constexpr (position == js_return_type) goto unsupported;
 
     return CTypeInfo(Type::kV8Value);
   }
