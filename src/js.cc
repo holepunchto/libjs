@@ -1291,7 +1291,7 @@ struct js_env_s {
 
   std::multimap<size_t, js_module_t *> modules;
 
-  std::deque<Global<Promise>> unhandled_promises;
+  std::list<Global<Promise>> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
 
@@ -1625,9 +1625,7 @@ struct js_env_s {
         auto unhandled_promise = it->Get(isolate);
 
         if (unhandled_promise == promise) {
-          *it = std::move(env->unhandled_promises.back());
-
-          env->unhandled_promises.pop_back();
+          env->unhandled_promises.erase(it);
 
           break;
         }
