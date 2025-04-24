@@ -3134,6 +3134,8 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   Isolate::Initialize(isolate, params);
 
+  isolate->Enter();
+
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
   isolate->AddMessageListener(js_env_t::on_uncaught_exception);
@@ -3143,8 +3145,6 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
   isolate->SetHostImportModuleDynamicallyCallback(js_module_t::on_dynamic_import);
 
   isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
-
-  isolate->Enter();
 
   auto env = new js_env_t(loop, platform, isolate);
 
