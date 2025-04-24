@@ -1291,7 +1291,7 @@ struct js_env_s {
 
   std::multimap<size_t, js_module_t *> modules;
 
-  std::vector<Global<Promise>> unhandled_promises;
+  std::deque<Global<Promise>> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
 
@@ -1457,22 +1457,30 @@ struct js_env_s {
 
     isolate->PerformMicrotaskCheckpoint();
 
-    if (callbacks.unhandled_rejection) {
-      for (auto &promise : unhandled_promises) {
-        auto scope = HandleScope(isolate);
-
-        auto local = promise.Get(isolate);
-
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
-        );
-      }
+    if (callbacks.unhandled_rejection == nullptr) {
+      return unhandled_promises.clear();
     }
 
-    unhandled_promises.clear();
+    while (!unhandled_promises.empty()) {
+      auto promise = std::move(unhandled_promises.front());
+
+      unhandled_promises.pop_front();
+
+      auto scope = HandleScope(isolate);
+
+      auto local = promise.Get(isolate);
+
+      callbacks.unhandled_rejection(
+        this,
+        js_from_local(local->Result()),
+        js_from_local(local),
+        callbacks.unhandled_rejection_data
+      );
+
+      if (isolate->IsExecutionTerminating()) return;
+
+      isolate->PerformMicrotaskCheckpoint();
+    }
   }
 
   inline void

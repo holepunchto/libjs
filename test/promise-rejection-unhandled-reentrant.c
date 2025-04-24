@@ -16,7 +16,7 @@ static void
 on_unhandled_rejection(js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
   int e;
 
-  unhandled_called++;
+  if (++unhandled_called == 3) return;
 
   js_value_t *script;
   e = js_create_string_utf8(env, promise_rejection_unhandled_js, promise_rejection_unhandled_js_len, &script);
@@ -59,7 +59,7 @@ main() {
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  assert(unhandled_called == 1);
+  assert(unhandled_called == 3);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
