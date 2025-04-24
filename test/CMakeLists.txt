@@ -123,6 +123,7 @@ list(APPEND tests
   many-small-allocs
   promise-rejection
   promise-rejection-unhandled
+  promise-rejection-unhandled-reentrant
   run-module
   run-module-async
   run-module-cyclic-import
