@@ -124,6 +124,7 @@ list(APPEND tests
   promise-rejection
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
+  promise-rejection-unhandled-reentrant-deferred
   run-module
   run-module-async
   run-module-cyclic-import

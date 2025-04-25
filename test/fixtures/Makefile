@@ -1,5 +1,6 @@
 %.h: %
 	xxd -i $^ > $@
+	clang-format -i $@
 
 all: \
 	atomics-wait-timeout.js.h \
@@ -8,6 +9,7 @@ all: \
 	many-small-allocs.js.h \
 	promise-rejection.js.h \
 	promise-rejection-unhandled.js.h \
+	promise-rejection-unhandled-deferred.js.h \
 	wasm-async.js.h \
 	wasm-async-log.js.h \
 	wasm-sync.js.h
