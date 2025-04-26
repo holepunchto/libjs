@@ -616,18 +616,33 @@ int
 js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
 
 /**
+ * Create a string value from a UTF8 encoded C string. If the string is not
+ * copied it must remain valid until the finalize callback is invoked. The
+ * finalize callback may be omitted if the string is guaranteed to outlive the
+ * JavaScript environment.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
 /**
+ * Create a string value from a UTF16LE encoded C string. If the string is not
+ * copied it must remain valid until the finalize callback is invoked. The
+ * finalize callback may be omitted if the string is guaranteed to outlive the
+ * JavaScript environment.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
 /**
+ * Create a string value from a Latin1 encoded C string. If the string is not
+ * copied it must remain valid until the finalize callback is invoked. The
+ * finalize callback may be omitted if the string is guaranteed to outlive the
+ * JavaScript environment.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
@@ -691,6 +706,10 @@ int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result);
 
 /**
+ * Create an external value from a pointer. The pointer must remain valid until
+ * the finalize callback is invoked. The finalize callback may be omitted if the
+ * pointer is guaranteed to outlive the JavaScript environment.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
@@ -774,6 +793,13 @@ js_create_arraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_s
 int
 js_create_unsafe_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
+/**
+ * Create an `ArrayBuffer` with externally managed data. The data must remain
+ * valid until either the finalize callback is invoked or the `ArrayBuffer` is
+ * detached. The finalize callback may be omitted if the data is either
+ * guaranteed to outlive the JavaScript environment or if the `ArrayBuffer` is
+ * manually detached prior to the data becoming invalid.
+ */
 int
 js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
@@ -798,6 +824,16 @@ js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_bac
 int
 js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
+/**
+ * Create a `SharedArrayBuffer` with externally managed data. The data must
+ * remain valid until the finalize callback is invoked. The finalize callback
+ * may be omitted if the data is guaranteed to outlive the JavaScript
+ * environment.
+ *
+ * The finalize callback may be invoked from another thread and so it is not
+ * safe to assume that it will be invoked from the same thread on which the
+ * `SharedArrayBuffer` was created.
+ */
 int
 js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
