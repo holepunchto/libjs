@@ -19,12 +19,14 @@ on_typed_call(js_value_t *receiver, js_value_t *typedarray, js_typed_callback_in
   e = js_get_typed_callback_info(info, &env, NULL);
   assert(e == 0);
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   js_typedarray_type_t type;
   int8_t *data;
   size_t len;
-
-  js_typedarray_view_t *view;
-  e = js_get_typedarray_view(env, typedarray, &type, (void **) &data, &len, &view);
+  e = js_get_typedarray_info(env, typedarray, &type, (void **) &data, &len, NULL, NULL);
   assert(e == 0);
 
   assert(type == js_int8array);
@@ -34,7 +36,7 @@ on_typed_call(js_value_t *receiver, js_value_t *typedarray, js_typed_callback_in
   assert(data[2] == -3);
   assert(data[3] == -4);
 
-  e = js_release_typedarray_view(env, view);
+  e = js_close_handle_scope(env, scope);
   assert(e == 0);
 
   return 42;

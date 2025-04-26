@@ -27,8 +27,6 @@ typedef struct js_delegate_callbacks_s js_delegate_callbacks_t;
 typedef struct js_type_tag_s js_type_tag_t;
 typedef struct js_deferred_s js_deferred_t;
 typedef struct js_string_view_s js_string_view_t;
-typedef struct js_typedarray_view_s js_typedarray_view_t;
-typedef struct js_dataview_view_s js_dataview_view_t;
 typedef struct js_callback_info_s js_callback_info_t;
 typedef struct js_typed_callback_info_s js_typed_callback_info_t;
 typedef struct js_callback_signature_s js_callback_signature_t;
@@ -110,11 +108,12 @@ enum {
   js_uint32 = 6 << 8 | js_number,
   js_int64 = 7 << 8 | js_number,
   js_uint64 = 8 << 8 | js_number,
-  js_float16 = 13 << 8 | js_number,
+  js_float16 = 11 << 8 | js_number,
   js_float32 = 9 << 8 | js_number,
   js_float64 = 10 << 8 | js_number,
-  js_bigint64 = 11 << 8 | js_number,
-  js_biguint64 = 12 << 8 | js_number,
+
+  js_bigint64 = 1 << 8 | js_bigint,
+  js_biguint64 = 2 << 8 | js_bigint,
 };
 
 typedef enum {
@@ -1311,30 +1310,6 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
  */
 int
 js_release_string_view(js_env_t *env, js_string_view_t *view);
-
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_typedarray_view_t **result);
-
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view);
-
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_dataview_view_t **result);
-
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_release_dataview_view(js_env_t *env, js_dataview_view_t *view);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

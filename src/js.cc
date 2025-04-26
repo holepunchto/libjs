@@ -1302,7 +1302,7 @@ struct js_env_s {
 
   std::multimap<size_t, js_module_t *> modules;
 
-  std::vector<Global<Promise>> unhandled_promises;
+  std::list<Global<Promise>> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
 
@@ -1468,24 +1468,30 @@ struct js_env_s {
 
     isolate->PerformMicrotaskCheckpoint();
 
-    if (callbacks.unhandled_rejection) {
-      for (auto &promise : unhandled_promises) {
-        auto scope = HandleScope(isolate);
-
-        auto local = promise.Get(isolate);
-
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
-        );
-
-        promise.Reset();
-      }
+    if (callbacks.unhandled_rejection == nullptr) {
+      return unhandled_promises.clear();
     }
 
-    unhandled_promises.clear();
+    while (!unhandled_promises.empty()) {
+      auto promise = std::move(unhandled_promises.front());
+
+      unhandled_promises.pop_front();
+
+      auto scope = HandleScope(isolate);
+
+      auto local = promise.Get(isolate);
+
+      callbacks.unhandled_rejection(
+        this,
+        js_from_local(local->Result()),
+        js_from_local(local),
+        callbacks.unhandled_rejection_data
+      );
+
+      if (isolate->IsExecutionTerminating()) return;
+
+      isolate->PerformMicrotaskCheckpoint();
+    }
   }
 
   inline void
@@ -1630,9 +1636,7 @@ struct js_env_s {
         auto unhandled_promise = it->Get(isolate);
 
         if (unhandled_promise == promise) {
-          *it = std::move(env->unhandled_promises.back());
-
-          env->unhandled_promises.pop_back();
+          env->unhandled_promises.erase(it);
 
           break;
         }
@@ -3145,6 +3149,8 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   Isolate::Initialize(isolate, params);
 
+  isolate->Enter();
+
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
   isolate->AddMessageListener(js_env_t::on_uncaught_exception);
@@ -3154,8 +3160,6 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
   isolate->SetHostImportModuleDynamicallyCallback(js_module_t::on_dynamic_import);
 
   isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
-
-  isolate->Enter();
 
   auto env = new js_env_t(loop, platform, isolate);
 
@@ -4343,7 +4347,7 @@ js_to_native_type(int type, std::optional<CFunctionInfo::Int64Representation> &i
     return std::nullopt;
   handle:
     // Handles are not currently supported in return position
-    if (position == js_return_type) goto unsupported;
+    if constexpr (position == js_return_type) goto unsupported;
 
     return CTypeInfo(Type::kV8Value);
   }
@@ -4355,13 +4359,15 @@ extern "C" int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  if (signature->version != 0) return js_create_function(env, name, len, cb, data, result);
+
   auto context = env->current_context();
 
   auto integer_representation = std::optional<CFunctionInfo::Int64Representation>();
 
-  auto return_info = js_to_native_type<js_return_type>(signature->result, integer_representation);
+  auto result_info = js_to_native_type<js_return_type>(signature->result, integer_representation);
 
-  if (!return_info.has_value()) {
+  if (!result_info.has_value()) {
     return js_create_function(env, name, len, cb, data, result);
   }
 
@@ -4383,7 +4389,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
     env,
     cb,
     data,
-    std::move(return_info.value()),
+    std::move(result_info.value()),
     std::move(args_info),
     address,
     integer_representation.value_or(CFunctionInfo::Int64Representation::kNumber)
@@ -6117,96 +6123,6 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
 
 extern "C" int
 js_release_string_view(js_env_t *env, js_string_view_t *view) {
-  // Allow continuing even with a pending exception
-
-  return 0;
-}
-
-extern "C" int
-js_get_typedarray_view(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_typedarray_view_t **result) {
-  // Allow continuing even with a pending exception
-
-  auto local = js_to_local<TypedArray>(typedarray);
-
-  if (type) {
-    if (local->IsInt8Array()) {
-      *type = js_int8array;
-    } else if (local->IsUint8Array()) {
-      *type = js_uint8array;
-    } else if (local->IsUint8ClampedArray()) {
-      *type = js_uint8clampedarray;
-    } else if (local->IsInt16Array()) {
-      *type = js_int16array;
-    } else if (local->IsUint16Array()) {
-      *type = js_uint16array;
-    } else if (local->IsInt32Array()) {
-      *type = js_int32array;
-    } else if (local->IsUint32Array()) {
-      *type = js_uint32array;
-    } else if (local->IsFloat16Array()) {
-      *type = js_float16array;
-    } else if (local->IsFloat32Array()) {
-      *type = js_float32array;
-    } else if (local->IsFloat64Array()) {
-      *type = js_float64array;
-    } else if (local->IsBigInt64Array()) {
-      *type = js_bigint64array;
-    } else if (local->IsBigUint64Array()) {
-      *type = js_biguint64array;
-    }
-  }
-
-  if (len) *len = local->Length();
-
-  uint8_t *storage = nullptr;
-
-  if (data) {
-    MemorySpan<uint8_t> view;
-
-    auto size = local->ByteLength();
-
-    if (size <= 64) {
-      storage = new uint8_t[size];
-
-      view = MemorySpan<uint8_t>(storage, size);
-    }
-
-    *data = local->GetContents(view).data();
-  }
-
-  *result = reinterpret_cast<js_typedarray_view_t *>(storage);
-
-  return 0;
-}
-
-extern "C" int
-js_release_typedarray_view(js_env_t *env, js_typedarray_view_t *view) {
-  // Allow continuing even with a pending exception
-
-  auto storage = reinterpret_cast<uint8_t *>(view);
-
-  if (storage) delete[] storage;
-
-  return 0;
-}
-
-extern "C" int
-js_get_dataview_view(js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_dataview_view_t **result) {
-  // Allow continuing even with a pending exception
-
-  auto local = js_to_local<DataView>(dataview);
-
-  if (len) *len = local->ByteLength();
-
-  if (data) *data = local->GetContents(MemorySpan<uint8_t>()).data();
-
-  *result = nullptr;
-
-  return 0;
-}
-
-extern "C" int
-js_release_dataview_view(js_env_t *env, js_dataview_view_t *view) {
   // Allow continuing even with a pending exception
 
   return 0;
