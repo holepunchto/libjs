@@ -784,12 +784,21 @@ js_get_promise_state(js_env_t *env, js_value_t *promise, js_promise_state_t *res
 int
 js_get_promise_result(js_env_t *env, js_value_t *promise, js_value_t **result);
 
+/**
+ * Create an `ArrayBuffer` with 0-initialized data.
+ */
 int
 js_create_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
+/**
+ * Create an `ArrayBuffer` with the contents of an existing backing store.
+ */
 int
 js_create_arraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result);
 
+/**
+ * Create an `ArrayBuffer` with uninitialized data.
+ */
 int
 js_create_unsafe_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
@@ -815,12 +824,21 @@ js_detach_arraybuffer(js_env_t *env, js_value_t *arraybuffer);
 int
 js_get_arraybuffer_backing_store(js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result);
 
+/**
+ * Create a `SharedArrayBuffer` with 0-initialized data.
+ */
 int
 js_create_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
+/**
+ * Create a `SharedArrayBuffer` with the contents of an existing backing store.
+ */
 int
 js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result);
 
+/**
+ * Create a `SharedArrayBuffer` with uninitialized data.
+ */
 int
 js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
