@@ -35,6 +35,8 @@ list(APPEND tests
   create-delegate-has-throw
   create-delegate-keys-throw
   create-delegate-set-throw
+  create-env
+  create-env-multiple
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer

@@ -1390,6 +1390,7 @@ struct js_env_s {
     isolate->Exit();
     isolate->Dispose();
 
+    platform->foreground.erase(isolate);
     platform->detach(this);
   }
 
@@ -1637,8 +1638,6 @@ private:
   inline void
   close() {
     std::scoped_lock guard(platform->lock);
-
-    platform->foreground.erase(isolate);
 
     tasks->close();
 
