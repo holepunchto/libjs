@@ -360,7 +360,7 @@ js_on_uncaught_exception(js_env_t *env, js_uncaught_exception_cb cb, void *data)
 
 /**
  * Add a callback for unhandled promise rejections. By default, unhandled
- *promise rejections are swallowed and do not affect JavaScript execution.
+ * promise rejections are swallowed and do not affect JavaScript execution.
  *
  * A promise rejection is considered unhandled if the rejection has not been
  * caught after performing a microtask checkpoint.
@@ -415,7 +415,7 @@ js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scop
 
 /**
  * Promote an escapee to the outer handle scope. The behavior is undefined if
- * called more than once for the same handle.
+ * called more than once for the same handle scope.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
