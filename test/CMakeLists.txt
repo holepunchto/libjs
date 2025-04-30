@@ -112,7 +112,9 @@ list(APPEND tests
   get-platform-version
   get-property-missing
   get-typedarray-info-uint16array
+  get-typedarray-info-uint16array-large
   get-typedarray-info-uint8array
+  get-typedarray-info-uint8array-large
   get-typedarray-info-uint8array-with-offset
   get-value-string-utf8
   get-value-string-utf8-length
