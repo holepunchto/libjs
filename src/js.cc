@@ -6206,7 +6206,7 @@ js_get_sharedarraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **dat
 namespace {
 
 static inline void
-js_get_arraybufferview_info(Local<ArrayBufferView> view, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
+js_get_arraybufferview_info(Local<ArrayBufferView> view, void **data, js_value_t **arraybuffer, size_t *offset) {
   if (data || arraybuffer) {
     if (arraybuffer == nullptr && view->HasBuffer()) {
       auto span = view->GetContents(MemorySpan<uint8_t>());
@@ -6262,7 +6262,7 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
 
   if (len) *len = local->Length();
 
-  js_get_arraybufferview_info(local, data, len, arraybuffer, offset);
+  js_get_arraybufferview_info(local, data, arraybuffer, offset);
 
   return 0;
 }
@@ -6275,7 +6275,7 @@ js_get_dataview_info(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 
   if (len) *len = local->ByteLength();
 
-  js_get_arraybufferview_info(local, data, len, arraybuffer, offset);
+  js_get_arraybufferview_info(local, data, arraybuffer, offset);
 
   return 0;
 }
