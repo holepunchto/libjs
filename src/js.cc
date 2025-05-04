@@ -1083,7 +1083,7 @@ struct js_platform_s : public Platform {
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
-    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
+    workers.reserve(std::max<size_t>(uv_available_parallelism() - 1 /* main thread */, 1));
 
     while (workers.size() < workers.capacity()) {
       workers.emplace_back(new js_worker_t(background));
