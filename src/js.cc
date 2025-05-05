@@ -1083,7 +1083,7 @@ struct js_platform_s : public Platform {
     // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
-    workers.reserve(uv_available_parallelism() - 1 /* main thread */);
+    workers.reserve(std::max<size_t>(uv_available_parallelism() - 1 /* main thread */, 1));
 
     while (workers.size() < workers.capacity()) {
       workers.emplace_back(new js_worker_t(background));
@@ -5805,6 +5805,97 @@ js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result) {
         property_filter,
         index_filter,
         key_conversion
+      );
+    }
+  );
+
+  if (names.IsEmpty()) return js_error(env);
+
+  if (result) *result = js_from_local(names.ToLocalChecked());
+
+  return 0;
+}
+
+namespace {
+
+static inline KeyCollectionMode
+js_to_key_collection_mode(js_key_collection_mode_t mode) {
+  switch (mode) {
+  case js_key_include_prototypes:
+  default:
+    return KeyCollectionMode::kIncludePrototypes;
+  case js_key_own_only:
+    return KeyCollectionMode::kOwnOnly;
+  }
+}
+
+static inline KeyConversionMode
+js_to_key_conversion_mode(js_key_conversion_mode_t mode) {
+  switch (mode) {
+  case js_key_convert_to_string:
+  default:
+    return KeyConversionMode::kConvertToString;
+  case js_key_keep_numbers:
+    return KeyConversionMode::kKeepNumbers;
+  }
+}
+
+static inline PropertyFilter
+js_to_property_filter(js_property_filter_t filter) {
+  PropertyFilter result = PropertyFilter::ALL_PROPERTIES;
+
+  if (filter & js_property_only_writable) {
+    result = static_cast<PropertyFilter>(result | PropertyFilter::ONLY_WRITABLE);
+  }
+
+  if (filter & js_property_only_enumerable) {
+    result = static_cast<PropertyFilter>(result | PropertyFilter::ONLY_ENUMERABLE);
+  }
+
+  if (filter & js_property_only_configurable) {
+    result = static_cast<PropertyFilter>(result | PropertyFilter::ONLY_CONFIGURABLE);
+  }
+
+  if (filter & js_property_skip_strings) {
+    result = static_cast<PropertyFilter>(result | PropertyFilter::SKIP_STRINGS);
+  }
+
+  if (filter & js_property_skip_symbols) {
+    result = static_cast<PropertyFilter>(result | PropertyFilter::SKIP_SYMBOLS);
+  }
+
+  return result;
+}
+
+static inline IndexFilter
+js_to_index_filter(js_index_filter_t filter) {
+  switch (filter) {
+  case js_index_include_indices:
+  default:
+    return IndexFilter::kIncludeIndices;
+  case js_index_skip_indices:
+    return IndexFilter::kSkipIndices;
+  }
+}
+
+} // namespace
+
+extern "C" int
+js_get_filtered_property_names(js_env_t *env, js_value_t *object, js_key_collection_mode_t mode, js_property_filter_t property_filter, js_index_filter_t index_filter, js_key_conversion_mode_t key_conversion, js_value_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto names = env->call_into_javascript<Array>(
+    [&] {
+      return local->GetPropertyNames(
+        context,
+        js_to_key_collection_mode(mode),
+        js_to_property_filter(property_filter),
+        js_to_index_filter(index_filter),
+        js_to_key_conversion_mode(key_conversion)
       );
     }
   );

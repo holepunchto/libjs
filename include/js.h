@@ -130,6 +130,30 @@ enum {
 };
 
 typedef enum {
+  js_key_include_prototypes = 0,
+  js_key_own_only = 1,
+} js_key_collection_mode_t;
+
+typedef enum {
+  js_key_convert_to_string = 0,
+  js_key_keep_numbers = 1,
+} js_key_conversion_mode_t;
+
+typedef enum {
+  js_property_all_properties = 0,
+  js_property_only_writable = js_writable,
+  js_property_only_enumerable = js_enumerable,
+  js_property_only_configurable = js_configurable,
+  js_property_skip_strings = 1 << 3,
+  js_property_skip_symbols = 1 << 4,
+} js_property_filter_t;
+
+typedef enum {
+  js_index_include_indices = 0,
+  js_index_skip_indices = 1,
+} js_index_filter_t;
+
+typedef enum {
   js_utf8 = 1,
   js_utf16le = 2,
   js_latin1 = 3,
@@ -1313,6 +1337,9 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result);
 
 int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
+
+int
+js_get_filtered_property_names(js_env_t *env, js_value_t *object, js_key_collection_mode_t mode, js_property_filter_t property_filter, js_index_filter_t index_filter, js_key_conversion_mode_t key_conversion, js_value_t **result);
 
 int
 js_get_property(js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);
