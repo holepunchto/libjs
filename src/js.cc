@@ -3616,18 +3616,18 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
       continue;
     }
 
-    int attributes = PropertyAttribute::None;
+    auto attributes = PropertyAttribute::None;
 
     if ((property->attributes & js_writable) == 0 && property->getter == nullptr && property->setter == nullptr) {
-      attributes |= PropertyAttribute::ReadOnly;
+      attributes = static_cast<PropertyAttribute>(attributes | PropertyAttribute::ReadOnly);
     }
 
     if ((property->attributes & js_enumerable) == 0) {
-      attributes |= PropertyAttribute::DontEnum;
+      attributes = static_cast<PropertyAttribute>(attributes | PropertyAttribute::DontEnum);
     }
 
     if ((property->attributes & js_configurable) == 0) {
-      attributes |= PropertyAttribute::DontDelete;
+      attributes = static_cast<PropertyAttribute>(attributes | PropertyAttribute::DontDelete);
     }
 
     auto name = js_to_local<Name>(property->name);
@@ -3648,30 +3648,17 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
         setter = callback->to_function_template(env->isolate);
       }
 
-      tpl->PrototypeTemplate()->SetAccessorProperty(
-        name,
-        getter,
-        setter,
-        static_cast<PropertyAttribute>(attributes)
-      );
+      tpl->PrototypeTemplate()->SetAccessorProperty(name, getter, setter, attributes);
     } else if (property->method) {
       auto callback = new js_callback_t(env, property->method, property->data);
 
       auto method = callback->to_function_template(env->isolate, Signature::New(env->isolate, tpl));
 
-      tpl->PrototypeTemplate()->Set(
-        name,
-        method,
-        static_cast<PropertyAttribute>(attributes)
-      );
+      tpl->PrototypeTemplate()->Set(name, method, attributes);
     } else {
       auto value = js_to_local(property->value);
 
-      tpl->PrototypeTemplate()->Set(
-        name,
-        value,
-        static_cast<PropertyAttribute>(attributes)
-      );
+      tpl->PrototypeTemplate()->Set(name, value, attributes);
     }
   }
 
