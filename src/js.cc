@@ -6294,6 +6294,29 @@ js_get_sharedarraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **dat
   return 0;
 }
 
+namespace {
+
+static inline void
+js_get_arraybufferview_info(Local<ArrayBufferView> view, void **data, js_value_t **arraybuffer, size_t *offset) {
+  if (data || arraybuffer) {
+    if (arraybuffer == nullptr && view->HasBuffer()) {
+      auto span = view->GetContents(MemorySpan<uint8_t>());
+
+      *data = span.data();
+    } else {
+      auto buffer = view->Buffer();
+
+      if (data) *data = static_cast<uint8_t *>(buffer->Data()) + view->ByteOffset();
+
+      if (arraybuffer) *arraybuffer = js_from_local(buffer);
+    }
+  }
+
+  if (offset) *offset = view->ByteOffset();
+}
+
+} // namespace
+
 extern "C" int
 js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset) {
   // Allow continuing even with a pending exception
@@ -6330,15 +6353,7 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
 
   if (len) *len = local->Length();
 
-  Local<ArrayBuffer> buffer;
-
-  if (data || arraybuffer) buffer = local->Buffer();
-
-  if (data) *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
-
-  if (arraybuffer) *arraybuffer = js_from_local(buffer);
-
-  if (offset) *offset = local->ByteOffset();
+  js_get_arraybufferview_info(local, data, arraybuffer, offset);
 
   return 0;
 }
@@ -6351,15 +6366,7 @@ js_get_dataview_info(js_env_t *env, js_value_t *dataview, void **data, size_t *l
 
   if (len) *len = local->ByteLength();
 
-  Local<ArrayBuffer> buffer;
-
-  if (data || arraybuffer) buffer = local->Buffer();
-
-  if (data) *data = static_cast<uint8_t *>(buffer->Data()) + local->ByteOffset();
-
-  if (arraybuffer) *arraybuffer = js_from_local(buffer);
-
-  if (offset) *offset = local->ByteOffset();
+  js_get_arraybufferview_info(local, data, arraybuffer, offset);
 
   return 0;
 }
