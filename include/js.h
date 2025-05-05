@@ -1449,7 +1449,8 @@ int
 js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 /**
- * Call a JavaScript function from native and perform a microtask checkpoint.
+ * Call a JavaScript function from native code and perform a microtask
+ * checkpoint.
  *
  * THIS FUNCTION MUST ONLY BE USED WHEN THERE IS NO JAVASCRIPT ALREADY
  * EXECUTING ON THE STACK. If in doubt, use `js_call_function()` instead which
