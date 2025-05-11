@@ -40,6 +40,7 @@ list(APPEND tests
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
+  create-external-arraybuffer-with-finalizer-detach
   create-external-string-latin1
   create-external-string-latin1-with-finalizer
   create-external-string-utf8
