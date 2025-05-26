@@ -110,6 +110,7 @@ list(APPEND tests
   get-arraybuffer-info
   get-dataview-info
   get-platform-identifier
+  get-platform-limits
   get-platform-version
   get-property-missing
   get-typedarray-info-uint16array
