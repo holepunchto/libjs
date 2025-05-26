@@ -14,6 +14,7 @@ extern "C" {
 
 typedef struct js_platform_s js_platform_t;
 typedef struct js_platform_options_s js_platform_options_t;
+typedef struct js_platform_limits_s js_platform_limits_t;
 typedef struct js_env_s js_env_t;
 typedef struct js_env_options_s js_env_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
@@ -236,6 +237,25 @@ struct js_platform_options_s {
 };
 
 /** @version 0 */
+struct js_platform_limits_s {
+  int version;
+
+  /**
+   * The maximum length of `ArrayBuffer` objects in bytes.
+   *
+   * @since 0
+   */
+  size_t arraybuffer_length;
+
+  /**
+   * The maximum length of `String` objects in UTF-16 code units.
+   *
+   * @since 0
+   */
+  size_t string_length;
+};
+
+/** @version 0 */
 struct js_env_options_s {
   int version;
 
@@ -362,6 +382,9 @@ js_get_platform_identifier(js_platform_t *platform, const char **result);
 
 int
 js_get_platform_version(js_platform_t *platform, const char **result);
+
+int
+js_get_platform_limits(js_platform_t *platform, js_platform_limits_t *result);
 
 int
 js_get_platform_loop(js_platform_t *platform, uv_loop_t **result);

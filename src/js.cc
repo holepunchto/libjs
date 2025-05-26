@@ -3084,6 +3084,14 @@ js_get_platform_version(js_platform_t *platform, const char **result) {
 }
 
 extern "C" int
+js_get_platform_limits(js_platform_t *platform, js_platform_limits_t *result) {
+  result->arraybuffer_length = ArrayBuffer::kMaxByteLength;
+  result->string_length = String::kMaxLength;
+
+  return 0;
+}
+
+extern "C" int
 js_get_platform_loop(js_platform_t *platform, uv_loop_t **result) {
   *result = platform->loop;
 
