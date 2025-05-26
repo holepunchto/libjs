@@ -2921,77 +2921,55 @@ namespace {
 
 template <int N>
 static inline Local<String>
-js_to_string_utf8(js_env_t *env, const char (&literal)[N], bool internalize = false) {
+js_to_string_utf8_literal(js_env_t *env, const char (&literal)[N], bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
   return String::NewFromUtf8Literal(env->isolate, literal, type);
 }
 
-static inline Local<String>
+static inline MaybeLocal<String>
 js_to_string_utf8(js_env_t *env, const char *data, size_t len, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  MaybeLocal<String> string;
-
   if (len == size_t(-1)) {
-    string = String::NewFromUtf8(env->isolate, data, type);
+    return String::NewFromUtf8(env->isolate, data, type);
   } else {
-    string = String::NewFromUtf8(env->isolate, data, type, len);
+    return String::NewFromUtf8(env->isolate, data, type, len);
   }
-
-  assert(!string.IsEmpty());
-
-  return string.ToLocalChecked();
 }
 
-static inline Local<String>
+static inline MaybeLocal<String>
 js_to_string_utf8(js_env_t *env, const char *data, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  auto string = String::NewFromUtf8(env->isolate, data, type);
-
-  assert(!string.IsEmpty());
-
-  return string.ToLocalChecked();
+  return String::NewFromUtf8(env->isolate, data, type);
 }
 
-static inline Local<String>
+static inline MaybeLocal<String>
 js_to_string_utf8(js_env_t *env, const utf8_t *data, size_t len, bool internalize = false) {
   return js_to_string_utf8(env, reinterpret_cast<const char *>(data), len, internalize);
 }
 
-static inline Local<String>
+static inline MaybeLocal<String>
 js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  MaybeLocal<String> string;
-
   if (len == size_t(-1)) {
-    string = String::NewFromTwoByte(env->isolate, data, type);
+    return String::NewFromTwoByte(env->isolate, data, type);
   } else {
-    string = String::NewFromTwoByte(env->isolate, data, type, len);
+    return String::NewFromTwoByte(env->isolate, data, type, len);
   }
-
-  assert(!string.IsEmpty());
-
-  return string.ToLocalChecked();
 }
 
-static inline Local<String>
+static inline MaybeLocal<String>
 js_to_string_latin1(js_env_t *env, const latin1_t *data, size_t len, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  MaybeLocal<String> string;
-
   if (len == size_t(-1)) {
-    string = String::NewFromOneByte(env->isolate, data, type);
+    return String::NewFromOneByte(env->isolate, data, type);
   } else {
-    string = String::NewFromOneByte(env->isolate, data, type, len);
+    return String::NewFromOneByte(env->isolate, data, type, len);
   }
-
-  assert(!string.IsEmpty());
-
-  return string.ToLocalChecked();
 }
 
 } // namespace
@@ -3318,8 +3296,12 @@ js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_
 
   auto context = env->current_context();
 
+  auto string = js_to_string_utf8(env, file, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, file, len, true),
+    string.ToLocalChecked(),
     offset,
     0,
     false,
@@ -3358,8 +3340,12 @@ extern "C" int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  auto string = js_to_string_utf8(env, name, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, name, len, true),
+    string.ToLocalChecked(),
     offset,
     0,
     false,
@@ -3407,11 +3393,15 @@ extern "C" int
 js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  auto string = js_to_string_utf8(env, name, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
   auto local = Module::CreateSyntheticModule(
     env->isolate,
-    js_to_string_utf8(env, name, len, true),
+    string.ToLocalChecked(),
     MemorySpan<const Local<String>>(
       std::vector(local_export_names, local_export_names + export_names_len).begin(),
       export_names_len
@@ -3612,7 +3602,17 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
 
   auto tpl = callback->to_function_template(env->isolate);
 
-  if (name) tpl->SetClassName(js_to_string_utf8(env, name, len, true));
+  if (name) {
+    auto string = js_to_string_utf8(env, name, len, true);
+
+    if (string.IsEmpty()) {
+      delete callback;
+
+      return js_error(env);
+    }
+
+    tpl->SetClassName(string.ToLocalChecked());
+  }
 
   std::vector<js_property_descriptor_t> static_properties;
 
@@ -4051,38 +4051,54 @@ js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result) {
 
 extern "C" int
 js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_utf8(env, str, len));
+  auto string = js_to_string_utf8(env, str, len);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_string_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_utf16le(env, str, len));
+  auto string = js_to_string_utf16le(env, str, len);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_latin1(env, str, len));
+  auto string = js_to_string_latin1(env, str, len);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
   if (copied) *copied = true;
 
-  *result = js_from_local(js_to_string_utf8(env, str, len));
+  auto string = js_to_string_utf8(env, str, len);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   if (finalize_cb) finalize_cb(env, str, finalize_hint);
 
@@ -4091,61 +4107,81 @@ js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finali
 
 extern "C" int
 js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
   auto resource = new js_external_string_utf16le_t(env, str, len, finalize_cb, finalize_hint);
 
-  auto local = String::NewExternalTwoByte(env->isolate, resource);
+  auto string = String::NewExternalTwoByte(env->isolate, resource);
 
-  assert(!local.IsEmpty());
+  if (string.IsEmpty()) {
+    delete resource;
+
+    return js_error(env);
+  }
 
   if (copied) *copied = false;
 
-  *result = js_from_local(local.ToLocalChecked());
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
   auto resource = new js_external_string_latin1_t(env, str, len, finalize_cb, finalize_hint);
 
-  auto local = String::NewExternalOneByte(env->isolate, resource);
+  auto string = String::NewExternalOneByte(env->isolate, resource);
 
-  assert(!local.IsEmpty());
+  if (string.IsEmpty()) {
+    delete resource;
+
+    return js_error(env);
+  }
 
   if (copied) *copied = false;
 
-  *result = js_from_local(local.ToLocalChecked());
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_utf8(env, str, len, true));
+  auto string = js_to_string_utf8(env, str, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_utf16le(env, str, len, true));
+  auto string = js_to_string_utf16le(env, str, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
 
 extern "C" int
 js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  *result = js_from_local(js_to_string_latin1(env, str, len, true));
+  auto string = js_to_string_latin1(env, str, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(string.ToLocalChecked());
 
   return 0;
 }
@@ -4169,9 +4205,13 @@ js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result) {
 
 extern "C" int
 js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  auto symbol = Symbol::For(env->isolate, js_to_string_utf8(env, description, len, true));
+  auto string = js_to_string_utf8(env, description, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  auto symbol = Symbol::For(env->isolate, string.ToLocalChecked());
 
   *result = js_from_local(symbol);
 
@@ -4207,7 +4247,13 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, len, true));
+  if (name) {
+    auto string = js_to_string_utf8(env, name, len, true);
+
+    if (string.IsEmpty()) return js_error(env);
+
+    local->SetName(string.ToLocalChecked());
+  }
 
   *result = js_from_local(local);
 
@@ -4220,8 +4266,12 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
 
   auto context = env->current_context();
 
+  auto string = js_to_string_utf8(env, file, file_len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
   auto origin = ScriptOrigin(
-    js_to_string_utf8(env, file, file_len, true),
+    string.ToLocalChecked(),
     offset,
     0,
     false,
@@ -4250,7 +4300,13 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, name_len, true));
+  if (name) {
+    auto string = js_to_string_utf8(env, name, name_len, true);
+
+    if (string.IsEmpty()) return js_error(env);
+
+    local->SetName(string.ToLocalChecked());
+  }
 
   *result = js_from_local(local);
 
@@ -4384,11 +4440,25 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
     }
   );
 
-  if (function.IsEmpty()) return js_error(env);
+  if (function.IsEmpty()) {
+    delete callback;
+
+    return js_error(env);
+  }
 
   auto local = function.ToLocalChecked();
 
-  if (name) local->SetName(js_to_string_utf8(env, name, len, true));
+  if (name) {
+    auto string = js_to_string_utf8(env, name, len, true);
+
+    if (string.IsEmpty()) {
+      delete callback;
+
+      return js_error(env);
+    }
+
+    local->SetName(string.ToLocalChecked());
+  }
 
   *result = js_from_local(local);
 
@@ -4459,7 +4529,7 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
   auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
-    error->Set(context, js_to_string_utf8(env, "code", true), js_to_local(code)).Check();
+    error->Set(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
   }
 
   *result = js_from_local(error);
@@ -6015,9 +6085,11 @@ js_get_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto key = js_to_string_utf8(env, name, true);
 
+  if (key.IsEmpty()) return js_error(env);
+
   auto value = env->call_into_javascript<Value>(
     [&] {
-      return local->Get(context, key);
+      return local->Get(context, key.ToLocalChecked());
     }
   );
 
@@ -6038,9 +6110,11 @@ js_has_named_property(js_env_t *env, js_value_t *object, const char *name, bool 
 
   auto key = js_to_string_utf8(env, name, true);
 
+  if (key.IsEmpty()) return js_error(env);
+
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Has(context, key);
+      return local->Has(context, key.ToLocalChecked());
     }
   );
 
@@ -6061,9 +6135,11 @@ js_set_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto key = js_to_string_utf8(env, name, true);
 
+  if (key.IsEmpty()) return js_error(env);
+
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->Set(context, key, js_to_local(value));
+      return local->Set(context, key.ToLocalChecked(), js_to_local(value));
     }
   );
 
@@ -6082,9 +6158,11 @@ js_delete_named_property(js_env_t *env, js_value_t *object, const char *name, bo
 
   auto key = js_to_string_utf8(env, name, true);
 
+  if (key.IsEmpty()) return js_error(env);
+
   auto value = env->call_into_javascript<bool>(
     [&] {
-      return local->Delete(context, key);
+      return local->Delete(context, key.ToLocalChecked());
     }
   );
 
@@ -6660,10 +6738,18 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
   auto context = env->current_context();
 
-  auto error = Error(js_to_string_utf8(env, message, true), {}).As<Object>();
+  auto string = js_to_string_utf8(env, message, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  auto error = Error(string.ToLocalChecked(), {}).As<Object>();
 
   if (code) {
-    error->Set(context, js_to_string_utf8(env, "code", true), js_to_string_utf8(env, code, true)).Check();
+    auto string = js_to_string_utf8(env, code, true);
+
+    if (string.IsEmpty()) return js_error(env);
+
+    error->Set(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
   }
 
   return js_throw(env, js_from_local(error));

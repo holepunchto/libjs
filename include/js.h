@@ -644,21 +644,12 @@ js_create_bigint_int64(js_env_t *env, int64_t value, js_value_t **result);
 int
 js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_string_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
 
@@ -667,8 +658,6 @@ js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value
  * copied it must remain valid until the finalize callback is invoked. The
  * finalize callback may be omitted if the string is guaranteed to outlive the
  * JavaScript environment.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
@@ -678,8 +667,6 @@ js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finali
  * copied it must remain valid until the finalize callback is invoked. The
  * finalize callback may be omitted if the string is guaranteed to outlive the
  * JavaScript environment.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
@@ -689,27 +676,16 @@ js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_fi
  * copied it must remain valid until the finalize callback is invoked. The
  * finalize callback may be omitted if the string is guaranteed to outlive the
  * JavaScript environment.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
 
@@ -719,9 +695,6 @@ js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js
 int
 js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **result);
 
