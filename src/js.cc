@@ -2883,7 +2883,7 @@ struct js_inspector_s : private V8InspectorClient {
 
     auto buffer = std::vector<uint16_t>(length);
 
-    message->Write(env->isolate, buffer.data(), 0, length);
+    message->WriteV2(env->isolate, 0, length, buffer.data());
 
     auto message_view = StringView(buffer.data(), length);
 
@@ -5673,13 +5673,12 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
   auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
-    *result = local->Utf8Length(env->isolate);
+    *result = local->Utf8LengthV2(env->isolate);
   } else if (len != 0) {
-    int written = local->WriteUtf8(
+    size_t written = local->WriteUtf8V2(
       env->isolate,
       reinterpret_cast<char *>(str),
       len,
-      nullptr,
       String::NO_NULL_TERMINATION | String::REPLACE_INVALID_UTF8
     );
 
@@ -5700,11 +5699,13 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
   if (str == nullptr) {
     *result = local->Length();
   } else if (len != 0) {
-    int written = local->Write(
+    size_t written = std::min(len, static_cast<size_t>(local->Length()));
+
+    local->WriteV2(
       env->isolate,
-      str,
       0,
-      len,
+      written,
+      str,
       String::NO_NULL_TERMINATION
     );
 
@@ -5725,11 +5726,13 @@ js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size
   if (str == nullptr) {
     *result = local->Length();
   } else if (len != 0) {
-    int written = local->WriteOneByte(
+    size_t written = std::min(len, static_cast<size_t>(local->Length()));
+
+    local->WriteOneByteV2(
       env->isolate,
-      str,
       0,
-      len,
+      written,
+      str,
       String::NO_NULL_TERMINATION
     );
 
