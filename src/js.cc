@@ -4243,7 +4243,11 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
     }
   );
 
-  if (function.IsEmpty()) return js_error(env);
+  if (function.IsEmpty()) {
+    delete callback;
+
+    return js_error(env);
+  }
 
   auto local = function.ToLocalChecked();
 
