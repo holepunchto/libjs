@@ -15,6 +15,10 @@ main() {
   e = js_create_platform(loop, NULL, &platform);
   assert(e == 0);
 
+  js_platform_limits_t limits = {.version = 0};
+  e = js_get_platform_limits(platform, &limits);
+  assert(e == 0);
+
   js_env_t *env;
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
@@ -23,11 +27,13 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *arraybuffer;
-  e = js_create_arraybuffer(env, 281474976710656, NULL, &arraybuffer);
-  assert(e != 0);
+  if (limits.arraybuffer_length < SIZE_MAX) {
+    js_value_t *arraybuffer;
+    e = js_create_arraybuffer(env, limits.arraybuffer_length + 1, NULL, &arraybuffer);
+    assert(e != 0);
 
-  js_print_pending_exception(env);
+    js_print_pending_exception(env);
+  }
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
