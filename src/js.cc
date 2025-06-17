@@ -490,12 +490,12 @@ private: // V8 embedder API
 
   void
   PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, now() + uint64_t(delay * 1000)));
   }
 
   void
   PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, now() + uint64_t(delay * 1000)));
   }
 
   void
@@ -567,7 +567,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     bool ok;
 
     do {
-      task_id = std::countr_one(task_ids);
+      task_id = std::countr_one(task_ids) & 0xff;
 
       ok = this->task_ids.compare_exchange_weak(
         task_ids,
@@ -678,7 +678,15 @@ private:
   max_concurrency(int8_t delta = 0) {
     std::scoped_lock guard(lock);
 
-    return std::min<size_t>(task->GetMaxConcurrency(active_workers + delta), available_parallelism);
+    auto worker_count = active_workers + delta;
+
+    if (worker_count < 0) worker_count = 0;
+
+    auto max_concurrency = task->GetMaxConcurrency(size_t(worker_count));
+
+    if (max_concurrency > available_parallelism) return available_parallelism;
+
+    return uint8_t(max_concurrency);
   }
 
   inline void
@@ -1224,7 +1232,7 @@ private: // V8 embedder API
 
   int
   NumberOfWorkerThreads() override {
-    return workers.size();
+    return int(workers.size());
   }
 
   std::shared_ptr<TaskRunner>
@@ -1244,12 +1252,12 @@ private: // V8 embedder API
 
   void
   PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay, const SourceLocation &location) override {
-    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, background->now() + (delay * 1000)));
+    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, background->now() + uint64_t(delay * 1000)));
   }
 
   double
   MonotonicallyIncreasingTime() override {
-    return now();
+    return double(now());
   }
 
   double
@@ -1291,7 +1299,7 @@ struct js_env_s {
 
   ExternalMemoryAccounter memory;
 
-  std::multimap<size_t, js_module_t *> modules;
+  std::multimap<int, js_module_t *> modules;
 
   std::list<Global<Promise>> unhandled_promises;
 
@@ -2082,7 +2090,7 @@ struct js_typed_callback_s : js_callback_t {
       : js_callback_t(env, cb, data),
         result(std::move(result)),
         args(std::move(args)),
-        type(this->result, this->args.size(), this->args.data(), integer_representation),
+        type(this->result, uint16_t(this->args.size()), this->args.data(), integer_representation),
         address(address) {}
 
   js_typed_callback_s(const js_typed_callback_s &) = delete;
@@ -2804,13 +2812,13 @@ private: // V8 embedder API
              env->isolate,
              reinterpret_cast<const uint8_t *>(string.characters8()),
              v8::NewStringType::kNormal,
-             length
+             int(length)
            )
          : String::NewFromTwoByte(
              env->isolate,
              reinterpret_cast<const uint16_t *>(string.characters16()),
              v8::NewStringType::kNormal,
-             length
+             int(length)
            ))
         .ToLocalChecked();
 
@@ -2883,11 +2891,11 @@ struct js_inspector_s : private V8InspectorClient {
   send(Local<String> message) {
     auto length = message->Length();
 
-    auto buffer = std::vector<uint16_t>(length);
+    auto buffer = std::vector<uint16_t>(size_t(length));
 
-    message->WriteV2(env->isolate, 0, length, buffer.data());
+    message->WriteV2(env->isolate, 0, uint32_t(length), buffer.data());
 
-    auto message_view = StringView(buffer.data(), length);
+    auto message_view = StringView(buffer.data(), size_t(length));
 
     auto scope = SealHandleScope(env->isolate);
 
@@ -2936,7 +2944,7 @@ js_to_string_utf8(js_env_t *env, const char *data, size_t len, bool internalize 
   if (len == size_t(-1)) {
     return String::NewFromUtf8(env->isolate, data, type);
   } else {
-    return String::NewFromUtf8(env->isolate, data, type, len);
+    return String::NewFromUtf8(env->isolate, data, type, int(len));
   }
 }
 
@@ -2959,7 +2967,7 @@ js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len, bool intern
   if (len == size_t(-1)) {
     return String::NewFromTwoByte(env->isolate, data, type);
   } else {
-    return String::NewFromTwoByte(env->isolate, data, type, len);
+    return String::NewFromTwoByte(env->isolate, data, type, int(len));
   }
 }
 
@@ -2970,7 +2978,7 @@ js_to_string_latin1(js_env_t *env, const latin1_t *data, size_t len, bool intern
   if (len == size_t(-1)) {
     return String::NewFromOneByte(env->isolate, data, type);
   } else {
-    return String::NewFromOneByte(env->isolate, data, type, len);
+    return String::NewFromOneByte(env->isolate, data, type, int(len));
   }
 }
 
@@ -4486,7 +4494,7 @@ extern "C" int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto array = Array::New(env->isolate, len);
+  auto array = Array::New(env->isolate, int(len));
 
   *result = js_from_local(array);
 
@@ -5703,14 +5711,14 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
   auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
-    *result = local->Length();
+    *result = size_t(local->Length());
   } else if (len != 0) {
-    size_t written = std::min(len, static_cast<size_t>(local->Length()));
+    auto written = std::min(len, size_t(local->Length()));
 
     local->WriteV2(
       env->isolate,
       0,
-      written,
+      uint32_t(written),
       str,
       String::NO_NULL_TERMINATION
     );
@@ -5730,14 +5738,14 @@ js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size
   auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
-    *result = local->Length();
+    *result = size_t(local->Length());
   } else if (len != 0) {
-    size_t written = std::min(len, static_cast<size_t>(local->Length()));
+    auto written = std::min(len, size_t(local->Length()));
 
     local->WriteOneByteV2(
       env->isolate,
       0,
-      written,
+      uint32_t(written),
       str,
       String::NO_NULL_TERMINATION
     );
@@ -5795,7 +5803,7 @@ js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t **elements, s
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      for (uint32_t i = 0, n = len, j = offset, m = local->Length(); i < n && j < m; i++, j++) {
+      for (uint32_t i = 0, n = uint32_t(len), j = uint32_t(offset), m = local->Length(); i < n && j < m; i++, j++) {
         auto value = local->Get(context, j);
 
         if (value.IsEmpty()) return false;
@@ -5826,7 +5834,7 @@ js_set_array_elements(js_env_t *env, js_value_t *array, const js_value_t *elemen
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      for (uint32_t i = 0, n = len, j = offset; i < n; i++, j++) {
+      for (uint32_t i = 0, n = uint32_t(len), j = uint32_t(offset); i < n; i++, j++) {
         auto value = local->Set(context, j, js_to_local(elements[i]));
 
         if (value.IsNothing()) return false;
@@ -6295,25 +6303,26 @@ js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc
 
   auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
 
-  if (argv) {
-    size_t i = 0, n = v8_info.Length() < *argc ? v8_info.Length() : *argc;
+  auto const n = v8_info.Length();
 
-    for (; i < n; i++) {
+  if (argv) {
+    auto i = 0;
+    auto const m = *argc;
+
+    for (; i < n && i < m; i++) {
       argv[i] = js_from_local(v8_info[i]);
     }
 
-    n = *argc;
-
-    if (i < n) {
+    if (i < m) {
       auto undefined = js_from_local(Undefined(env->isolate));
 
-      for (; i < n; i++) {
+      for (; i < m; i++) {
         argv[i] = undefined;
       }
     }
   }
 
-  if (argc) *argc = v8_info.Length();
+  if (argc) *argc = size_t(n);
 
   if (receiver) *receiver = js_from_local(v8_info.This());
 
@@ -6471,7 +6480,7 @@ js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size
         ->Call(
           context,
           js_to_local(receiver),
-          argc,
+          int(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     }
@@ -6496,7 +6505,7 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
         ->Call(
           context,
           js_to_local(receiver),
-          argc,
+          int(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     },
@@ -6521,7 +6530,7 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
       return js_to_local<Function>(constructor)
         ->NewInstance(
           context,
-          argc,
+          int(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     }
@@ -6769,6 +6778,9 @@ static inline int
 js_throw_verrorf(js_env_t *env, const char *code, const char *message, va_list args) {
   if (env->is_exception_pending()) return js_error(env);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+
   va_list args_copy;
   va_copy(args_copy, args);
 
@@ -6778,13 +6790,15 @@ js_throw_verrorf(js_env_t *env, const char *code, const char *message, va_list a
 
   size += 1 /* NULL */;
 
-  auto formatted = std::vector<char>(size);
+  auto formatted = std::vector<char>(size_t(size));
 
   va_copy(args_copy, args);
 
-  vsnprintf(formatted.data(), size, message, args_copy);
+  vsnprintf(formatted.data(), size_t(size), message, args_copy);
 
   va_end(args_copy);
+
+#pragma clang diagnostic pop
 
   return js_throw_error<Error>(env, code, formatted.data());
 }

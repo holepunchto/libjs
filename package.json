@@ -13,6 +13,7 @@
   "homepage": "https://github.com/holepunchto/libjs#readme",
   "devDependencies": {
     "cmake-fetch": "^1.0.0",
-    "cmake-gn": "^1.0.0"
+    "cmake-gn": "^1.0.0",
+    "cmake-harden": "^1.0.2"
   }
 }
