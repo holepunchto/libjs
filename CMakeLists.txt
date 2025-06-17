@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.31)
 
 find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
+find_package(cmake-harden REQUIRED PATHS node_modules/cmake-harden)
 
 if(NOT TARGET c++ OR NOT TARGET v8)
   find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
@@ -39,6 +40,8 @@ if(NOT TARGET v8)
 endif()
 
 add_library(js OBJECT)
+
+harden(js)
 
 set_target_properties(
   js
