@@ -106,12 +106,14 @@ private: // V8 embedder API
 using js_task_completion_cb = std::function<void()>;
 
 struct js_task_handle_s {
+  TaskPriority priority;
   std::unique_ptr<Task> task;
   js_task_nestability_t nestability;
   js_task_completion_cb on_completion;
 
-  js_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability)
-      : task(std::move(task)),
+  js_task_handle_s(TaskPriority priority, std::unique_ptr<Task> task, js_task_nestability_t nestability)
+      : priority(priority),
+        task(std::move(task)),
         nestability(nestability),
         on_completion() {}
 
@@ -136,8 +138,8 @@ struct js_task_handle_s {
 struct js_delayed_task_handle_s : js_task_handle_t {
   uint64_t expiry;
 
-  js_delayed_task_handle_s(std::unique_ptr<Task> task, js_task_nestability_t nestability, uint64_t expiry)
-      : js_task_handle_t(std::move(task), nestability),
+  js_delayed_task_handle_s(TaskPriority priority, std::unique_ptr<Task> task, js_task_nestability_t nestability, uint64_t expiry)
+      : js_task_handle_t(priority, std::move(task), nestability),
         expiry(expiry) {}
 
   friend bool
@@ -304,9 +306,9 @@ struct js_task_runner_s : public TaskRunner {
 
     outstanding++;
 
-    // Nestable delayed tasks are not allowed to execute JavaScript and should
-    // therefore be safe to dispose if all other tasks have finished.
-    auto is_disposable = task.nestability == js_task_nestable;
+    // Tasks that are not user blocking are safe to dispose if all other tasks
+    // have finished.
+    auto is_disposable = task.priority != TaskPriority::kUserBlocking;
 
     if (is_disposable) disposable++;
 
@@ -478,22 +480,22 @@ private:
 private: // V8 embedder API
   void
   PostTaskImpl(std::unique_ptr<Task> task, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_task_handle_t(std::move(task), js_task_nestable));
+    push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable));
   }
 
   void
   PostNonNestableTaskImpl(std::unique_ptr<Task> task, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_task_handle_t(std::move(task), js_task_non_nestable));
+    push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable));
   }
 
   void
   PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, now() + (delay * 1000)));
   }
 
   void
   PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(std::move(task), js_task_non_nestable, now() + (delay * 1000)));
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, now() + (delay * 1000)));
   }
 
   void
@@ -690,7 +692,7 @@ private:
   schedule_run() {
     auto task = std::make_unique<js_job_worker_s>(shared_from_this());
 
-    task_runner->push_task(js_task_handle_t(std::move(task), js_task_nestable));
+    task_runner->push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable));
   }
 
   inline bool
@@ -1237,12 +1239,12 @@ private: // V8 embedder API
 
   void
   PostTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, const SourceLocation &location) override {
-    background->push_task(js_task_handle_t(std::move(task), js_task_nestable));
+    background->push_task(js_task_handle_t(priority, std::move(task), js_task_nestable));
   }
 
   void
   PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay, const SourceLocation &location) override {
-    background->push_task(js_delayed_task_handle_t(std::move(task), js_task_nestable, background->now() + (delay * 1000)));
+    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, background->now() + (delay * 1000)));
   }
 
   double
