@@ -9,7 +9,7 @@ endif()
 
 project(js C CXX)
 
-fetch_package("github:libuv/libuv@1.50.0")
+fetch_package("github:libuv/libuv@1.51.0")
 
 fetch_package("github:holepunchto/libutf")
 
