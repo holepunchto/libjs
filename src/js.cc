@@ -6814,10 +6814,12 @@ extern "C" int
 js_throw_errorf(js_env_t *env, const char *code, const char *message, ...) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf<Exception::Error>(env, code, message, args);
+  err = js_throw_verrorf<Exception::Error>(env, code, message, args);
 
   va_end(args);
 
@@ -6838,10 +6840,12 @@ extern "C" int
 js_throw_type_errorf(js_env_t *env, const char *code, const char *message, ...) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf<Exception::TypeError>(env, code, message, args);
+  err = js_throw_verrorf<Exception::TypeError>(env, code, message, args);
 
   va_end(args);
 
@@ -6862,10 +6866,12 @@ extern "C" int
 js_throw_range_errorf(js_env_t *env, const char *code, const char *message, ...) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf<Exception::RangeError>(env, code, message, args);
+  err = js_throw_verrorf<Exception::RangeError>(env, code, message, args);
 
   va_end(args);
 
@@ -6886,10 +6892,12 @@ extern "C" int
 js_throw_syntax_errorf(js_env_t *env, const char *code, const char *message, ...) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf<Exception::SyntaxError>(env, code, message, args);
+  err = js_throw_verrorf<Exception::SyntaxError>(env, code, message, args);
 
   va_end(args);
 
@@ -6910,10 +6918,12 @@ extern "C" int
 js_throw_reference_errorf(js_env_t *env, const char *code, const char *message, ...) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
   va_list args;
   va_start(args, message);
 
-  int err = js_throw_verrorf<Exception::ReferenceError>(env, code, message, args);
+  err = js_throw_verrorf<Exception::ReferenceError>(env, code, message, args);
 
   va_end(args);
 
