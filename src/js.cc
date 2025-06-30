@@ -1414,11 +1414,6 @@ struct js_env_s {
     return reinterpret_cast<js_env_t *>(isolate->GetData(0));
   }
 
-  static inline js_env_t *
-  from(Local<Context> context) {
-    return from(context->GetIsolate());
-  }
-
   inline bool
   ref() {
     refs++;
@@ -1603,7 +1598,7 @@ struct js_env_s {
 
   static void
   on_uncaught_exception(Local<Message> message, Local<Value> error) {
-    auto env = js_env_t::from(message->GetIsolate());
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     env->uncaught_exception(error);
   }
@@ -1618,7 +1613,7 @@ struct js_env_s {
   on_promise_reject(PromiseRejectMessage message) {
     auto promise = message.GetPromise();
 
-    auto isolate = promise->GetIsolate();
+    auto isolate = Isolate::GetCurrent();
 
     auto env = js_env_t::from(isolate);
 
@@ -1797,7 +1792,7 @@ struct js_module_s {
 
   static inline js_module_t *
   from_local(Local<Context> context, Local<Module> local) {
-    auto env = js_env_t::from(context);
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto range = env->modules.equal_range(local->GetIdentityHash());
 
@@ -1812,7 +1807,7 @@ struct js_module_s {
 
   static MaybeLocal<Module>
   on_resolve(Local<Context> context, Local<String> specifier, Local<FixedArray> raw_assertions, Local<Module> referrer) {
-    auto env = js_env_t::from(context);
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto module = js_module_t::from_local(context, referrer);
 
@@ -1856,7 +1851,7 @@ struct js_module_s {
 
   static MaybeLocal<Value>
   on_evaluate(Local<Context> context, Local<Module> referrer) {
-    auto env = js_env_t::from(context);
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto module = js_module_t::from_local(context, referrer);
 
@@ -1885,7 +1880,7 @@ struct js_module_s {
   on_dynamic_import(Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
     int err;
 
-    auto env = js_env_t::from(context);
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     if (env->callbacks.dynamic_import == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
@@ -1937,7 +1932,7 @@ struct js_module_s {
 
   static void
   on_import_meta(Local<Context> context, Local<Module> local, Local<Object> meta) {
-    auto env = js_env_t::from(context);
+    auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto module = js_module_t::from_local(context, local);
 
@@ -5855,7 +5850,7 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto local = js_to_local<Object>(object);
 
-  *result = js_from_local(local->GetPrototype());
+  *result = js_from_local(local->GetPrototypeV2());
 
   return 0;
 }
