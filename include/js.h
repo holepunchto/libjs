@@ -380,6 +380,9 @@ struct js_error_location_s {
   js_value_t *name;
 
   /** @since 0 */
+  js_value_t *source;
+
+  /** @since 0 */
   int64_t line;
 
   /** @since 0 */

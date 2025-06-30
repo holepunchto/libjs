@@ -4580,6 +4580,7 @@ js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *res
   auto message = Exception::CreateMessage(env->isolate, js_to_local(error));
 
   result->name = js_from_local(message->GetScriptResourceName());
+  result->source = js_from_local(message->GetSource(context).ToLocalChecked());
   result->line = message->GetLineNumber(context).FromJust();
   result->column_start = message->GetStartColumn(context).FromJust();
   result->column_end = message->GetEndColumn(context).FromJust();

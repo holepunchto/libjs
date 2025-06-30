@@ -42,9 +42,14 @@ main() {
   e = js_get_value_string_utf8(env, location.name, name, 8, NULL);
   assert(e == 0);
 
+  utf8_t source[11];
+  e = js_get_value_string_utf8(env, location.source, source, 11, NULL);
+  assert(e == 0);
+
   printf(
-    "name=%s line=%lld column=[%lld, %lld)\n",
+    "name=%s\nsource=%s\nline=%lld\ncolumn=[%lld, %lld)\n",
     name,
+    source,
     location.line,
     location.column_start,
     location.column_end
