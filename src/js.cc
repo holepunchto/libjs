@@ -4574,6 +4574,20 @@ js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, 
 }
 
 extern "C" int
+js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *result) {
+  auto context = env->current_context();
+
+  auto message = Exception::CreateMessage(env->isolate, js_to_local(error));
+
+  result->name = js_from_local(message->GetScriptResourceName());
+  result->line = message->GetLineNumber(context).FromJust();
+  result->column_start = message->GetStartColumn(context).FromJust();
+  result->column_end = message->GetEndColumn(context).FromJust();
+
+  return 0;
+}
+
+extern "C" int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
   // Allow continuing even with a pending exception
 
