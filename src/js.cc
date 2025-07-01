@@ -3438,6 +3438,8 @@ extern "C" int
 js_delete_module(js_env_t *env, js_module_t *module) {
   // Allow continuing even with a pending exception
 
+  auto scope = HandleScope(env->isolate);
+
   auto local = module->module.Get(env->isolate);
 
   auto range = env->modules.equal_range(local->GetIdentityHash());
