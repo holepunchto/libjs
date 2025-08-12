@@ -433,7 +433,7 @@ private:
     } else {
       auto const &task = delayed_tasks.top();
 
-      auto timeout = task.expiry - now();
+      auto timeout = (task.expiry - now()) / 1000000;
 
       err = uv_timer_start(&timer, on_timer, timeout, 0);
 
@@ -489,13 +489,17 @@ private: // V8 embedder API
   }
 
   void
-  PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, now() + uint64_t(delay * 1000)));
+  PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location = SourceLocation::Current()) override {
+    auto expiry = now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, expiry));
   }
 
   void
-  PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, now() + uint64_t(delay * 1000)));
+  PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location = SourceLocation::Current()) override {
+    auto expiry = now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, expiry));
   }
 
   void
@@ -1251,13 +1255,15 @@ private: // V8 embedder API
   }
 
   void
-  PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay, const SourceLocation &location) override {
-    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, background->now() + uint64_t(delay * 1000)));
+  PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location) override {
+    auto expiry = background->now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, expiry));
   }
 
   double
   MonotonicallyIncreasingTime() override {
-    return double(now());
+    return double(now()) / 1000000000;
   }
 
   double
