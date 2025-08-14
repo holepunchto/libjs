@@ -1916,11 +1916,13 @@ struct js_module_s {
     );
 
     if (env->exception.IsEmpty()) {
-      auto module = result->module.Get(env->isolate);
+      auto local = js_to_local(result);
+
+      if (local->IsPromise()) return local.As<Promise>();
 
       auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-      auto success = resolver->Resolve(context, module->GetModuleNamespace());
+      auto success = resolver->Resolve(context, local);
 
       success.Check();
 

@@ -105,6 +105,7 @@ list(APPEND tests
   define-class-with-symbol-property
   define-class-with-value
   dynamic-import
+  dynamic-import-with-promise
   dynamic-import-without-handler
   fatal-exception
   get-arraybuffer-info

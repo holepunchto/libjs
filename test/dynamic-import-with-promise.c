@@ -40,7 +40,16 @@ on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value
   e = js_get_module_namespace(env, module, &namespace);
   assert(e == 0);
 
-  return namespace;
+  js_value_t *promise;
+
+  js_deferred_t *deferred;
+  e = js_create_promise(env, &deferred, &promise);
+  assert(e == 0);
+
+  e = js_resolve_deferred(env, deferred, namespace);
+  assert(e == 0);
+
+  return promise;
 }
 
 int
