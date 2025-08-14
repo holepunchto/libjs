@@ -1319,6 +1319,7 @@ struct js_env_s {
     void *unhandled_rejection_data;
 
     js_dynamic_import_cb dynamic_import;
+    js_deferred_dynamic_import_cb deferred_dynamic_import;
     void *dynamic_import_data;
   } callbacks;
 
@@ -1888,7 +1889,7 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr) {
+    if (env->callbacks.dynamic_import == nullptr && env->callbacks.deferred_dynamic_import == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
       assert(err == 0);
 
@@ -1907,26 +1908,48 @@ struct js_module_s {
         .Check();
     }
 
-    auto result = env->callbacks.dynamic_import(
-      env,
-      js_from_local(specifier),
-      js_from_local(assertions),
-      js_from_local(referrer),
-      env->callbacks.dynamic_import_data
-    );
+    if (env->callbacks.dynamic_import) {
+      auto result = env->callbacks.dynamic_import(
+        env,
+        js_from_local(specifier),
+        js_from_local(assertions),
+        js_from_local(referrer),
+        env->callbacks.dynamic_import_data
+      );
 
-    if (env->exception.IsEmpty()) {
-      auto local = js_to_local(result);
+      if (env->exception.IsEmpty()) {
+        auto module = result->module.Get(env->isolate);
 
-      if (local->IsPromise()) return local.As<Promise>();
+        auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+        auto success = resolver->Resolve(context, module->GetModuleNamespace());
 
-      auto success = resolver->Resolve(context, local);
+        success.Check();
 
-      success.Check();
+        return resolver->GetPromise();
+      }
+    } else {
+      auto result = env->callbacks.deferred_dynamic_import(
+        env,
+        js_from_local(specifier),
+        js_from_local(assertions),
+        js_from_local(referrer),
+        env->callbacks.dynamic_import_data
+      );
 
-      return resolver->GetPromise();
+      if (env->exception.IsEmpty()) {
+        auto local = js_to_local(result);
+
+        if (local->IsPromise()) return local.As<Promise>();
+
+        auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+        auto success = resolver->Resolve(context, local);
+
+        success.Check();
+
+        return resolver->GetPromise();
+      }
     }
 
     auto error = env->exception.Get(env->isolate);
@@ -3181,6 +3204,14 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
 extern "C" int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
   env->callbacks.dynamic_import = cb;
+  env->callbacks.dynamic_import_data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_on_deferred_dynamic_import(js_env_t *env, js_deferred_dynamic_import_cb cb, void *data) {
+  env->callbacks.deferred_dynamic_import = cb;
   env->callbacks.dynamic_import_data = data;
 
   return 0;

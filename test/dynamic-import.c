@@ -57,7 +57,7 @@ main() {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_on_dynamic_import(env, on_import, NULL);
+  e = js_on_deferred_dynamic_import(env, on_import, NULL);
   assert(e == 0);
 
   js_handle_scope_t *scope;
