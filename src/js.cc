@@ -5687,6 +5687,8 @@ extern "C" int
 js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
+
   auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
@@ -5710,6 +5712,8 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
 extern "C" int
 js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto local = js_to_local<String>(value);
 
@@ -5737,6 +5741,8 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
 extern "C" int
 js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto local = js_to_local<String>(value);
 
@@ -6278,6 +6284,8 @@ js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *resul
 extern "C" int
 js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **data, size_t *len, js_string_view_t **result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto view = String::ValueView(env->isolate, js_to_local<String>(string));
 
