@@ -3106,8 +3106,8 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
   std::scoped_lock guard(platform->lock);
 
   Isolate::CreateParams params;
+
   params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
-  params.allow_atomics_wait = false;
 
   auto memory_limit = js_option<&js_env_options_t::memory_limit, size_t>(options, 0);
 
