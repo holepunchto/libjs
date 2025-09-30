@@ -1635,7 +1635,7 @@ js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_get_heap_space_statistics(js_env_t *env, size_t *len, js_heap_space_statistics_t **result);
+js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t *result);
 
 int
 js_create_inspector(js_env_t *env, js_inspector_t **result);

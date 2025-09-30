@@ -7033,28 +7033,29 @@ js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result) {
  * This function can be called even if there is a pending JavaScript exception.
  */
 extern "C" int
-js_get_heap_space_statistics(js_env_t *env, size_t *len, js_heap_space_statistics_t **result) {
+js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
-  *len = env->isolate->NumberOfHeapSpaces();
-  *result = new js_heap_space_statistics_t[*len];
+  if (statistics == nullptr) {
+    *result = env->isolate->NumberOfHeapSpaces();
+  } else if (len != 0) {
+    HeapSpaceStatistics heap_space_statistics;
 
-  HeapSpaceStatistics heap_space_statistics;
+    for (size_t i = 0; i < len; i++) {
+      env->isolate->GetHeapSpaceStatistics(&heap_space_statistics, i);
 
-  for (size_t i = 0; i < *len; i++) {
-    env->isolate->GetHeapSpaceStatistics(&heap_space_statistics, i);
+      statistics[i] = {
+        .version = 0,
 
-    js_heap_space_statistics_t entry = {
-      .version = 0,
+        .space_name = heap_space_statistics.space_name(),
+        .space_size = heap_space_statistics.space_used_size(),
+        .space_used_size = heap_space_statistics.space_used_size(),
+        .space_available_size = heap_space_statistics.space_available_size()
+      };
+    }
 
-      .space_name = heap_space_statistics.space_name(),
-      .space_size = heap_space_statistics.space_used_size(),
-      .space_used_size = heap_space_statistics.space_used_size(),
-      .space_available_size = heap_space_statistics.space_available_size(),
-    };
-
-    (*result)[i] = entry;
-  }
+    if (result) *result = len;
+  } else if (result) *result = 0;
 
   return 0;
 }
