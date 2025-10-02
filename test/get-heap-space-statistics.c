@@ -23,13 +23,13 @@ main() {
   assert(e == 0);
 
   size_t len;
-  e = js_get_heap_space_statistics(env, NULL, 0, &len);
+  e = js_get_heap_space_statistics(env, NULL, 0, 0, &len);
   assert(e == 0);
 
   assert(len > 0);
 
   js_heap_space_statistics_t *statistics = malloc(len * sizeof(js_heap_space_statistics_t *));
-  e = js_get_heap_space_statistics(env, statistics, len, NULL);
+  e = js_get_heap_space_statistics(env, statistics, len, 0, NULL);
   assert(e == 0);
 
   assert(strlen(statistics[0].space_name) > 0);

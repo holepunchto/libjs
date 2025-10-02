@@ -7033,7 +7033,7 @@ js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result) {
  * This function can be called even if there is a pending JavaScript exception.
  */
 extern "C" int
-js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t *result) {
+js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t offset, size_t *result) {
   // Allow continuing even with a pending exception
 
   if (statistics == nullptr) {
@@ -7041,8 +7041,10 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
   } else if (len != 0) {
     HeapSpaceStatistics heap_space_statistics;
 
-    for (size_t i = 0; i < len; i++) {
-      env->isolate->GetHeapSpaceStatistics(&heap_space_statistics, i);
+    size_t written = 0;
+
+    for (size_t i = 0, n = env->isolate->NumberOfHeapSpaces(), j = offset; i < len && j < n; i++, j++) {
+      env->isolate->GetHeapSpaceStatistics(&heap_space_statistics, j);
 
       statistics[i] = {
         .version = 0,
@@ -7052,9 +7054,11 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
         .space_used_size = heap_space_statistics.space_used_size(),
         .space_available_size = heap_space_statistics.space_available_size()
       };
+
+      written++;
     }
 
-    if (result) *result = len;
+    if (result) *result = written;
   } else if (result) *result = 0;
 
   return 0;
