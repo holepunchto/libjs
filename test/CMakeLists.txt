@@ -109,6 +109,7 @@ list(APPEND tests
   fatal-exception
   get-arraybuffer-info
   get-dataview-info
+  get-error-location
   get-heap-space-statistics
   get-platform-identifier
   get-platform-limits

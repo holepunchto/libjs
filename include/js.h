@@ -36,6 +36,7 @@ typedef struct js_threadsafe_function_s js_threadsafe_function_t;
 typedef struct js_deferred_teardown_s js_deferred_teardown_t;
 typedef struct js_heap_statistics_s js_heap_statistics_t;
 typedef struct js_heap_space_statistics_s js_heap_space_statistics_t;
+typedef struct js_error_location_s js_error_location_t;
 typedef struct js_inspector_s js_inspector_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
@@ -387,6 +388,26 @@ struct js_heap_space_statistics_s {
 
   /** @since 0 */
   size_t space_available_size;
+};
+
+/** @version 0 */
+struct js_error_location_s {
+  int version;
+
+  /** @since 0 */
+  js_value_t *name;
+
+  /** @since 0 */
+  js_value_t *source;
+
+  /** @since 0 */
+  int64_t line;
+
+  /** @since 0 */
+  int64_t column_start;
+
+  /** @since 0 */
+  int64_t column_end;
 };
 
 int
@@ -788,6 +809,12 @@ js_create_syntax_error(js_env_t *env, js_value_t *code, js_value_t *message, js_
  */
 int
 js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
