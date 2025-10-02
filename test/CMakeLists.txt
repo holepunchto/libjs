@@ -110,6 +110,7 @@ list(APPEND tests
   get-arraybuffer-info
   get-dataview-info
   get-error-location
+  get-heap-space-statistics
   get-platform-identifier
   get-platform-limits
   get-platform-version

@@ -433,7 +433,7 @@ private:
     } else {
       auto const &task = delayed_tasks.top();
 
-      auto timeout = task.expiry - now();
+      auto timeout = (task.expiry - now()) / 1000000;
 
       err = uv_timer_start(&timer, on_timer, timeout, 0);
 
@@ -489,13 +489,17 @@ private: // V8 embedder API
   }
 
   void
-  PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, now() + uint64_t(delay * 1000)));
+  PostDelayedTaskImpl(std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location = SourceLocation::Current()) override {
+    auto expiry = now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable, expiry));
   }
 
   void
-  PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, now() + uint64_t(delay * 1000)));
+  PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location = SourceLocation::Current()) override {
+    auto expiry = now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, expiry));
   }
 
   void
@@ -1251,13 +1255,15 @@ private: // V8 embedder API
   }
 
   void
-  PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay, const SourceLocation &location) override {
-    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, background->now() + uint64_t(delay * 1000)));
+  PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location) override {
+    auto expiry = background->now() + uint64_t(delay_in_seconds) * 1000000000;
+
+    background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, expiry));
   }
 
   double
   MonotonicallyIncreasingTime() override {
-    return double(now());
+    return double(now()) / 1000000000;
   }
 
   double
@@ -3100,8 +3106,8 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
   std::scoped_lock guard(platform->lock);
 
   Isolate::CreateParams params;
+
   params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
-  params.allow_atomics_wait = false;
 
   auto memory_limit = js_option<&js_env_options_t::memory_limit, size_t>(options, 0);
 
@@ -3437,6 +3443,8 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
 extern "C" int
 js_delete_module(js_env_t *env, js_module_t *module) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate);
 
   auto local = module->module.Get(env->isolate);
 
@@ -5694,6 +5702,8 @@ extern "C" int
 js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
 
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
+
   auto local = js_to_local<String>(value);
 
   if (str == nullptr) {
@@ -5717,6 +5727,8 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
 extern "C" int
 js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto local = js_to_local<String>(value);
 
@@ -5744,6 +5756,8 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
 extern "C" int
 js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size_t len, size_t *result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto local = js_to_local<String>(value);
 
@@ -6285,6 +6299,8 @@ js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *resul
 extern "C" int
 js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **data, size_t *len, js_string_view_t **result) {
   // Allow continuing even with a pending exception
+
+  auto scope = HandleScope(env->isolate); // V8 might flatten the string which requires a scope
 
   auto view = String::ValueView(env->isolate, js_to_local<String>(string));
 
@@ -7024,6 +7040,41 @@ js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result) {
   if (result->version >= 1) {
     result->external_memory = heap_statistics.external_memory();
   }
+
+  return 0;
+}
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+extern "C" int
+js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t offset, size_t *result) {
+  // Allow continuing even with a pending exception
+
+  if (statistics == nullptr) {
+    *result = env->isolate->NumberOfHeapSpaces();
+  } else if (len != 0) {
+    HeapSpaceStatistics heap_space_statistics;
+
+    size_t written = 0;
+
+    for (size_t i = 0, n = env->isolate->NumberOfHeapSpaces(), j = offset; i < len && j < n; i++, j++) {
+      env->isolate->GetHeapSpaceStatistics(&heap_space_statistics, j);
+
+      statistics[i] = {
+        .version = 0,
+
+        .space_name = heap_space_statistics.space_name(),
+        .space_size = heap_space_statistics.space_used_size(),
+        .space_used_size = heap_space_statistics.space_used_size(),
+        .space_available_size = heap_space_statistics.space_available_size()
+      };
+
+      written++;
+    }
+
+    if (result) *result = written;
+  } else if (result) *result = 0;
 
   return 0;
 }

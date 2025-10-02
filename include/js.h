@@ -35,6 +35,7 @@ typedef struct js_arraybuffer_backing_store_s js_arraybuffer_backing_store_t;
 typedef struct js_threadsafe_function_s js_threadsafe_function_t;
 typedef struct js_deferred_teardown_s js_deferred_teardown_t;
 typedef struct js_heap_statistics_s js_heap_statistics_t;
+typedef struct js_heap_space_statistics_s js_heap_space_statistics_t;
 typedef struct js_error_location_s js_error_location_t;
 typedef struct js_inspector_s js_inspector_t;
 
@@ -370,6 +371,23 @@ struct js_heap_statistics_s {
    * @since 1
    */
   size_t external_memory;
+};
+
+/** @version 0 */
+struct js_heap_space_statistics_s {
+  int version;
+
+  /** @since 0 */
+  const char *space_name;
+
+  /** @since 0 */
+  size_t space_size;
+
+  /** @since 0 */
+  size_t space_used_size;
+
+  /** @since 0 */
+  size_t space_available_size;
 };
 
 /** @version 0 */
@@ -1639,6 +1657,12 @@ js_request_garbage_collection(js_env_t *env);
  */
 int
 js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t offset, size_t *result);
 
 int
 js_create_inspector(js_env_t *env, js_inspector_t **result);
