@@ -52,6 +52,7 @@ typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *dat
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef js_value_t *(*js_deferred_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
 typedef void (*js_teardown_cb)(void *data);
 typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
@@ -461,6 +462,14 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
  */
 int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data);
+
+/**
+ * Add a callback for dynamic `import()` statements with deferred resolution.
+ * By default, a dynamic import will result in either an uncaught exception or
+ * an unhandled promise rejection during script or module evaluation.
+ */
+int
+js_on_deferred_dynamic_import(js_env_t *env, js_deferred_dynamic_import_cb cb, void *data);
 
 int
 js_get_env_loop(js_env_t *env, uv_loop_t **result);
