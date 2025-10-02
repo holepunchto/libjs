@@ -2857,11 +2857,15 @@ private: // V8 embedder API
       if (string.is8Bit()) {
         auto utf8_len = utf8_length_from_latin1(reinterpret_cast<const latin1_t *>(string.characters8()), string.length());
 
+        utf8_len += 1 /* NULL */;
+
         utf8 = std::vector<utf8_t>(utf8_len);
 
         latin1_convert_to_utf8(reinterpret_cast<const latin1_t *>(string.characters8()), string.length(), utf8.data());
       } else {
         auto utf8_len = utf8_length_from_utf16le(reinterpret_cast<const utf16_t *>(string.characters16()), string.length());
+
+        utf8_len += 1 /* NULL */;
 
         utf8 = std::vector<utf8_t>(utf8_len);
 
