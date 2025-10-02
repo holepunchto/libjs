@@ -1319,7 +1319,7 @@ struct js_env_s {
     void *unhandled_rejection_data;
 
     js_dynamic_import_cb dynamic_import;
-    js_deferred_dynamic_import_cb deferred_dynamic_import;
+    js_dynamic_import_transitional_cb dynamic_import_transitional;
     void *dynamic_import_data;
   } callbacks;
 
@@ -1889,7 +1889,7 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr && env->callbacks.deferred_dynamic_import == nullptr) {
+    if (env->callbacks.dynamic_import == nullptr && env->callbacks.dynamic_import_transitional == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
       assert(err == 0);
 
@@ -1929,7 +1929,7 @@ struct js_module_s {
         return resolver->GetPromise();
       }
     } else {
-      auto result = env->callbacks.deferred_dynamic_import(
+      auto result = env->callbacks.dynamic_import_transitional(
         env,
         js_from_local(specifier),
         js_from_local(assertions),
@@ -3210,8 +3210,8 @@ js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
 }
 
 extern "C" int
-js_on_deferred_dynamic_import(js_env_t *env, js_deferred_dynamic_import_cb cb, void *data) {
-  env->callbacks.deferred_dynamic_import = cb;
+js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_transitional_cb cb, void *data) {
+  env->callbacks.dynamic_import_transitional = cb;
   env->callbacks.dynamic_import_data = data;
 
   return 0;
