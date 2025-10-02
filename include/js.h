@@ -57,6 +57,7 @@ typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void
 typedef void (*js_teardown_cb)(void *data);
 typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
+typedef void (*js_inspector_message_transitional_cb)(js_env_t *, js_inspector_t *, const char *message, size_t len, void *data);
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 
 enum {
@@ -1683,6 +1684,9 @@ int
 js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
 
 int
+js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_transitional_cb cb, void *data);
+
+int
 js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data);
 
 int
@@ -1690,6 +1694,9 @@ js_connect_inspector(js_env_t *env, js_inspector_t *inspector);
 
 int
 js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, js_value_t *message);
+
+int
+js_send_inspector_request_transitional(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len);
 
 int
 js_attach_context_to_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len);

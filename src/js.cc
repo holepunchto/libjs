@@ -2810,6 +2810,7 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
   js_env_t *env;
   js_inspector_t *inspector;
   js_inspector_message_cb cb;
+  js_inspector_message_transitional_cb cb_transitional;
   void *data;
 
   js_inspector_channel_s(js_env_t *env, js_inspector_t *inspector)
@@ -2826,29 +2827,49 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
 private: // V8 embedder API
   inline void
   send(const StringView &string) {
-    if (cb == nullptr) return;
+    if (cb == nullptr && cb_transitional == nullptr) return;
 
-    auto length = string.length();
+    if (cb) {
+      auto len = string.length();
 
-    auto scope = HandleScope(env->isolate);
+      auto scope = HandleScope(env->isolate);
 
-    auto message =
-      (string.is8Bit()
-         ? String::NewFromOneByte(
-             env->isolate,
-             reinterpret_cast<const uint8_t *>(string.characters8()),
-             v8::NewStringType::kNormal,
-             int(length)
-           )
-         : String::NewFromTwoByte(
-             env->isolate,
-             reinterpret_cast<const uint16_t *>(string.characters16()),
-             v8::NewStringType::kNormal,
-             int(length)
-           ))
-        .ToLocalChecked();
+      auto message =
+        (string.is8Bit()
+           ? String::NewFromOneByte(
+               env->isolate,
+               reinterpret_cast<const uint8_t *>(string.characters8()),
+               v8::NewStringType::kNormal,
+               int(len)
+             )
+           : String::NewFromTwoByte(
+               env->isolate,
+               reinterpret_cast<const uint16_t *>(string.characters16()),
+               v8::NewStringType::kNormal,
+               int(len)
+             ))
+          .ToLocalChecked();
 
-    cb(env, inspector, js_from_local(message), data);
+      cb(env, inspector, js_from_local(message), data);
+    } else {
+      std::vector<utf8_t> utf8;
+
+      if (string.is8Bit()) {
+        auto utf8_len = utf8_length_from_latin1(reinterpret_cast<const latin1_t *>(string.characters8()), string.length());
+
+        utf8 = std::vector<utf8_t>(utf8_len);
+
+        latin1_convert_to_utf8(reinterpret_cast<const latin1_t *>(string.characters8()), string.length(), utf8.data());
+      } else {
+        auto utf8_len = utf8_length_from_utf16le(reinterpret_cast<const utf16_t *>(string.characters16()), string.length());
+
+        utf8 = std::vector<utf8_t>(utf8_len);
+
+        utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
+      }
+
+      cb_transitional(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size(), data);
+    }
   }
 
   void
@@ -2915,17 +2936,26 @@ struct js_inspector_s : private V8InspectorClient {
 
   inline void
   send(Local<String> message) {
-    auto length = message->Length();
+    auto utf16_len = size_t(message->Length());
 
-    auto buffer = std::vector<uint16_t>(size_t(length));
+    auto utf16 = std::vector<uint16_t>(utf16_len);
 
-    message->WriteV2(env->isolate, 0, uint32_t(length), buffer.data());
+    message->WriteV2(env->isolate, 0, uint32_t(utf16_len), utf16.data());
 
-    auto message_view = StringView(buffer.data(), size_t(length));
+    session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
+  }
 
-    auto scope = SealHandleScope(env->isolate);
+  inline void
+  send(const char *message, size_t len) {
+    if (len == size_t(-1)) len = strlen(message);
 
-    session->dispatchProtocolMessage(message_view);
+    auto utf16_len = utf16_length_from_utf8(reinterpret_cast<const utf8_t *>(message), len);
+
+    auto utf16 = std::vector<utf16_t>(utf16_len);
+
+    utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
+
+    session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
 
 private: // V8 embedder API
@@ -7135,6 +7165,14 @@ js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_
 }
 
 extern "C" int
+js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_transitional_cb cb, void *data) {
+  inspector->channel.cb_transitional = cb;
+  inspector->channel.data = data;
+
+  return 0;
+}
+
+extern "C" int
 js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data) {
   inspector->cb = cb;
   inspector->data = data;
@@ -7152,6 +7190,13 @@ js_connect_inspector(js_env_t *env, js_inspector_t *inspector) {
 extern "C" int
 js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, js_value_t *message) {
   inspector->send(js_to_local<String>(message));
+
+  return 0;
+}
+
+extern "C" int
+js_send_inspector_request_transitional(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len) {
+  inspector->send(message, len);
 
   return 0;
 }

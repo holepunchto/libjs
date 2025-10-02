@@ -8,24 +8,10 @@
 static int message_called = 0;
 
 static void
-on_response(js_env_t *env, js_inspector_t *inspector, js_value_t *message, void *data) {
-  int e;
-
+on_response(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len, void *data) {
   message_called++;
 
-  size_t len;
-  e = js_get_value_string_utf8(env, message, NULL, 0, &len);
-  assert(e == 0);
-
-  len += 1 /* NULL */;
-
-  utf8_t *response = malloc(len);
-  e = js_get_value_string_utf8(env, message, response, len, NULL);
-  assert(e == 0);
-
-  printf("response=%s\n", response);
-
-  free(response);
+  printf("message=%.*s\n", (int) len, message);
 }
 
 int
@@ -50,17 +36,15 @@ main() {
   e = js_create_inspector(env, &inspector);
   assert(e == 0);
 
-  e = js_on_inspector_response(env, inspector, on_response, NULL);
+  e = js_on_inspector_response_transitional(env, inspector, on_response, NULL);
   assert(e == 0);
 
   e = js_connect_inspector(env, inspector);
   assert(e == 0);
 
-  js_value_t *message;
-  e = js_create_string_utf8(env, (utf8_t *) "{ \"id\": 1, \"method\": \"Runtime.evaluate\", \"params\": { \"expression\": \"1 + 2\" } }", -1, &message);
-  assert(e == 0);
+  const char *message = "{ \"id\": 1, \"method\": \"Runtime.evaluate\", \"params\": { \"expression\": \"1 + 2\" } }";
 
-  e = js_send_inspector_request(env, inspector, message);
+  e = js_send_inspector_request_transitional(env, inspector, message, -1);
   assert(e == 0);
 
   assert(message_called);
