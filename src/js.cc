@@ -1071,8 +1071,15 @@ struct js_platform_s : public Platform {
         lock() {
     int err;
 
+    bool success;
+
+    success = V8::InitializeICU();
+    assert(success);
+
     V8::InitializePlatform(this);
-    V8::Initialize();
+
+    success = V8::Initialize();
+    assert(success);
 
     background->self = background;
 
