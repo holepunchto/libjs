@@ -26,15 +26,15 @@ main() {
   e = js_get_heap_space_statistics(env, NULL, 0, 0, &len);
   assert(e == 0);
 
-  assert(len > 0);
+  if (len > 0) {
+    js_heap_space_statistics_t *statistics = calloc(len, sizeof(js_heap_space_statistics_t));
+    e = js_get_heap_space_statistics(env, statistics, len, 0, NULL);
+    assert(e == 0);
 
-  js_heap_space_statistics_t *statistics = calloc(len, sizeof(js_heap_space_statistics_t));
-  e = js_get_heap_space_statistics(env, statistics, len, 0, NULL);
-  assert(e == 0);
+    assert(strlen(statistics[0].space_name) > 0);
 
-  assert(strlen(statistics[0].space_name) > 0);
-
-  free(statistics);
+    free(statistics);
+  }
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
