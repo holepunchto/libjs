@@ -51,6 +51,7 @@ typedef struct js_teardown_queue_s js_teardown_queue_t;
 typedef struct js_threadsafe_queue_s js_threadsafe_queue_t;
 typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
+typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 
 typedef enum {
@@ -1318,6 +1319,8 @@ struct js_env_s {
 
   js_teardown_queue_t teardown_queue;
 
+  std::shared_ptr<js_inspector_client_t> inspector;
+
   struct {
     js_uncaught_exception_cb uncaught_exception;
     void *uncaught_exception_data;
@@ -1349,6 +1352,7 @@ struct js_env_s {
         modules(),
         unhandled_promises(),
         teardown_queue(),
+        inspector(),
         callbacks() {
     int err;
 
@@ -1399,6 +1403,8 @@ struct js_env_s {
   }
 
   ~js_env_s() {
+    if (inspector) inspector.reset();
+
     {
       auto scope = HandleScope(isolate);
 
@@ -2893,13 +2899,66 @@ private: // V8 embedder API
   flushProtocolNotifications() override {}
 };
 
-struct js_inspector_s : private V8InspectorClient {
+struct js_inspector_client_s : public V8InspectorClient {
+  js_env_t *env;
+
+  bool paused;
+
+  std::list<js_inspector_t *> sessions;
+
+  std::unique_ptr<V8Inspector> inspector;
+
+  js_inspector_client_s(js_env_t *env)
+      : env(env),
+        paused(),
+        sessions(),
+        inspector(V8Inspector::create(env->isolate, this)) {
+    inspector->contextCreated(V8ContextInfo(env->context.Get(env->isolate), 1, StringView()));
+  }
+
+private:
+  bool
+  on_pause(js_inspector_t *session);
+
+private: // V8 embedder API
+  v8::Local<v8::Context>
+  ensureDefaultContextInGroup(int contextGroupId) override {
+    return env->context.Get(env->isolate);
+  }
+
+  void
+  runMessageLoopOnPause(int contextGroupId) override {
+    if (paused || sessions.empty()) return;
+
+    paused = true;
+
+    while (paused) {
+      for (const auto session : sessions) {
+        if (on_pause(session) == false) goto resume;
+      }
+
+      env->run_macrotasks();
+    }
+
+  resume:
+    paused = false;
+  }
+
+  void
+  quitMessageLoopOnPause() override {
+    paused = false;
+  }
+};
+
+struct js_inspector_s {
   js_env_t *env;
   js_inspector_channel_t channel;
   js_inspector_paused_cb cb;
+
   void *data;
 
-  std::unique_ptr<V8Inspector> inspector;
+  std::shared_ptr<js_inspector_client_t> client;
+
   std::unique_ptr<V8InspectorSession> session;
 
   bool paused;
@@ -2909,9 +2968,20 @@ struct js_inspector_s : private V8InspectorClient {
         channel(env, this),
         cb(),
         data(),
-        inspector(V8Inspector::create(env->isolate, this)),
         session(),
-        paused(false) {}
+        paused(false) {
+    if (env->inspector == nullptr) env->inspector = std::make_shared<js_inspector_client_t>(env);
+
+    client = env->inspector;
+
+    client->sessions.push_back(this);
+  }
+
+  ~js_inspector_s() {
+    client->sessions.remove(this);
+
+    if (client->sessions.empty()) env->inspector = nullptr;
+  }
 
   js_inspector_s(const js_inspector_s &) = delete;
 
@@ -2920,25 +2990,23 @@ struct js_inspector_s : private V8InspectorClient {
 
   inline void
   connect() {
-    session = inspector->connect(
+    session = client->inspector->connect(
       1,
       &channel,
       StringView(),
       V8Inspector::kFullyTrusted,
       V8Inspector::kNotWaitingForDebugger
     );
-
-    attach(env->context.Get(env->isolate));
   }
 
   inline void
   attach(Local<Context> context, StringView name = StringView()) {
-    inspector->contextCreated(V8ContextInfo(context, 1, name));
+    client->inspector->contextCreated(V8ContextInfo(context, 1, name));
   }
 
   inline void
   detach(Local<Context> context) {
-    inspector->contextDestroyed(context);
+    client->inspector->contextDestroyed(context);
   }
 
   inline void
@@ -2964,31 +3032,14 @@ struct js_inspector_s : private V8InspectorClient {
 
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
-
-private: // V8 embedder API
-  v8::Local<v8::Context>
-  ensureDefaultContextInGroup(int contextGroupId) override {
-    return env->context.Get(env->isolate);
-  }
-
-  void
-  runMessageLoopOnPause(int contextGroupId) override {
-    if (paused || cb == nullptr) return;
-
-    paused = true;
-
-    while (paused && cb(env, this, data)) {
-      env->run_macrotasks();
-    }
-
-    paused = false;
-  }
-
-  void
-  quitMessageLoopOnPause() override {
-    paused = false;
-  }
 };
+
+bool
+js_inspector_client_s::on_pause(js_inspector_t *session) {
+  if (session->cb == nullptr) return false;
+
+  return session->cb(session->env, session, session->data);
+}
 
 namespace {
 
