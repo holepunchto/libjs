@@ -2917,7 +2917,7 @@ struct js_inspector_client_s : public V8InspectorClient {
   }
 
 private:
-  bool
+  static bool
   on_pause(js_inspector_t *session);
 
 private: // V8 embedder API
