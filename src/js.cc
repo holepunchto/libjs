@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <condition_variable>
@@ -2933,14 +2934,11 @@ private: // V8 embedder API
     paused = true;
 
     while (paused) {
-      for (const auto session : sessions) {
-        if (on_pause(session) == false) goto resume;
-      }
+      paused = std::all_of(sessions.begin(), sessions.end(), on_pause);
 
       env->run_macrotasks();
     }
 
-  resume:
     paused = false;
   }
 
