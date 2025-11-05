@@ -2934,7 +2934,9 @@ private: // V8 embedder API
     paused = true;
 
     while (paused) {
-      paused = std::all_of(sessions.begin(), sessions.end(), on_pause);
+      for (auto &session : sessions) {
+        paused = on_pause(session) && paused;
+      }
 
       env->run_macrotasks();
     }
