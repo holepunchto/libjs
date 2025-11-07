@@ -127,6 +127,7 @@ list(APPEND tests
   import-meta
   import-meta-throw
   inspector
+  multiple-inspectors
   inspector-pause
   many-large-allocs
   many-small-allocs
