@@ -5,11 +5,23 @@
 
 #include "../include/js.h"
 
+static js_inspector_t *a;
+static js_inspector_t *b;
+
 static int message_called = 0;
 
 static void
 on_response(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len, void *data) {
-  message_called++;
+  switch (++message_called) {
+  case 1:
+    assert(inspector == a);
+    break;
+  case 2:
+    assert(inspector == b);
+    break;
+  default:
+    assert(false);
+  }
 
   printf("message=%.*s\n", (int) len, message);
 }
@@ -32,43 +44,44 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_inspector_t *inspector1;
-  e = js_create_inspector(env, &inspector1);
+  const char *message;
+
+  e = js_create_inspector(env, &a);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, inspector1, on_response, NULL);
+  e = js_on_inspector_response_transitional(env, a, on_response, NULL);
   assert(e == 0);
 
-  e = js_connect_inspector(env, inspector1);
+  e = js_connect_inspector(env, a);
   assert(e == 0);
 
-  const char *message = "{ \"id\": 1, \"method\": \"Debugger.enable\", \"params\": {} }";
+  message = "{ \"id\": 1, \"method\": \"Debugger.enable\", \"params\": {} }";
 
-  e = js_send_inspector_request_transitional(env, inspector1, message, -1);
+  e = js_send_inspector_request_transitional(env, a, message, -1);
   assert(e == 0);
 
-  assert(message_called);
+  assert(message_called == 1);
 
-  js_inspector_t *inspector2;
-  e = js_create_inspector(env, &inspector2);
+  e = js_create_inspector(env, &b);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, inspector2, on_response, NULL);
+  e = js_on_inspector_response_transitional(env, b, on_response, NULL);
   assert(e == 0);
 
-  e = js_connect_inspector(env, inspector2);
+  e = js_connect_inspector(env, b);
   assert(e == 0);
 
-  message_called = 0;
+  message = "{ \"id\": 2, \"method\": \"Debugger.enable\", \"params\": {} }";
 
-  e = js_send_inspector_request_transitional(env, inspector2, message, -1);
+  e = js_send_inspector_request_transitional(env, b, message, -1);
   assert(e == 0);
 
-  assert(message_called);
+  assert(message_called == 2);
 
-  e = js_destroy_inspector(env, inspector1);
+  e = js_destroy_inspector(env, a);
   assert(e == 0);
-  e = js_destroy_inspector(env, inspector2);
+
+  e = js_destroy_inspector(env, b);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
