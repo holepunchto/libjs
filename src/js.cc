@@ -240,7 +240,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline void
   close() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     closed = true;
 
@@ -261,21 +261,21 @@ struct js_task_runner_s : public TaskRunner {
 
   inline bool
   empty() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
   }
 
   inline size_t
   size() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     return tasks.size() + delayed_tasks.size() + idle_tasks.size();
   }
 
   inline bool
   inactive() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     return empty() || outstanding == disposable;
   }
@@ -284,7 +284,7 @@ struct js_task_runner_s : public TaskRunner {
   push_task(js_task_handle_t &&task) {
     int err;
 
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (closed) return;
 
@@ -302,7 +302,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline void
   push_task(js_delayed_task_handle_t &&task) {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (closed) return;
 
@@ -321,7 +321,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline void
   push_task(js_idle_task_handle_t &&task) {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (closed) return;
 
@@ -334,7 +334,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline bool
   can_pop_task() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (depth == 0) return !tasks.empty();
 
@@ -347,7 +347,7 @@ struct js_task_runner_s : public TaskRunner {
 
   inline std::optional<js_task_handle_t>
   pop_task() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     auto task = tasks.begin();
 
@@ -388,7 +388,7 @@ struct js_task_runner_s : public TaskRunner {
   move_expired_tasks() {
     int err;
 
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     while (!delayed_tasks.empty()) {
       auto const &task = delayed_tasks.top();
@@ -426,18 +426,20 @@ private:
   adjust_timer() {
     int err;
 
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (closed) return;
 
     if (delayed_tasks.empty()) {
       err = uv_timer_stop(&timer);
+      assert(err == 0);
     } else {
       auto const &task = delayed_tasks.top();
 
       auto timeout = (task.expiry - now()) / 1000000;
 
       err = uv_timer_start(&timer, on_timer, timeout, 0);
+      assert(err == 0);
 
       // Don't let the timer keep the loop alive if all outstanding tasks are
       // disposable.
@@ -445,13 +447,11 @@ private:
         uv_unref(reinterpret_cast<uv_handle_t *>(&timer));
       }
     }
-
-    assert(err == 0);
   }
 
   inline void
   on_completion(bool is_disposable = false) {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (is_disposable) disposable--;
 
@@ -595,7 +595,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   create_workers() {
     if (cancelled.load(std::memory_order_relaxed)) return;
 
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     auto concurrency = max_concurrency();
 
@@ -667,14 +667,14 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
   inline bool
   is_active() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     return max_concurrency() != 0 || active_workers != 0;
   }
 
   inline void
   update_priority(TaskPriority priority) {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     this->priority = priority;
   }
@@ -682,7 +682,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 private:
   inline uint8_t
   max_concurrency(int8_t delta = 0) {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     auto worker_count = active_workers + delta;
 
@@ -711,7 +711,7 @@ private:
 
   inline bool
   should_start_task() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     pending_workers--;
 
@@ -726,7 +726,7 @@ private:
 
   inline bool
   should_continue_task() {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(-1)) {
       active_workers--;
@@ -1057,7 +1057,7 @@ struct js_platform_s : public Platform {
   std::vector<std::shared_ptr<js_worker_t>> workers;
   std::unique_ptr<js_tracing_controller_t> trace;
 
-  std::recursive_mutex lock;
+  std::mutex lock;
 
   js_platform_s(js_platform_options_t options, uv_loop_t *loop)
       : options(std::move(options)),
@@ -1149,16 +1149,12 @@ struct js_platform_s : public Platform {
   }
 
   inline void
-  attach(js_env_t *env) {
-    std::scoped_lock guard(lock);
-
+  attach(js_env_t *env, std::unique_lock<std::mutex> &guard) {
     environments.insert(env);
   }
 
   inline void
-  detach(js_env_t *env) {
-    std::unique_lock guard(lock);
-
+  detach(js_env_t *env, std::unique_lock<std::mutex> &guard) {
     environments.erase(env);
 
     dispose_maybe(guard);
@@ -1166,7 +1162,7 @@ struct js_platform_s : public Platform {
 
 private:
   inline void
-  dispose_maybe(std::unique_lock<std::recursive_mutex> &lock) {
+  dispose_maybe(std::unique_lock<std::mutex> &lock) {
     if (active_handles == 0 && environments.empty()) {
       V8::Dispose();
       V8::DisposePlatform();
@@ -1250,6 +1246,8 @@ private: // V8 embedder API
 
   std::shared_ptr<TaskRunner>
   GetForegroundTaskRunner(Isolate *isolate, TaskPriority priority) override {
+    std::unique_lock guard(lock);
+
     return foreground[isolate];
   }
 
@@ -1342,7 +1340,7 @@ struct js_env_s {
         active_handles(3),
         refs(0),
         platform(platform),
-        tasks(platform->foreground[isolate]),
+        tasks(),
         depth(0),
         isolate(isolate),
         context(),
@@ -1357,7 +1355,13 @@ struct js_env_s {
         callbacks() {
     int err;
 
-    platform->attach(this);
+    std::unique_lock guard(platform->lock);
+
+    tasks = platform->foreground[isolate];
+
+    platform->attach(this, guard);
+
+    guard.unlock();
 
     tasks->self = tasks;
 
@@ -1391,16 +1395,14 @@ struct js_env_s {
 
     isolate->SetData(0, this);
 
-    {
-      auto scope = HandleScope(isolate);
+    auto scope = HandleScope(isolate);
 
-      context.Reset(isolate, Context::New(isolate));
-      context.Get(isolate)->Enter();
+    context.Reset(isolate, Context::New(isolate));
+    context.Get(isolate)->Enter();
 
-      wrapper.Reset(isolate, Private::New(isolate));
-      delegate.Reset(isolate, Private::New(isolate));
-      tag.Reset(isolate, Private::New(isolate));
-    }
+    wrapper.Reset(isolate, Private::New(isolate));
+    delegate.Reset(isolate, Private::New(isolate));
+    tag.Reset(isolate, Private::New(isolate));
   }
 
   ~js_env_s() {
@@ -1421,8 +1423,11 @@ struct js_env_s {
     isolate->Exit();
     isolate->Dispose();
 
+    std::unique_lock guard(platform->lock);
+
     platform->foreground.erase(isolate);
-    platform->detach(this);
+
+    platform->detach(this, guard);
   }
 
   js_env_s(const js_env_s &) = delete;
@@ -1663,8 +1668,6 @@ struct js_env_s {
 private:
   inline void
   close() {
-    std::scoped_lock guard(platform->lock);
-
     tasks->close();
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
@@ -2482,7 +2485,7 @@ struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
 
   bool
   push(void *data, js_threadsafe_function_call_mode_t mode) override {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (closed) return false;
 
@@ -2493,7 +2496,7 @@ struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
 
   std::optional<void *>
   pop() override {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     if (queue.empty()) return std::nullopt;
 
@@ -2506,7 +2509,7 @@ struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
 
   void
   close() override {
-    std::scoped_lock guard(lock);
+    std::unique_lock guard(lock);
 
     closed = true;
   }
@@ -3216,8 +3219,6 @@ js_option(const js_env_options_t *options, int min_version, T fallback = T(js_en
 
 extern "C" int
 js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
-  std::scoped_lock guard(platform->lock);
-
   Isolate::CreateParams params;
 
   params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
@@ -3243,7 +3244,11 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   auto tasks = new js_task_runner_t(loop);
 
+  std::unique_lock guard(platform->lock);
+
   platform->foreground.emplace(isolate, std::move(tasks));
+
+  guard.unlock();
 
   Isolate::Initialize(isolate, params);
 
