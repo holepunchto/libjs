@@ -5839,7 +5839,7 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
       env->isolate,
       reinterpret_cast<char *>(str),
       len,
-      String::NO_NULL_TERMINATION | String::REPLACE_INVALID_UTF8
+      String::WriteFlags::kReplaceInvalidUtf8
     );
 
     if (written < len) str[written] = '\0';
@@ -5868,7 +5868,7 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
       0,
       uint32_t(written),
       str,
-      String::NO_NULL_TERMINATION
+      String::WriteFlags::kNone
     );
 
     if (written < len) str[written] = u'\0';
@@ -5897,7 +5897,7 @@ js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size
       0,
       uint32_t(written),
       str,
-      String::NO_NULL_TERMINATION
+      String::WriteFlags::kNone
     );
 
     if (written < len) str[written] = '\0';
