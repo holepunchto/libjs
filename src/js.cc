@@ -5821,7 +5821,7 @@ js_get_value_bigint_int64(js_env_t *env, js_value_t *value, int64_t *result, boo
 
   auto n = local->Int64Value(lossless);
 
-  if (result) *result = n;
+  *result = n;
 
   return 0;
 }
@@ -5834,7 +5834,7 @@ js_get_value_bigint_uint64(js_env_t *env, js_value_t *value, uint64_t *result, b
 
   auto n = local->Uint64Value(lossless);
 
-  if (result) *result = n;
+  *result = n;
 
   return 0;
 }
@@ -5869,7 +5869,7 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
   if (str == nullptr) {
     *result = local->Utf8LengthV2(env->isolate);
   } else if (len != 0) {
-    size_t written = local->WriteUtf8V2(
+    auto written = local->WriteUtf8V2(
       env->isolate,
       reinterpret_cast<char *>(str),
       len,
