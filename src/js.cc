@@ -4189,6 +4189,21 @@ js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result) {
 }
 
 extern "C" int
+js_create_bigint_words(js_env_t *env, int sign, const uint64_t *words, size_t len, js_value_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto context = env->context.Get(env->isolate);
+
+  auto bigint = BigInt::NewFromWords(context, sign, int(len), words);
+
+  if (bigint.IsEmpty()) return js_error(env);
+
+  *result = js_from_local(bigint.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
 js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
@@ -5820,6 +5835,25 @@ js_get_value_bigint_uint64(js_env_t *env, js_value_t *value, uint64_t *result, b
   auto n = local->Uint64Value(lossless);
 
   if (result) *result = n;
+
+  return 0;
+}
+
+extern "C" int
+js_get_value_bigint_words(js_env_t *env, js_value_t *value, int *sign, uint64_t *words, size_t len, size_t *result) {
+  // Allow continuing even with a pending exception
+
+  auto local = js_to_local<BigInt>(value);
+
+  if (sign == nullptr && words == nullptr) {
+    *result = size_t(local->WordCount());
+  } else if (len != 0) {
+    auto count = int(len);
+
+    local->ToWordsArray(sign, &count, words);
+
+    if (result) *result = size_t(count);
+  } else if (result) *result = 0;
 
   return 0;
 }

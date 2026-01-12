@@ -694,6 +694,9 @@ int
 js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result);
 
 int
+js_create_bigint_words(js_env_t *env, int sign, const uint64_t *words, size_t len, js_value_t **result);
+
+int
 js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
 int
@@ -1337,6 +1340,12 @@ js_get_value_bigint_int64(js_env_t *env, js_value_t *value, int64_t *result, boo
  */
 int
 js_get_value_bigint_uint64(js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_value_bigint_words(js_env_t *env, js_value_t *value, int *sign, uint64_t *words, size_t len, size_t *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
