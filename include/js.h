@@ -180,7 +180,7 @@ typedef enum {
   js_garbage_collection_type_generational = 2
 } js_garbage_collection_type_t;
 
-typedef void (*js_garbage_collection_cb)(js_garbage_collection_type_t);
+typedef void (*js_garbage_collection_cb)(js_garbage_collection_type_t, void *data);
 
 /** @version 1 */
 struct js_platform_options_s {
@@ -429,6 +429,9 @@ struct js_garbage_collection_tracking_s {
 
   /** @since 0 */
   js_garbage_collection_cb end_cb;
+
+  /** @since 0 */
+  void *data;
 };
 
 int
@@ -1694,7 +1697,7 @@ js_request_garbage_collection(js_env_t *env);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking);
+js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking, void *data);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

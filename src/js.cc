@@ -7194,7 +7194,7 @@ js_garbage_collection_tracking_prologue(Isolate *isolate, GCType type, GCCallbac
 
   js_garbage_collection_tracking_t *gc_tracking = static_cast<js_garbage_collection_tracking_t *>(data);
 
-  gc_tracking->start_cb(t);
+  gc_tracking->start_cb(t, gc_tracking->data);
 }
 
 static void
@@ -7207,12 +7207,14 @@ js_garbage_collection_tracking_epilogue(Isolate *isolate, GCType type, GCCallbac
 
   js_garbage_collection_tracking_t *gc_tracking = static_cast<js_garbage_collection_tracking_t *>(data);
 
-  gc_tracking->end_cb(t);
+  gc_tracking->end_cb(t, gc_tracking->data);
 }
 
 extern "C" int
-js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking) {
+js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking, void *data) {
   // Allow continuing even with a pending exception
+
+  gc_tracking->data = data;
 
   env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, static_cast<void *>(gc_tracking));
   env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, static_cast<void *>(gc_tracking));

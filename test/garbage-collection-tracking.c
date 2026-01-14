@@ -7,13 +7,17 @@ static bool gc_start_called = false;
 static bool gc_end_called = false;
 
 static void
-on_start(js_garbage_collection_type_t type) {
+on_start(js_garbage_collection_type_t type, void *data) {
   gc_start_called = true;
+
+  assert((intptr_t) data == 42);
 }
 
 static void
-on_end(js_garbage_collection_type_t type) {
+on_end(js_garbage_collection_type_t type, void *data) {
   gc_end_called = true;
+
+  assert((intptr_t) data == 42);
 }
 
 int
@@ -43,13 +47,14 @@ main() {
     .end_cb = on_end,
   };
 
-  e = js_enable_garbage_collection_tracking(env, &gc_tracking);
+  e = js_enable_garbage_collection_tracking(env, &gc_tracking, (void *) 42);
   assert(e == 0);
 
   e = js_request_garbage_collection(env);
   assert(e == 0);
 
   assert(gc_start_called);
+
   assert(gc_end_called);
 
   e = js_disable_garbage_collection_tracking(env, &gc_tracking);
