@@ -7188,7 +7188,7 @@ static void
 js_garbage_collection_tracking_prologue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
   js_garbage_collection_type_t t;
 
-  if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
+  if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_generational;
   else if (type == v8::GCType::kGCTypeMarkSweepCompact) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
   else return;
 
@@ -7201,7 +7201,7 @@ static void
 js_garbage_collection_tracking_epilogue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
   js_garbage_collection_type_t t;
 
-  if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
+  if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_generational;
   else if (type == v8::GCType::kGCTypeMarkSweepCompact) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
   else return;
 
