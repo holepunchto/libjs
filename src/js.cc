@@ -55,6 +55,8 @@ typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_garbage_collection_tracking_s js_garbage_collection_tracking_t;
+typedef struct js_garbage_collection_tracking_callback_data_s js_garbage_collection_tracking_callback_data_t;
+typedef struct js_garbage_collection_tracking_callbacks_data_s js_garbage_collection_tracking_callbacks_data_t;
 
 typedef enum {
   js_task_nestable,
@@ -3044,6 +3046,24 @@ js_inspector_client_s::on_pause(js_inspector_t *session) {
 
   return session->cb(session->env, session, session->data);
 }
+
+struct js_garbage_collection_tracking_callback_data_s {
+  js_garbage_collection_cb cb;
+
+  void *data;
+
+  js_garbage_collection_tracking_callback_data_s(js_garbage_collection_cb cb, void *data) : cb(cb),
+                                                                                            data(data) {}
+};
+
+struct js_garbage_collection_tracking_callbacks_data_s {
+  js_garbage_collection_tracking_callback_data_t *prologue;
+
+  js_garbage_collection_tracking_callback_data_t *epilogue;
+
+  js_garbage_collection_tracking_callbacks_data_s(js_garbage_collection_tracking_callback_data_t *prologue, js_garbage_collection_tracking_callback_data_t *epilogue) : prologue(prologue),
+                                                                                                                                                                        epilogue(epilogue) {}
+};
 
 namespace {
 
@@ -7185,49 +7205,47 @@ js_request_garbage_collection(js_env_t *env) {
 }
 
 static void
-js_garbage_collection_tracking_prologue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
+js_garbage_collection_tracking_callback(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
   js_garbage_collection_type_t t;
 
   if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_generational;
   else if (type == v8::GCType::kGCTypeMarkSweepCompact) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
   else return;
 
-  js_garbage_collection_tracking_t *gc_tracking = static_cast<js_garbage_collection_tracking_t *>(data);
+  js_garbage_collection_tracking_callback_data_t *cb_data = static_cast<js_garbage_collection_tracking_callback_data_t *>(data);
 
-  gc_tracking->start_cb(t, gc_tracking->data);
-}
-
-static void
-js_garbage_collection_tracking_epilogue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
-  js_garbage_collection_type_t t;
-
-  if (type == v8::GCType::kGCTypeScavenge) t = js_garbage_collection_type_t::js_garbage_collection_type_generational;
-  else if (type == v8::GCType::kGCTypeMarkSweepCompact) t = js_garbage_collection_type_t::js_garbage_collection_type_mark_compact;
-  else return;
-
-  js_garbage_collection_tracking_t *gc_tracking = static_cast<js_garbage_collection_tracking_t *>(data);
-
-  gc_tracking->end_cb(t, gc_tracking->data);
+  cb_data->cb(t, cb_data->data);
 }
 
 extern "C" int
-js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking, void *data) {
+js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result) {
   // Allow continuing even with a pending exception
 
-  gc_tracking->data = data;
+  auto prologue = new js_garbage_collection_tracking_callback_data_t(options->start_cb, data);
+  auto epilogue = new js_garbage_collection_tracking_callback_data_t(options->end_cb, data);
 
-  env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, static_cast<void *>(gc_tracking));
-  env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, static_cast<void *>(gc_tracking));
+  auto callbacks_data = new js_garbage_collection_tracking_callbacks_data_t(prologue, epilogue);
+
+  env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_callback, static_cast<void *>(callbacks_data->prologue));
+  env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_callback, static_cast<void *>(callbacks_data->epilogue));
+
+  js_garbage_collection_tracking_t *gc_tracking = new js_garbage_collection_tracking_t();
+  gc_tracking->data = callbacks_data;
+  *result = gc_tracking;
 
   return 0;
 }
 
 extern "C" int
-js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking) {
+js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *result) {
   // Allow continuing even with a pending exception
 
-  env->isolate->RemoveGCPrologueCallback(js_garbage_collection_tracking_prologue, static_cast<void *>(gc_tracking));
-  env->isolate->RemoveGCEpilogueCallback(js_garbage_collection_tracking_epilogue, static_cast<void *>(gc_tracking));
+  js_garbage_collection_tracking_callbacks_data_t *callbacks_data = static_cast<js_garbage_collection_tracking_callbacks_data_t *>(result->data);
+
+  env->isolate->RemoveGCPrologueCallback(js_garbage_collection_tracking_callback, static_cast<void *>(callbacks_data->prologue));
+  env->isolate->RemoveGCEpilogueCallback(js_garbage_collection_tracking_callback, static_cast<void *>(callbacks_data->epilogue));
+
+  delete result;
 
   return 0;
 }

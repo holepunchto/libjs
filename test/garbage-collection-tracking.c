@@ -42,12 +42,13 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_garbage_collection_tracking_t gc_tracking = {
+  js_garbage_collection_tracking_options_t gc_tracking_options = {
     .start_cb = on_start,
     .end_cb = on_end,
   };
 
-  e = js_enable_garbage_collection_tracking(env, &gc_tracking, (void *) 42);
+  js_garbage_collection_tracking_t *gc_tracking;
+  e = js_enable_garbage_collection_tracking(env, &gc_tracking_options, (void *) 42, &gc_tracking);
   assert(e == 0);
 
   e = js_request_garbage_collection(env);
@@ -57,7 +58,7 @@ main() {
 
   assert(gc_end_called);
 
-  e = js_disable_garbage_collection_tracking(env, &gc_tracking);
+  e = js_disable_garbage_collection_tracking(env, gc_tracking);
   assert(e == 0);
 
   e = js_close_handle_scope(env, scope);

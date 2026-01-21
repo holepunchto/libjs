@@ -39,6 +39,7 @@ typedef struct js_heap_space_statistics_s js_heap_space_statistics_t;
 typedef struct js_error_location_s js_error_location_t;
 typedef struct js_inspector_s js_inspector_t;
 typedef struct js_garbage_collection_tracking_s js_garbage_collection_tracking_t;
+typedef struct js_garbage_collection_tracking_options_s js_garbage_collection_tracking_options_t;
 
 typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
@@ -425,13 +426,18 @@ struct js_garbage_collection_tracking_s {
   int version;
 
   /** @since 0 */
+  void *data;
+};
+
+/** @version 0 */
+struct js_garbage_collection_tracking_options_s {
+  int version;
+
+  /** @since 0 */
   js_garbage_collection_cb start_cb;
 
   /** @since 0 */
   js_garbage_collection_cb end_cb;
-
-  /** @since 0 */
-  void *data;
 };
 
 int
@@ -1697,13 +1703,13 @@ js_request_garbage_collection(js_env_t *env);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking, void *data);
+js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *gc_tracking);
+js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
