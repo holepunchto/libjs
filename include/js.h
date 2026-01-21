@@ -426,10 +426,10 @@ struct js_garbage_collection_tracking_options_s {
   int version;
 
   /** @since 0 */
-  js_garbage_collection_cb start_cb;
+  js_garbage_collection_cb start;
 
   /** @since 0 */
-  js_garbage_collection_cb end_cb;
+  js_garbage_collection_cb end;
 };
 
 int
@@ -1695,13 +1695,13 @@ js_request_garbage_collection(js_env_t *env);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_enable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result);
+js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *result);
+js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *tracking);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

@@ -42,9 +42,9 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_garbage_collection_tracking_options_t gc_tracking_options = {
-    .start_cb = on_start,
-    .end_cb = on_end,
+  const js_garbage_collection_tracking_options_t gc_tracking_options = {
+    .start = on_start,
+    .end = on_end,
   };
 
   js_garbage_collection_tracking_t *gc_tracking;
