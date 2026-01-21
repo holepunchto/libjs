@@ -3041,6 +3041,9 @@ struct js_garbage_collection_tracking_s {
   js_garbage_collection_tracking_options_t options;
 
   void *data;
+
+  js_garbage_collection_tracking_s(js_garbage_collection_tracking_options_t options, void *data) : options(options),
+                                                                                                   data(data) {}
 };
 
 bool
@@ -7219,9 +7222,7 @@ extern "C" int
 js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result) {
   // Allow continuing even with a pending exception
 
-  js_garbage_collection_tracking_t *gc_tracking = new js_garbage_collection_tracking_t();
-  gc_tracking->options = *options;
-  gc_tracking->data = data;
+  auto gc_tracking = new js_garbage_collection_tracking_t(*options, data);
 
   env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, static_cast<void *>(gc_tracking));
   env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, static_cast<void *>(gc_tracking));
