@@ -422,14 +422,6 @@ struct js_error_location_s {
 };
 
 /** @version 0 */
-struct js_garbage_collection_tracking_s {
-  int version;
-
-  /** @since 0 */
-  void *data;
-};
-
-/** @version 0 */
 struct js_garbage_collection_tracking_options_s {
   int version;
 
