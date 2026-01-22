@@ -108,6 +108,7 @@ list(APPEND tests
   dynamic-import-with-promise
   dynamic-import-without-handler
   fatal-exception
+  garbage-collection-tracking
   get-arraybuffer-info
   get-dataview-info
   get-error-location
