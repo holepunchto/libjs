@@ -7211,22 +7211,18 @@ static void
 js_garbage_collection_tracking_prologue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
   auto t = js_to_garbage_collection_type(type);
 
-  if (t) {
-    auto tracking = static_cast<js_garbage_collection_tracking_t *>(data);
+  auto tracking = static_cast<js_garbage_collection_tracking_t *>(data);
 
-    tracking->options.start(t.value(), tracking->data);
-  }
+  tracking->options.start(t.value(), tracking->data);
 }
 
 static void
 js_garbage_collection_tracking_epilogue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
   auto t = js_to_garbage_collection_type(type);
 
-  if (t) {
-    auto tracking = static_cast<js_garbage_collection_tracking_t *>(data);
+  auto tracking = static_cast<js_garbage_collection_tracking_t *>(data);
 
-    tracking->options.end(t.value(), tracking->data);
-  }
+  tracking->options.end(t.value(), tracking->data);
 }
 
 } // namespace
@@ -7237,8 +7233,10 @@ js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection
 
   auto tracking = new js_garbage_collection_tracking_t(*options, data);
 
-  env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, tracking);
-  env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, tracking);
+  auto filter = static_cast<GCType>(GCType::kGCTypeScavenge | GCType::kGCTypeMarkSweepCompact);
+
+  env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, tracking, filter);
+  env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, tracking, filter);
 
   *result = tracking;
 
