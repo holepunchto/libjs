@@ -41,27 +41,6 @@ typedef struct js_inspector_s js_inspector_t;
 typedef struct js_garbage_collection_tracking_s js_garbage_collection_tracking_t;
 typedef struct js_garbage_collection_tracking_options_s js_garbage_collection_tracking_options_t;
 
-typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
-typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
-typedef js_value_t *(*js_delegate_get_cb)(js_env_t *, js_value_t *property, void *data);
-typedef bool (*js_delegate_has_cb)(js_env_t *, js_value_t *property, void *data);
-typedef bool (*js_delegate_set_cb)(js_env_t *, js_value_t *property, js_value_t *value, void *data);
-typedef bool (*js_delegate_delete_property_cb)(js_env_t *, js_value_t *property, void *data);
-typedef js_value_t *(*js_delegate_own_keys_cb)(js_env_t *, void *data);
-typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
-typedef void (*js_module_meta_cb)(js_env_t *, js_module_t *module, js_value_t *meta, void *data);
-typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *data);
-typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
-typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
-typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
-typedef js_value_t *(*js_dynamic_import_transitional_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
-typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
-typedef void (*js_teardown_cb)(void *data);
-typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
-typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
-typedef void (*js_inspector_message_transitional_cb)(js_env_t *, js_inspector_t *, const char *message, size_t len, void *data);
-typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
-
 enum {
   /**
    * There's a pending exception that, unless handled, will be propagated up the
@@ -181,6 +160,26 @@ typedef enum {
   js_garbage_collection_type_generational = 2
 } js_garbage_collection_type_t;
 
+typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
+typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
+typedef js_value_t *(*js_delegate_get_cb)(js_env_t *, js_value_t *property, void *data);
+typedef bool (*js_delegate_has_cb)(js_env_t *, js_value_t *property, void *data);
+typedef bool (*js_delegate_set_cb)(js_env_t *, js_value_t *property, js_value_t *value, void *data);
+typedef bool (*js_delegate_delete_property_cb)(js_env_t *, js_value_t *property, void *data);
+typedef js_value_t *(*js_delegate_own_keys_cb)(js_env_t *, void *data);
+typedef js_module_t *(*js_module_resolve_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_module_t *referrer, void *data);
+typedef void (*js_module_meta_cb)(js_env_t *, js_module_t *module, js_value_t *meta, void *data);
+typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *data);
+typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
+typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
+typedef js_module_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef js_value_t *(*js_dynamic_import_transitional_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
+typedef void (*js_teardown_cb)(void *data);
+typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
+typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, js_value_t *message, void *data);
+typedef void (*js_inspector_message_transitional_cb)(js_env_t *, js_inspector_t *, const char *message, size_t len, void *data);
+typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 typedef void (*js_garbage_collection_cb)(js_garbage_collection_type_t, void *data);
 
 /** @version 1 */
