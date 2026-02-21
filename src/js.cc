@@ -792,7 +792,7 @@ private:
 
   private:
     inline uint8_t
-    aquire_task_id() {
+    acquire_task_id() {
       if (task_id == js_invalid_task_id) task_id = state->acquire_task_id();
       return task_id;
     }
@@ -816,7 +816,7 @@ private:
 
     uint8_t
     GetTaskId() override {
-      return aquire_task_id();
+      return acquire_task_id();
     }
 
     bool
@@ -2631,7 +2631,7 @@ struct js_threadsafe_function_s {
         context(context),
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint),
-        cb(cb == nullptr ? on_call : cb) {
+        cb(cb) {
     int err;
 
     err = uv_async_init(env->loop, &async, on_async);
@@ -2648,7 +2648,7 @@ struct js_threadsafe_function_s {
 
   inline bool
   push(void *data, js_threadsafe_function_call_mode_t mode) {
-    if (thread_count == 0) return false;
+    if (thread_count.load(std::memory_order_relaxed) == 0) return false;
 
     if (queue->push(data, mode)) {
       signal();
@@ -2719,6 +2719,42 @@ struct js_threadsafe_function_s {
 
 private:
   inline void
+  close() {
+    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
+  }
+
+  inline bool
+  call() {
+    int err;
+
+    auto data = queue->pop();
+
+    if (data.has_value()) {
+      auto scope = HandleScope(env->isolate);
+
+      auto fn = function.IsEmpty() ? nullptr : js_from_local(function.Get(env->isolate));
+
+      if (cb) cb(env, fn, context, data.value());
+      else {
+        js_value_t *receiver;
+        err = js_get_undefined(env, &receiver);
+        assert(err == 0);
+
+        err = js_call_function(env, receiver, fn, 0, nullptr, nullptr);
+        (void) err;
+      }
+
+      return true;
+    }
+
+    if (thread_count.load(std::memory_order_relaxed) == 0) {
+      close();
+    }
+
+    return false;
+  }
+
+  inline void
   signal() {
     int err;
 
@@ -2751,32 +2787,6 @@ private:
     if (!done) signal();
   }
 
-  inline bool
-  call() {
-    auto data = queue->pop();
-
-    if (data.has_value()) {
-      auto scope = HandleScope(env->isolate);
-
-      auto fn = function.IsEmpty() ? nullptr : js_from_local(function.Get(env->isolate));
-
-      cb(env, fn, context, data.value());
-
-      return true;
-    }
-
-    if (thread_count.load(std::memory_order_relaxed) == 0) {
-      close();
-    }
-
-    return false;
-  }
-
-  inline void
-  close() {
-    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
-  }
-
 private:
   static void
   on_async(uv_async_t *handle) {
@@ -2792,17 +2802,6 @@ private:
     if (function->finalize_cb) function->finalize_cb(function->env, function->context, function->finalize_hint);
 
     delete function;
-  }
-
-  static void
-  on_call(js_env_t *env, js_value_t *function, void *context, void *data) {
-    int err;
-
-    js_value_t *receiver;
-    err = js_get_undefined(env, &receiver);
-    assert(err == 0);
-
-    js_call_function(env, receiver, function, 0, nullptr, nullptr);
   }
 };
 
@@ -6761,7 +6760,7 @@ js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_
 
   auto threadsafe_function = new js_threadsafe_function_t(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
 
-  if (function != nullptr) {
+  if (function) {
     threadsafe_function->function.Reset(env->isolate, js_to_local(function));
   }
 
