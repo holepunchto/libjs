@@ -101,6 +101,15 @@ js_from_local(Local<Value> local) {
 
 } // namespace
 
+namespace {
+
+static const ExternalPointerTypeTag js_callback_info_type_tag = 1;
+static const ExternalPointerTypeTag js_delegate_type_tag = 2;
+static const ExternalPointerTypeTag js_finalizer_type_tag = 3;
+static const ExternalPointerTypeTag js_external_type_tag = 4;
+
+} // namespace
+
 struct js_tracing_controller_s : public TracingController {
 private: // V8 embedder API
 };
@@ -1841,8 +1850,8 @@ struct js_module_s {
       assertions
         ->Set(
           context,
-          raw_assertions->Get(context, i).As<String>(),
-          raw_assertions->Get(context, i + 1).As<Value>()
+          raw_assertions->Get(i).As<String>(),
+          raw_assertions->Get(i + 1).As<Value>()
         )
         .Check();
     }
@@ -1919,8 +1928,8 @@ struct js_module_s {
       assertions
         ->Set(
           context,
-          raw_assertions->Get(context, i).As<String>(),
-          raw_assertions->Get(context, i + 1).As<Value>()
+          raw_assertions->Get(i).As<String>(),
+          raw_assertions->Get(i + 1).As<Value>()
         )
         .Check();
     }
@@ -2054,7 +2063,7 @@ struct js_callback_s {
   void *data;
 
   js_callback_s(js_env_t *env, js_function_cb cb, void *data)
-      : external(env->isolate, External::New(env->isolate, this)),
+      : external(env->isolate, External::New(env->isolate, this, js_callback_info_type_tag)),
         env(env),
         cb(cb),
         data(data) {
@@ -2096,7 +2105,7 @@ struct js_callback_s {
 protected:
   static void
   on_call(const FunctionCallbackInfo<Value> &info) {
-    auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value());
+    auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value(js_callback_info_type_tag));
 
     auto env = callback->env;
 
@@ -2229,7 +2238,7 @@ struct js_delegate_s : js_finalizer_t {
 
   inline Local<ObjectTemplate>
   to_object_template(Isolate *isolate) {
-    auto external = External::New(isolate, this);
+    auto external = External::New(isolate, this, js_delegate_type_tag);
 
     auto tpl = ObjectTemplate::New(isolate);
 
@@ -2264,7 +2273,7 @@ private:
   on_get(Local<T> property, const PropertyCallbackInfo<Value> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
+    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.has) {
       auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
@@ -2303,7 +2312,7 @@ private:
   on_set(Local<T> property, Local<Value> value, const PropertyCallbackInfo<void> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
+    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.set) {
       auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
@@ -2330,7 +2339,7 @@ private:
   on_delete(Local<T> property, const PropertyCallbackInfo<Boolean> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
+    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.delete_property) {
       auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
@@ -2360,7 +2369,7 @@ private:
   on_enumerate(const PropertyCallbackInfo<Array> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value());
+    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.own_keys) {
       auto result = delegate->callbacks.own_keys(env, delegate->data);
@@ -3932,7 +3941,7 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
-  auto external = External::New(env->isolate, finalizer);
+  auto external = External::New(env->isolate, finalizer, js_finalizer_type_tag);
 
   auto success = env->try_catch<bool>(
     [&] {
@@ -3971,7 +3980,7 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result) {
 
   if (external.IsEmpty()) return js_error(env);
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
 
   *result = finalizer->data;
 
@@ -3998,7 +4007,7 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
   local->DeletePrivate(context, key).Check();
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value());
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
 
   finalizer->detach();
 
@@ -4658,7 +4667,7 @@ extern "C" int
 js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto external = External::New(env->isolate, data);
+  auto external = External::New(env->isolate, data, js_external_type_tag);
 
   if (finalize_cb) {
     auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
@@ -5957,7 +5966,7 @@ js_get_value_external(js_env_t *env, js_value_t *value, void **result) {
 
   auto local = js_to_local<External>(value);
 
-  *result = local->Value();
+  *result = local->Value(js_external_type_tag);
 
   return 0;
 }
@@ -6496,16 +6505,16 @@ extern "C" int
 js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data) {
   // Allow continuing even with a pending exception
 
-  auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
+  auto args = reinterpret_cast<const FunctionCallbackInfo<Value> *>(info);
 
-  auto const n = v8_info.Length();
+  auto const n = args->Length();
 
   if (argv) {
     auto i = 0;
     auto const m = *argc;
 
     for (; i < n && i < m; i++) {
-      argv[i] = js_from_local(v8_info[i]);
+      argv[i] = js_from_local(args->operator[](i));
     }
 
     if (i < m) {
@@ -6519,10 +6528,10 @@ js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc
 
   if (argc) *argc = size_t(n);
 
-  if (receiver) *receiver = js_from_local(v8_info.This());
+  if (receiver) *receiver = js_from_local(args->This());
 
   if (data) {
-    *data = reinterpret_cast<js_callback_t *>(v8_info.Data().As<External>()->Value())->data;
+    *data = reinterpret_cast<js_callback_t *>(args->Data().As<External>()->Value(js_callback_info_type_tag))->data;
   }
 
   return 0;
@@ -6532,12 +6541,12 @@ extern "C" int
 js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env, void **data) {
   // Allow continuing even with a pending exception
 
-  auto v8_info = reinterpret_cast<const FastApiCallbackOptions *>(info);
+  auto args = reinterpret_cast<const FastApiCallbackOptions *>(info);
 
-  if (env) *env = js_env_t::from(v8_info->isolate);
+  if (env) *env = js_env_t::from(args->isolate);
 
   if (data) {
-    *data = reinterpret_cast<js_typed_callback_t *>(v8_info->data.As<External>()->Value())->data;
+    *data = reinterpret_cast<js_typed_callback_t *>(args->data.As<External>()->Value(js_callback_info_type_tag))->data;
   }
 
   return 0;
@@ -6547,9 +6556,9 @@ extern "C" int
 js_get_new_target(js_env_t *env, const js_callback_info_t *info, js_value_t **result) {
   // Allow continuing even with a pending exception
 
-  auto v8_info = reinterpret_cast<const FunctionCallbackInfo<Value> &>(*info);
+  auto args = reinterpret_cast<const FunctionCallbackInfo<Value> *>(info);
 
-  *result = js_from_local(v8_info.NewTarget());
+  *result = js_from_local(args->NewTarget());
 
   return 0;
 }
