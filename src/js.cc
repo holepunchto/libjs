@@ -6351,7 +6351,7 @@ js_get_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto local = js_to_local<Object>(object);
 
-  auto key = js_to_string_utf8(env, name, true);
+  auto key = js_to_string_utf8(env, name, -1, true);
 
   if (key.IsEmpty()) return js_error(env);
 
@@ -6376,7 +6376,7 @@ js_has_named_property(js_env_t *env, js_value_t *object, const char *name, bool 
 
   auto local = js_to_local<Object>(object);
 
-  auto key = js_to_string_utf8(env, name, true);
+  auto key = js_to_string_utf8(env, name, -1, true);
 
   if (key.IsEmpty()) return js_error(env);
 
@@ -6401,7 +6401,7 @@ js_set_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
 
   auto local = js_to_local<Object>(object);
 
-  auto key = js_to_string_utf8(env, name, true);
+  auto key = js_to_string_utf8(env, name, -1, true);
 
   if (key.IsEmpty()) return js_error(env);
 
@@ -6424,7 +6424,7 @@ js_delete_named_property(js_env_t *env, js_value_t *object, const char *name, bo
 
   auto local = js_to_local<Object>(object);
 
-  auto key = js_to_string_utf8(env, name, true);
+  auto key = js_to_string_utf8(env, name, -1, true);
 
   if (key.IsEmpty()) return js_error(env);
 
@@ -7036,14 +7036,14 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
   auto context = env->current_context();
 
-  auto string = js_to_string_utf8(env, message, true);
+  auto string = js_to_string_utf8(env, message, -1, true);
 
   if (string.IsEmpty()) return js_error(env);
 
   auto error = Error(string.ToLocalChecked(), {}).As<Object>();
 
   if (code) {
-    auto string = js_to_string_utf8(env, code, true);
+    auto string = js_to_string_utf8(env, code, -1, true);
 
     if (string.IsEmpty()) return js_error(env);
 
