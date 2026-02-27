@@ -5913,7 +5913,7 @@ js_get_value_bigint_words(js_env_t *env, js_value_t *value, int *sign, uint64_t 
   if (sign == nullptr && words == nullptr) {
     *result = size_t(local->WordCount());
   } else if (len != 0) {
-    auto count = int(len);
+    auto count = len > INT_MAX ? INT_MAX : static_cast<int>(len);
 
     local->ToWordsArray(sign, &count, words);
 
