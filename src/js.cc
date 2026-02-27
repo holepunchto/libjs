@@ -552,8 +552,8 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
   std::atomic<bool> cancelled;
 
-  std::recursive_mutex lock;
-  std::condition_variable_any worker_released;
+  std::mutex lock;
+  std::condition_variable worker_released;
 
   js_job_state_s(TaskPriority priority, std::unique_ptr<JobTask> task, std::shared_ptr<js_task_runner_t> task_runner, uint8_t available_parallelism)
       : priority(priority),
@@ -621,6 +621,8 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
     update_priority(guard, TaskPriority::kUserBlocking);
 
+    available_parallelism = std::min<uint8_t>(available_parallelism + 1, 64);
+
     active_workers++; // Reserved for the joining thread
 
     auto concurrency = wait_for_concurrency(guard);
@@ -640,7 +642,11 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     }
 
     do {
+      guard.unlock();
+
       run(true);
+
+      guard.lock();
     } while (wait_for_concurrency(guard));
 
     active_workers--;
@@ -678,7 +684,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
 private:
   uint8_t
-  max_concurrency(const std::unique_lock<std::recursive_mutex> &, int8_t delta = 0) {
+  max_concurrency(const std::unique_lock<std::mutex> &, int8_t delta = 0) {
     auto worker_count = active_workers + delta;
 
     if (worker_count < 0) worker_count = 0;
@@ -691,7 +697,7 @@ private:
   }
 
   uint8_t
-  wait_for_concurrency(std::unique_lock<std::recursive_mutex> &guard) {
+  wait_for_concurrency(std::unique_lock<std::mutex> &guard) {
     auto concurrency = max_concurrency(guard, -1);
 
     while (active_workers > concurrency && active_workers > 1) {
@@ -706,7 +712,7 @@ private:
   }
 
   void
-  update_priority(const std::unique_lock<std::recursive_mutex> &, TaskPriority priority) {
+  update_priority(const std::unique_lock<std::mutex> &, TaskPriority priority) {
     this->priority = priority;
   }
 
@@ -721,7 +727,7 @@ private:
   schedule_run() {
     auto task = std::make_unique<js_job_worker_s>(shared_from_this());
 
-    task_runner->push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable));
+    task_runner->push_task(js_task_handle_t(priority, std::move(task), js_task_nestable));
   }
 
   bool
@@ -730,7 +736,7 @@ private:
 
     pending_workers--;
 
-    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(guard, -1)) {
+    if (cancelled.load(std::memory_order_relaxed) || active_workers >= max_concurrency(guard)) {
       return false;
     }
 
