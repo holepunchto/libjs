@@ -2535,13 +2535,13 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   const size_t mask;
 
-  std::atomic<size_t> read;
-  std::atomic<size_t> write;
+  size_t read;
+  size_t write;
 
-  std::atomic<bool> closed;
+  bool closed;
 
   std::mutex lock;
-  std::condition_variable_any available;
+  std::condition_variable available;
 
   js_threadsafe_bounded_queue_s(size_t queue_limit)
       : queue(queue_limit),
@@ -2556,47 +2556,37 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   bool
   push(void *data, js_threadsafe_function_call_mode_t mode) override {
-    if (closed.load(std::memory_order_relaxed)) return false;
+    std::unique_lock guard(lock);
 
-    size_t write, next;
-    bool ok;
+    while (true) {
+      if (closed) return false;
 
-    do {
-      write = this->write.load(std::memory_order_relaxed);
+      auto next = (write + 1) & mask;
 
-      next = (write + 1) & mask;
+      if (next != read) {
+        queue[write] = data;
+        write = next;
 
-      if (next == read.load(std::memory_order_acquire)) {
-        if (mode == js_threadsafe_function_nonblocking) {
-          return false;
-        }
-
-        available.wait(lock);
-
-        if (closed.load(std::memory_order_relaxed)) return false;
+        return true;
       }
 
-      ok = this->write.compare_exchange_weak(write, next, std::memory_order_acq_rel);
-    } while (!ok);
+      if (mode == js_threadsafe_function_nonblocking) {
+        return false;
+      }
 
-    queue[write] = std::move(data);
-
-    return true;
+      available.wait(guard);
+    }
   }
 
   std::optional<void *>
   pop() override {
-    auto read = this->read.load(std::memory_order_relaxed);
+    std::unique_lock guard(lock);
 
-    if (read == write.load(std::memory_order_acquire)) {
-      return std::nullopt;
-    }
+    if (read == write) return std::nullopt;
 
-    auto data = std::move(queue[read]);
+    auto data = queue[read];
 
-    auto next = (read + 1) & mask;
-
-    this->read.store(next, std::memory_order_release);
+    read = (read + 1) & mask;
 
     available.notify_one();
 
@@ -2605,7 +2595,9 @@ struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
 
   void
   close() override {
-    closed.store(true, std::memory_order_relaxed);
+    std::unique_lock guard(lock);
+
+    closed = true;
 
     available.notify_all();
   }
