@@ -604,7 +604,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
     std::unique_lock guard(lock);
 
-    auto concurrency = max_concurrency();
+    auto concurrency = max_concurrency(guard);
 
     if (concurrency > active_workers + pending_workers) {
       concurrency -= active_workers + pending_workers;
@@ -619,27 +619,17 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   join() {
     std::unique_lock guard(lock);
 
-    update_priority(TaskPriority::kUserBlocking);
+    update_priority(guard, TaskPriority::kUserBlocking);
 
     active_workers++; // Reserved for the joining thread
 
-    auto wait_for_concurrency = [this, &guard]() {
-      auto concurrency = max_concurrency(-1);
+    auto concurrency = wait_for_concurrency(guard);
 
-      while (active_workers > concurrency && active_workers > 1) {
-        worker_released.wait(guard);
+    if (concurrency == 0) {
+      active_workers--;
 
-        concurrency = max_concurrency(-1);
-      }
-
-      if (concurrency == 0) cancelled.store(true, std::memory_order_relaxed);
-
-      return concurrency;
-    };
-
-    auto concurrency = wait_for_concurrency();
-
-    if (concurrency == 0) return;
+      return;
+    }
 
     if (concurrency > active_workers + pending_workers) {
       concurrency -= active_workers + pending_workers;
@@ -651,7 +641,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
 
     do {
       run(true);
-    } while (wait_for_concurrency());
+    } while (wait_for_concurrency(guard));
 
     active_workers--;
   }
@@ -676,21 +666,19 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   is_active() {
     std::unique_lock guard(lock);
 
-    return max_concurrency() != 0 || active_workers != 0;
+    return max_concurrency(guard) != 0 || active_workers != 0;
   }
 
   void
   update_priority(TaskPriority priority) {
     std::unique_lock guard(lock);
 
-    this->priority = priority;
+    update_priority(guard, priority);
   }
 
 private:
   uint8_t
-  max_concurrency(int8_t delta = 0) {
-    std::unique_lock guard(lock);
-
+  max_concurrency(const std::unique_lock<std::recursive_mutex> &, int8_t delta = 0) {
     auto worker_count = active_workers + delta;
 
     if (worker_count < 0) worker_count = 0;
@@ -700,6 +688,26 @@ private:
     if (max_concurrency > available_parallelism) return available_parallelism;
 
     return uint8_t(max_concurrency);
+  }
+
+  uint8_t
+  wait_for_concurrency(std::unique_lock<std::recursive_mutex> &guard) {
+    auto concurrency = max_concurrency(guard, -1);
+
+    while (active_workers > concurrency && active_workers > 1) {
+      worker_released.wait(guard);
+
+      concurrency = max_concurrency(guard, -1);
+    }
+
+    if (concurrency == 0) cancelled.store(true, std::memory_order_relaxed);
+
+    return concurrency;
+  }
+
+  void
+  update_priority(const std::unique_lock<std::recursive_mutex> &, TaskPriority priority) {
+    this->priority = priority;
   }
 
   void
@@ -722,7 +730,7 @@ private:
 
     pending_workers--;
 
-    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(-1)) {
+    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(guard, -1)) {
       return false;
     }
 
@@ -735,7 +743,7 @@ private:
   should_continue_task() {
     std::unique_lock guard(lock);
 
-    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(-1)) {
+    if (cancelled.load(std::memory_order_relaxed) || active_workers > max_concurrency(guard, -1)) {
       active_workers--;
 
       worker_released.notify_one();
@@ -818,7 +826,7 @@ private:
 
     void
     NotifyConcurrencyIncrease() override {
-      return state->create_workers();
+      state->create_workers();
     }
 
     uint8_t
