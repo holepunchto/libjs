@@ -498,7 +498,7 @@ private: // V8 embedder API
 
   void
   PostNonNestableTaskImpl(std::unique_ptr<Task> task, const SourceLocation &location = SourceLocation::Current()) override {
-    push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable));
+    push_task(js_task_handle_t(TaskPriority::kUserBlocking, std::move(task), js_task_non_nestable));
   }
 
   void
@@ -512,7 +512,7 @@ private: // V8 embedder API
   PostNonNestableDelayedTaskImpl(std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location = SourceLocation::Current()) override {
     auto expiry = now() + uint64_t(delay_in_seconds * 1000000000);
 
-    push_task(js_delayed_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_non_nestable, expiry));
+    push_task(js_delayed_task_handle_t(TaskPriority::kUserBlocking, std::move(task), js_task_non_nestable, expiry));
   }
 
   void
