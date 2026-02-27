@@ -3071,21 +3071,26 @@ js_to_string_utf8_literal(js_env_t *env, const char (&literal)[N], bool internal
 }
 
 static inline MaybeLocal<String>
-js_to_string_utf8(js_env_t *env, const char *data, size_t len, bool internalize = false) {
+js_to_string_utf8(js_env_t *env, const char *data, int len = -1, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  if (len == size_t(-1)) {
-    return String::NewFromUtf8(env->isolate, data, type);
-  } else {
-    return String::NewFromUtf8(env->isolate, data, type, int(len));
-  }
+  return String::NewFromUtf8(env->isolate, data, type, len);
 }
 
 static inline MaybeLocal<String>
-js_to_string_utf8(js_env_t *env, const char *data, bool internalize = false) {
-  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+js_to_string_utf8(js_env_t *env, const char *data, size_t len, bool internalize = false) {
+  if (len == size_t(-1)) return js_to_string_utf8(env, data, -1, internalize);
 
-  return String::NewFromUtf8(env->isolate, data, type);
+  int err;
+
+  if (len > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid string length");
+    assert(err == 0);
+
+    return MaybeLocal<String>();
+  }
+
+  return js_to_string_utf8(env, data, static_cast<int>(len), internalize);
 }
 
 static inline MaybeLocal<String>
@@ -3094,25 +3099,49 @@ js_to_string_utf8(js_env_t *env, const utf8_t *data, size_t len, bool internaliz
 }
 
 static inline MaybeLocal<String>
-js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len, bool internalize = false) {
+js_to_string_utf16le(js_env_t *env, const utf16_t *data, int len = -1, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  if (len == size_t(-1)) {
-    return String::NewFromTwoByte(env->isolate, data, type);
-  } else {
-    return String::NewFromTwoByte(env->isolate, data, type, int(len));
+  return String::NewFromTwoByte(env->isolate, data, type, len);
+}
+
+static inline MaybeLocal<String>
+js_to_string_utf16le(js_env_t *env, const utf16_t *data, size_t len, bool internalize = false) {
+  if (len == size_t(-1)) return js_to_string_utf16le(env, data, -1, internalize);
+
+  int err;
+
+  if (len > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid string length");
+    assert(err == 0);
+
+    return MaybeLocal<String>();
   }
+
+  return js_to_string_utf16le(env, data, static_cast<int>(len), internalize);
+}
+
+static inline MaybeLocal<String>
+js_to_string_latin1(js_env_t *env, const latin1_t *data, int len = -1, bool internalize = false) {
+  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+
+  return String::NewFromOneByte(env->isolate, data, type, len);
 }
 
 static inline MaybeLocal<String>
 js_to_string_latin1(js_env_t *env, const latin1_t *data, size_t len, bool internalize = false) {
-  auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
+  if (len == size_t(-1)) return js_to_string_latin1(env, data, -1, internalize);
 
-  if (len == size_t(-1)) {
-    return String::NewFromOneByte(env->isolate, data, type);
-  } else {
-    return String::NewFromOneByte(env->isolate, data, type, int(len));
+  int err;
+
+  if (len > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid string length");
+    assert(err == 0);
+
+    return MaybeLocal<String>();
   }
+
+  return js_to_string_latin1(env, data, static_cast<int>(len), internalize);
 }
 
 } // namespace
