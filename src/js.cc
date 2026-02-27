@@ -4026,7 +4026,7 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
 extern "C" int
 js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
   auto context = env->current_context();
 
@@ -4034,11 +4034,13 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
 
   auto tpl = delegate->to_object_template(env->isolate);
 
-  auto object = tpl->NewInstance(context).ToLocalChecked();
+  auto object = tpl->NewInstance(context);
 
-  delegate->attach_to(env->isolate, object);
+  if (object.IsEmpty()) return js_error(env);
 
-  *result = js_from_local(object);
+  delegate->attach_to(env->isolate, object.ToLocalChecked());
+
+  *result = js_from_local(object.ToLocalChecked());
 
   return 0;
 }

@@ -658,9 +658,6 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result);
 int
 js_remove_wrap(js_env_t *env, js_value_t *object, void **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
