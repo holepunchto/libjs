@@ -1641,10 +1641,14 @@ struct js_env_s {
   }
 
   static void
-  on_fatal_error(const char *location, const char *message) {}
+  on_fatal_error(const char *location, const char *message) {
+    abort();
+  }
 
   static void
-  on_out_of_memory_error(const char *location, const OOMDetails &details) {}
+  on_out_of_memory_error(const char *location, const OOMDetails &details) {
+    abort();
+  }
 
   static void
   on_promise_reject(PromiseRejectMessage message) {
