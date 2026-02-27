@@ -445,7 +445,9 @@ private:
     } else {
       auto const &task = delayed_tasks.top();
 
-      auto timeout = (task.expiry - now()) / 1000000;
+      auto n = now();
+
+      auto timeout = task.expiry > n ? (task.expiry - n) / 1000000 : 0;
 
       err = uv_timer_start(&timer, on_timer, timeout, 0);
       assert(err == 0);
