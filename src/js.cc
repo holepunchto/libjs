@@ -6723,6 +6723,15 @@ extern "C" int
 js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
+  if (argc > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid arguments length");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
   auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
@@ -6731,7 +6740,7 @@ js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size
         ->Call(
           context,
           js_to_local(receiver),
-          int(argc),
+          static_cast<int>(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     }
@@ -6748,6 +6757,15 @@ extern "C" int
 js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
+  if (argc > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid arguments length");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
   auto context = env->current_context();
 
   auto local = env->call_into_javascript<Value>(
@@ -6756,7 +6774,7 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
         ->Call(
           context,
           js_to_local(receiver),
-          int(argc),
+          static_cast<int>(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     },
@@ -6774,6 +6792,15 @@ extern "C" int
 js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
+  if (argc > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid arguments length");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
   auto context = env->current_context();
 
   auto local = env->call_into_javascript<Object>(
@@ -6781,7 +6808,7 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
       return js_to_local<Function>(constructor)
         ->NewInstance(
           context,
-          int(argc),
+          static_cast<int>(argc),
           reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(argv))
         );
     }
