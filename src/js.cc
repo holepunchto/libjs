@@ -4659,7 +4659,7 @@ js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result) {
   int err;
 
   if (len > INT_MAX) {
-    err = js_throw_range_error(env, NULL, "Array length exceeds maximum supported size");
+    err = js_throw_range_error(env, NULL, "Invalid array length");
     assert(err == 0);
 
     return js_error(env);
