@@ -138,7 +138,7 @@ struct js_task_handle_s {
   js_task_handle_s &
   operator=(js_task_handle_s &&) = default;
 
-  inline void
+  void
   run() {
     task->Run();
 
@@ -247,7 +247,7 @@ struct js_task_runner_s : public TaskRunner {
   js_task_runner_s &
   operator=(const js_task_runner_s &) = delete;
 
-  inline void
+  void
   close() {
     std::unique_lock guard(lock);
 
@@ -263,33 +263,33 @@ struct js_task_runner_s : public TaskRunner {
     uv_close(reinterpret_cast<uv_handle_t *>(&async), on_handle_close);
   }
 
-  inline uint64_t
+  uint64_t
   now() {
     return uv_hrtime();
   }
 
-  inline bool
+  bool
   empty() {
     std::unique_lock guard(lock);
 
     return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
   }
 
-  inline size_t
+  size_t
   size() {
     std::unique_lock guard(lock);
 
     return tasks.size() + delayed_tasks.size() + idle_tasks.size();
   }
 
-  inline bool
+  bool
   inactive() {
     std::unique_lock guard(lock);
 
     return empty() || outstanding == disposable;
   }
 
-  inline void
+  void
   push_task(js_task_handle_t &&task) {
     int err;
 
@@ -309,7 +309,7 @@ struct js_task_runner_s : public TaskRunner {
     assert(err == 0);
   }
 
-  inline void
+  void
   push_task(js_delayed_task_handle_t &&task) {
     std::unique_lock guard(lock);
 
@@ -328,7 +328,7 @@ struct js_task_runner_s : public TaskRunner {
     delayed_tasks.push(std::move(task));
   }
 
-  inline void
+  void
   push_task(js_idle_task_handle_t &&task) {
     std::unique_lock guard(lock);
 
@@ -341,7 +341,7 @@ struct js_task_runner_s : public TaskRunner {
     idle_tasks.push(std::move(task));
   }
 
-  inline bool
+  bool
   can_pop_task() {
     std::unique_lock guard(lock);
 
@@ -354,7 +354,7 @@ struct js_task_runner_s : public TaskRunner {
     return false;
   }
 
-  inline std::optional<js_task_handle_t>
+  std::optional<js_task_handle_t>
   pop_task() {
     std::unique_lock guard(lock);
 
@@ -378,7 +378,7 @@ struct js_task_runner_s : public TaskRunner {
     return std::move(value);
   }
 
-  inline std::optional<js_task_handle_t>
+  std::optional<js_task_handle_t>
   pop_task_wait() {
     std::unique_lock guard(lock);
 
@@ -419,7 +419,7 @@ struct js_task_runner_s : public TaskRunner {
     adjust_timer();
   }
 
-  inline void
+  void
   drain() {
     std::unique_lock guard(lock);
 
@@ -460,7 +460,7 @@ private:
     }
   }
 
-  inline void
+  void
   on_completion(bool is_disposable = false) {
     std::unique_lock guard(lock);
 
@@ -576,7 +576,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   js_job_state_s &
   operator=(const js_job_state_s &) = delete;
 
-  inline uint8_t
+  uint8_t
   acquire_task_id() {
     auto task_ids = this->task_ids.load(std::memory_order_relaxed);
 
@@ -597,12 +597,12 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     return task_id;
   }
 
-  inline void
+  void
   release_task_id(uint8_t task_id) {
     task_ids.fetch_and(~(uint64_t(1) << task_id), std::memory_order_release);
   }
 
-  inline void
+  void
   create_workers() {
     if (cancelled.load(std::memory_order_relaxed)) return;
 
@@ -619,7 +619,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     }
   }
 
-  inline void
+  void
   join() {
     std::unique_lock guard(lock);
 
@@ -660,12 +660,12 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     active_workers--;
   }
 
-  inline void
+  void
   cancel() {
     cancelled.store(true, std::memory_order_relaxed);
   }
 
-  inline void
+  void
   cancel_and_wait() {
     std::unique_lock guard(lock);
 
@@ -676,14 +676,14 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
     }
   }
 
-  inline bool
+  bool
   is_active() {
     std::unique_lock guard(lock);
 
     return max_concurrency() != 0 || active_workers != 0;
   }
 
-  inline void
+  void
   update_priority(TaskPriority priority) {
     std::unique_lock guard(lock);
 
@@ -691,7 +691,7 @@ struct js_job_state_s : std::enable_shared_from_this<js_job_state_s> {
   }
 
 private:
-  inline uint8_t
+  uint8_t
   max_concurrency(int8_t delta = 0) {
     std::unique_lock guard(lock);
 
@@ -706,21 +706,21 @@ private:
     return uint8_t(max_concurrency);
   }
 
-  inline void
+  void
   run(bool is_joining_thread = false) {
     js_job_delegate_s delegate(shared_from_this(), is_joining_thread);
 
     task->Run(&delegate);
   }
 
-  inline void
+  void
   schedule_run() {
     auto task = std::make_unique<js_job_worker_s>(shared_from_this());
 
     task_runner->push_task(js_task_handle_t(TaskPriority::kBestEffort, std::move(task), js_task_nestable));
   }
 
-  inline bool
+  bool
   should_start_task() {
     std::unique_lock guard(lock);
 
@@ -735,7 +735,7 @@ private:
     return true;
   }
 
-  inline bool
+  bool
   should_continue_task() {
     std::unique_lock guard(lock);
 
@@ -761,7 +761,7 @@ private:
     js_job_worker_s &
     operator=(const js_job_worker_s &) = delete;
 
-    inline void
+    void
     run() {
       auto state = this->state.lock();
 
@@ -802,13 +802,13 @@ private:
     operator=(const js_job_delegate_s &) = delete;
 
   private:
-    inline uint8_t
+    uint8_t
     acquire_task_id() {
       if (task_id == js_invalid_task_id) task_id = state->acquire_task_id();
       return task_id;
     }
 
-    inline void
+    void
     release_task_id() {
       if (task_id != js_invalid_task_id) state->release_task_id(task_id);
     }
@@ -910,7 +910,7 @@ struct js_worker_s {
   js_worker_s &
   operator=(const js_worker_s &) = delete;
 
-  inline void
+  void
   join() {
     thread.join();
   }
@@ -932,19 +932,19 @@ struct js_heap_s {
   js_heap_s &
   operator=(const js_heap_s &) = delete;
 
-  inline void *
+  void *
   alloc(size_t size) {
     void *ptr = alloc_unsafe(size);
     if (ptr) memset(ptr, 0, size);
     return ptr;
   }
 
-  inline void *
+  void *
   alloc_unsafe(size_t size) {
     return ::malloc(size);
   }
 
-  inline void
+  void
   free(void *ptr) {
     ::free(ptr);
   }
@@ -998,17 +998,17 @@ struct js_teardown_queue_s {
         index(),
         drained(false) {}
 
-  inline auto
+  auto
   begin() {
     return handles.begin();
   }
 
-  inline auto
+  auto
   end() {
     return handles.end();
   }
 
-  inline status
+  status
   push(js_teardown_cb cb, void *data) {
     if (drained) return status::drained;
 
@@ -1021,7 +1021,7 @@ struct js_teardown_queue_s {
     return status::success;
   }
 
-  inline status
+  status
   pop(js_teardown_cb cb, void *data) {
     js_teardown_handle handle = std::make_pair(cb, data);
 
@@ -1035,7 +1035,7 @@ struct js_teardown_queue_s {
     return status::success;
   }
 
-  inline status
+  status
   drain(js_env_t *env) {
     if (drained) return status::drained;
 
@@ -1129,7 +1129,7 @@ struct js_platform_s : public Platform {
   js_platform_s &
   operator=(const js_platform_s &) = delete;
 
-  inline void
+  void
   close() {
     background->close();
 
@@ -1142,29 +1142,29 @@ struct js_platform_s : public Platform {
     uv_close(reinterpret_cast<uv_handle_t *>(&check), on_handle_close);
   }
 
-  inline uint64_t
+  uint64_t
   now() {
     return uv_hrtime();
   }
 
-  inline void
+  void
   idle() {
     // TODO: This should wait until either the platform drains completely or a
     // task is made available.
     drain();
   }
 
-  inline void
+  void
   drain() {
     background->drain();
   }
 
-  inline void
+  void
   attach(js_env_t *env, std::unique_lock<std::mutex> &guard) {
     environments.insert(env);
   }
 
-  inline void
+  void
   detach(js_env_t *env, std::unique_lock<std::mutex> &guard) {
     environments.erase(env);
 
@@ -1172,7 +1172,7 @@ struct js_platform_s : public Platform {
   }
 
 private:
-  inline void
+  void
   dispose_maybe(std::unique_lock<std::mutex> &lock) {
     if (active_handles == 0 && environments.empty()) {
       V8::Dispose();
@@ -1184,7 +1184,7 @@ private:
     }
   }
 
-  inline void
+  void
   run_tasks() {
     background->move_expired_tasks();
 
@@ -1193,7 +1193,7 @@ private:
     }
   }
 
-  inline void
+  void
   check_liveness() {
     int err;
 
@@ -1451,14 +1451,14 @@ struct js_env_s {
     return reinterpret_cast<js_env_t *>(isolate->GetData(0));
   }
 
-  inline bool
+  bool
   ref() {
     refs++;
 
     return true;
   }
 
-  inline bool
+  bool
   unref() {
     int err;
 
@@ -1472,7 +1472,7 @@ struct js_env_s {
     return true;
   }
 
-  inline void
+  void
   close_maybe() {
     teardown_queue.drain(this);
 
@@ -1482,19 +1482,19 @@ struct js_env_s {
     }
   }
 
-  inline uint64_t
+  uint64_t
   now() {
     return uv_hrtime();
   }
 
-  inline void
+  void
   idle() {
     // TODO: This should wait until either the platform drains completely or a
     // task is made available for the isolate.
     platform->drain();
   }
 
-  inline void
+  void
   run_microtasks() {
     if (isolate->IsExecutionTerminating()) return;
 
@@ -1526,7 +1526,7 @@ struct js_env_s {
     }
   }
 
-  inline void
+  void
   run_macrotasks() {
     tasks->move_expired_tasks();
 
@@ -1541,12 +1541,12 @@ struct js_env_s {
     }
   }
 
-  inline bool
+  bool
   is_exception_pending() {
     return !exception.IsEmpty();
   }
 
-  inline void
+  void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
       callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
@@ -1555,13 +1555,13 @@ struct js_env_s {
     }
   }
 
-  inline Local<Context>
+  Local<Context>
   current_context() {
     return isolate->GetCurrentContext();
   }
 
   template <typename T>
-  inline T
+  T
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
@@ -1582,19 +1582,19 @@ struct js_env_s {
   }
 
   template <typename T>
-  inline Maybe<T>
+  Maybe<T>
   try_catch(const std::function<Maybe<T>()> &fn) {
     return try_catch<Maybe<T>>(fn);
   }
 
   template <typename T>
-  inline MaybeLocal<T>
+  MaybeLocal<T>
   try_catch(const std::function<MaybeLocal<T>()> &fn) {
     return try_catch<MaybeLocal<T>>(fn);
   }
 
   template <typename T>
-  inline T
+  T
   call_into_javascript(const std::function<T()> &fn, bool always_checkpoint = false) {
     return try_catch<T>(
       [&] {
@@ -1612,23 +1612,23 @@ struct js_env_s {
   }
 
   template <typename T>
-  inline Maybe<T>
+  Maybe<T>
   call_into_javascript(const std::function<Maybe<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<Maybe<T>>(fn, always_checkpoint);
   }
 
   template <typename T>
-  inline MaybeLocal<T>
+  MaybeLocal<T>
   call_into_javascript(const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
-  inline auto
+  auto
   add_teardown_callback(js_teardown_cb cb, void *data) {
     return teardown_queue.push(cb, data);
   }
 
-  inline auto
+  auto
   remove_teardown_callback(js_teardown_cb cb, void *data) {
     return teardown_queue.pop(cb, data);
   }
@@ -1681,7 +1681,7 @@ struct js_env_s {
   }
 
 private:
-  inline void
+  void
   close() {
     tasks->close();
 
@@ -1692,17 +1692,17 @@ private:
     uv_close(reinterpret_cast<uv_handle_t *>(&teardown), on_handle_close);
   }
 
-  inline void
+  void
   dispose() {
     delete this;
   }
 
-  inline void
+  void
   dispose_maybe() {
     if (active_handles == 0) dispose();
   }
 
-  inline void
+  void
   check_liveness() {
     int err;
 
@@ -2031,12 +2031,12 @@ struct js_ref_s {
   js_ref_s &
   operator=(const js_ref_s &) = delete;
 
-  inline void
+  void
   set_weak() {
     value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
   }
 
-  inline void
+  void
   clear_weak() {
     value.ClearWeak<js_ref_t>();
   }
@@ -2083,7 +2083,7 @@ struct js_callback_s {
   js_callback_s &
   operator=(const js_callback_s &) = delete;
 
-  inline MaybeLocal<Function>
+  MaybeLocal<Function>
   to_function(Isolate *isolate, Local<Context> context) {
     return Function::New(
       context,
@@ -2095,7 +2095,7 @@ struct js_callback_s {
     );
   }
 
-  inline Local<FunctionTemplate>
+  Local<FunctionTemplate>
   to_function_template(Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
     return FunctionTemplate::New(
       isolate,
@@ -2156,7 +2156,7 @@ struct js_typed_callback_s : js_callback_t {
   js_typed_callback_s &
   operator=(const js_typed_callback_s &) = delete;
 
-  inline Local<FunctionTemplate>
+  Local<FunctionTemplate>
   to_function_template(Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
     auto function = CFunction(address, &type);
 
@@ -2194,14 +2194,14 @@ struct js_finalizer_s {
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
 
-  inline void
+  void
   attach_to(Isolate *isolate, Local<Value> local) {
     value.Reset(isolate, local);
 
     value.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
   }
 
-  inline void
+  void
   detach() {
     value.ClearWeak<js_finalizer_t>();
   }
@@ -2242,7 +2242,7 @@ struct js_delegate_s : js_finalizer_t {
   js_delegate_s &
   operator=(const js_delegate_s &) = delete;
 
-  inline Local<ObjectTemplate>
+  Local<ObjectTemplate>
   to_object_template(Isolate *isolate) {
     auto external = External::New(isolate, this, js_delegate_type_tag);
 
@@ -2653,7 +2653,7 @@ struct js_threadsafe_function_s {
     }
   }
 
-  inline bool
+  bool
   push(void *data, js_threadsafe_function_call_mode_t mode) {
     if (thread_count.load(std::memory_order_relaxed) == 0) return false;
 
@@ -2666,7 +2666,7 @@ struct js_threadsafe_function_s {
     return false;
   }
 
-  inline bool
+  bool
   acquire() {
     auto thread_count = this->thread_count.load(std::memory_order_relaxed);
 
@@ -2686,7 +2686,7 @@ struct js_threadsafe_function_s {
     return false;
   }
 
-  inline bool
+  bool
   release(js_threadsafe_function_release_mode_t mode) {
     auto thread_count = this->thread_count.load(std::memory_order_relaxed);
 
@@ -2714,23 +2714,23 @@ struct js_threadsafe_function_s {
     return false;
   }
 
-  inline void
+  void
   ref() {
     uv_ref(reinterpret_cast<uv_handle_t *>(&async));
   }
 
-  inline void
+  void
   unref() {
     uv_unref(reinterpret_cast<uv_handle_t *>(&async));
   }
 
 private:
-  inline void
+  void
   close() {
     uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
   }
 
-  inline bool
+  bool
   call() {
     int err;
 
@@ -2761,7 +2761,7 @@ private:
     return false;
   }
 
-  inline void
+  void
   signal() {
     int err;
 
@@ -2775,7 +2775,7 @@ private:
     assert(err == 0);
   }
 
-  inline void
+  void
   dispatch() {
     auto done = false;
 
@@ -2848,7 +2848,7 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
   operator=(const js_inspector_channel_s &) = delete;
 
 private: // V8 embedder API
-  inline void
+  void
   send(const StringView &string) {
     if (cb == nullptr && cb_transitional == nullptr) return;
 
@@ -2997,7 +2997,7 @@ struct js_inspector_s {
   js_inspector_s &
   operator=(const js_inspector_s &) = delete;
 
-  inline void
+  void
   connect() {
     session = client->inspector->connect(
       1,
@@ -3008,17 +3008,17 @@ struct js_inspector_s {
     );
   }
 
-  inline void
+  void
   attach(Local<Context> context, StringView name = StringView()) {
     client->inspector->contextCreated(V8ContextInfo(context, 1, name));
   }
 
-  inline void
+  void
   detach(Local<Context> context) {
     client->inspector->contextDestroyed(context);
   }
 
-  inline void
+  void
   send(Local<String> message) {
     auto utf16_len = size_t(message->Length());
 
@@ -3029,7 +3029,7 @@ struct js_inspector_s {
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
 
-  inline void
+  void
   send(const char *message, size_t len) {
     if (len == size_t(-1)) len = strlen(message);
 
