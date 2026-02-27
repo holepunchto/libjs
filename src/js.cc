@@ -200,16 +200,15 @@ struct js_task_runner_s : public TaskRunner {
   std::priority_queue<js_delayed_task_handle_t> delayed_tasks;
   std::queue<js_idle_task_handle_t> idle_tasks;
 
-  std::recursive_mutex lock;
-
   uint32_t depth;
   uint32_t outstanding;
   uint32_t disposable;
 
   bool closed;
 
-  std::condition_variable_any available;
-  std::condition_variable_any drained;
+  std::mutex lock;
+  std::condition_variable available;
+  std::condition_variable drained;
 
   js_task_runner_s(uv_loop_t *loop)
       : loop(loop),
@@ -220,11 +219,11 @@ struct js_task_runner_s : public TaskRunner {
         tasks(),
         delayed_tasks(),
         idle_tasks(),
-        lock(),
         depth(0),
         outstanding(0),
         disposable(0),
         closed(false),
+        lock(),
         available(),
         drained() {
     int err;
@@ -269,24 +268,10 @@ struct js_task_runner_s : public TaskRunner {
   }
 
   bool
-  empty() {
-    std::unique_lock guard(lock);
-
-    return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
-  }
-
-  size_t
-  size() {
-    std::unique_lock guard(lock);
-
-    return tasks.size() + delayed_tasks.size() + idle_tasks.size();
-  }
-
-  bool
   inactive() {
     std::unique_lock guard(lock);
 
-    return empty() || outstanding == disposable;
+    return inactive(guard);
   }
 
   void
@@ -341,56 +326,26 @@ struct js_task_runner_s : public TaskRunner {
     idle_tasks.push(std::move(task));
   }
 
-  bool
-  can_pop_task() {
-    std::unique_lock guard(lock);
-
-    if (depth == 0) return !tasks.empty();
-
-    for (auto task = tasks.begin(); task != tasks.end(); task++) {
-      if (task->nestability == js_task_nestable) return true;
-    }
-
-    return false;
-  }
-
   std::optional<js_task_handle_t>
   pop_task() {
     std::unique_lock guard(lock);
 
-    auto task = tasks.begin();
-
-    while (task != tasks.end()) {
-      if (depth == 0 || task->nestability == js_task_nestable) break;
-      else task++;
-    }
-
-    if (task == tasks.end()) {
-      // TODO: Check if we're idling and return an idle task if available.
-
-      return std::nullopt;
-    }
-
-    auto value = std::move(const_cast<js_task_handle_t &>(*task));
-
-    tasks.erase(task);
-
-    return std::move(value);
+    return pop_task(guard);
   }
 
   std::optional<js_task_handle_t>
   pop_task_wait() {
     std::unique_lock guard(lock);
 
-    auto task = pop_task();
+    auto task = pop_task(guard);
 
     if (task) return task;
 
-    while (!closed && !can_pop_task()) {
+    while (!closed && !can_pop_task(guard)) {
       available.wait(guard);
     }
 
-    return pop_task();
+    return pop_task(guard);
   }
 
   void
@@ -416,7 +371,7 @@ struct js_task_runner_s : public TaskRunner {
       assert(err == 0);
     }
 
-    adjust_timer();
+    adjust_timer(guard);
   }
 
   void
@@ -431,11 +386,52 @@ struct js_task_runner_s : public TaskRunner {
   }
 
 private:
-  void
-  adjust_timer() {
-    int err;
+  bool
+  empty(const std::unique_lock<std::mutex> &) {
+    return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
+  }
 
-    std::unique_lock guard(lock);
+  bool
+  inactive(const std::unique_lock<std::mutex> &guard) {
+    return empty(guard) || outstanding == disposable;
+  }
+
+  std::optional<js_task_handle_t>
+  pop_task(const std::unique_lock<std::mutex> &) {
+    auto task = tasks.begin();
+
+    while (task != tasks.end()) {
+      if (depth == 0 || task->nestability == js_task_nestable) break;
+      else task++;
+    }
+
+    if (task == tasks.end()) {
+      // TODO: Check if we're idling and return an idle task if available.
+
+      return std::nullopt;
+    }
+
+    auto value = std::move(const_cast<js_task_handle_t &>(*task));
+
+    tasks.erase(task);
+
+    return std::move(value);
+  }
+
+  bool
+  can_pop_task(const std::unique_lock<std::mutex> &) {
+    if (depth == 0) return !tasks.empty();
+
+    for (auto task = tasks.begin(); task != tasks.end(); task++) {
+      if (task->nestability == js_task_nestable) return true;
+    }
+
+    return false;
+  }
+
+  void
+  adjust_timer(const std::unique_lock<std::mutex> &) {
+    int err;
 
     if (closed) return;
 
