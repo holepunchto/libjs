@@ -4239,9 +4239,18 @@ extern "C" int
 js_create_bigint_words(js_env_t *env, int sign, const uint64_t *words, size_t len, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
+  int err;
+
+  if (len > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Invalid words length");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
   auto context = env->context.Get(env->isolate);
 
-  auto bigint = BigInt::NewFromWords(context, sign, int(len), words);
+  auto bigint = BigInt::NewFromWords(context, sign, static_cast<int>(len), words);
 
   if (bigint.IsEmpty()) return js_error(env);
 
