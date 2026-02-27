@@ -4654,9 +4654,18 @@ js_create_array(js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js_error(env);
 
-  auto array = Array::New(env->isolate, int(len));
+  int err;
+
+  if (len > INT_MAX) {
+    err = js_throw_range_error(env, NULL, "Array length exceeds maximum supported size");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto array = Array::New(env->isolate, static_cast<int>(len));
 
   *result = js_from_local(array);
 

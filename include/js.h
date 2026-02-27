@@ -787,9 +787,6 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
 int
 js_create_array(js_env_t *env, js_value_t **result);
 
-/**
- * This function can be called even if there is a pending JavaScript exception.
- */
 int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result);
 
