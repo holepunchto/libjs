@@ -6646,7 +6646,7 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
     } else if (local->IsUint32Array()) {
       *type = js_uint32array;
     } else if (local->IsFloat16Array()) {
-      *type = js_float32array;
+      *type = js_float16array;
     } else if (local->IsFloat32Array()) {
       *type = js_float32array;
     } else if (local->IsFloat64Array()) {
