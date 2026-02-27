@@ -5295,6 +5295,8 @@ js_typeof(js_env_t *env, js_value_t *value, js_value_type_t *result) {
     *result = js_symbol;
   } else if (local->IsNull()) {
     *result = js_null;
+  } else {
+    *result = js_undefined;
   }
 
   return 0;
