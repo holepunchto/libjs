@@ -1274,7 +1274,7 @@ private: // V8 embedder API
 
   void
   PostDelayedTaskOnWorkerThreadImpl(TaskPriority priority, std::unique_ptr<Task> task, double delay_in_seconds, const SourceLocation &location) override {
-    auto expiry = background->now() + uint64_t(delay_in_seconds) * 1000000000;
+    auto expiry = background->now() + uint64_t(delay_in_seconds * 1000000000);
 
     background->push_task(js_delayed_task_handle_t(priority, std::move(task), js_task_nestable, expiry));
   }
