@@ -47,7 +47,7 @@ main() {
   {
     const char *source =
       "try { terminate() } catch {}"
-      "(() => {})();" // Trigger a stack check
+      "(function () {})();" // Trigger a stack check
       "throw 'err'";
 
     js_value_t *script;
@@ -63,7 +63,7 @@ main() {
 
   {
     const char *source =
-      "(() => {})();" // Trigger a stack check
+      "(function () {})();" // Trigger a stack check
       "1 + 2";
 
     js_value_t *script;

@@ -6,6 +6,6 @@ const code = new Uint8Array([
 
 WebAssembly
   .instantiate(code)
-  .then(({ instance: { exports } }) =>
-    log(exports.main())
-  )
+  .then(function ({ instance: { exports } }) {
+    return log(exports.main())
+  })

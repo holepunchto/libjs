@@ -1,1 +1,1 @@
-Promise.reject('err').catch(() => {})
+Promise.reject('err').catch(function () {})
