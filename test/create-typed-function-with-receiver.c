@@ -54,7 +54,7 @@ main() {
   js_callback_signature_t signature = {
     .result = js_uint32,
     .args_len = 1,
-    .args = (int[]) {
+    .args = (int[]){
       js_object,
     },
   };
@@ -71,7 +71,7 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "let obj = { hello }, i = 0, j; while (i++ < 200000) j = obj.hello()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "var obj = { hello }, i = 0, j; while (i++ < 200000) j = obj.hello()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
