@@ -34,6 +34,9 @@ The API is designed in a way that minimises its coupling to V8, making it possib
 - <https://github.com/holepunchto/libqjs>  
   Based on QuickJS.
 
+- <https://github.com/holepunchto/libmqjs>  
+  Based on Micro QuickJS.
+
 - <https://github.com/holepunchto/libjerry>  
   Based on JerryScript.
 
