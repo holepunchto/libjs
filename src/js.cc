@@ -2259,23 +2259,19 @@ struct js_delegate_s : js_finalizer_t {
     auto tpl = ObjectTemplate::New(isolate);
 
     tpl->SetHandler(NamedPropertyHandlerConfiguration(
-      on_get,
-      on_set,
+      on_get<Name>,
+      on_set<Name>,
       nullptr,
-      on_delete,
+      on_delete<Name>,
       on_enumerate,
-      nullptr,
-      nullptr,
       external
     ));
 
     tpl->SetHandler(IndexedPropertyHandlerConfiguration(
-      on_get,
-      on_set,
+      on_get_indexed,
+      on_set_indexed,
       nullptr,
-      on_delete,
-      nullptr,
-      nullptr,
+      on_delete_indexed,
       nullptr,
       external
     ));
@@ -2315,7 +2311,7 @@ private:
   }
 
   static Intercepted
-  on_get(uint32_t index, const PropertyCallbackInfo<Value> &info) {
+  on_get_indexed(uint32_t index, const PropertyCallbackInfo<Value> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
@@ -2325,7 +2321,7 @@ private:
 
   template <typename T>
   static Intercepted
-  on_set(Local<T> property, Local<Value> value, const PropertyCallbackInfo<void> &info) {
+  on_set(Local<T> property, Local<Value> value, const PropertyCallbackInfo<Boolean> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
@@ -2335,14 +2331,18 @@ private:
 
       if (env->is_exception_pending()) return Intercepted::kNo;
 
-      if (result) return Intercepted::kYes;
+      if (result) {
+        info.GetReturnValue().Set(true);
+
+        return Intercepted::kYes;
+      }
     }
 
     return Intercepted::kNo;
   }
 
   static Intercepted
-  on_set(uint32_t index, Local<Value> value, const PropertyCallbackInfo<void> &info) {
+  on_set_indexed(uint32_t index, Local<Value> value, const PropertyCallbackInfo<Boolean> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
@@ -2373,7 +2373,7 @@ private:
   }
 
   static Intercepted
-  on_delete(uint32_t index, const PropertyCallbackInfo<Boolean> &info) {
+  on_delete_indexed(uint32_t index, const PropertyCallbackInfo<Boolean> &info) {
     auto isolate = info.GetIsolate();
 
     auto property = Int32::NewFromUnsigned(isolate, index);
