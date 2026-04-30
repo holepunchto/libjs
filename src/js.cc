@@ -96,7 +96,7 @@ js_to_local(const js_value_t *value) {
 
 static inline js_value_t *
 js_from_local(Local<Value> local) {
-  return reinterpret_cast<js_value_t *>(*local);
+  return *reinterpret_cast<js_value_t **>(&local);
 }
 
 } // namespace
