@@ -51,6 +51,7 @@ list(APPEND tests
   create-function
   create-function-args-extra
   create-function-args-fewer
+  create-function-return-double
   create-function-throw
   create-function-throw-indirect
   create-function-with-finalizer
