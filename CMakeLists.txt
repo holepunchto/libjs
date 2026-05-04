@@ -80,12 +80,17 @@ target_compile_definitions(
     $<TARGET_PROPERTY:v8,INTERFACE_COMPILE_DEFINITIONS>
 )
 
+target_compile_options(
+  js
+  PUBLIC
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>
+)
+
 if(MSVC)
   target_compile_options(
     js
     PUBLIC
-      /GR-
-      /X
       /MT$<$<CONFIG:Debug>:d>
   )
 
@@ -93,13 +98,6 @@ if(MSVC)
     js
     PUBLIC
       /DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>
-  )
-else()
-  target_compile_options(
-    js
-    PUBLIC
-      -fno-rtti
-      -nostdinc++
   )
 endif()
 
