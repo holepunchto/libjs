@@ -36,7 +36,7 @@ main() {
   e = js_create_inspector(env, &inspector);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, inspector, on_response, NULL);
+  e = js_on_inspector_response(env, inspector, on_response, NULL);
   assert(e == 0);
 
   e = js_connect_inspector(env, inspector);
@@ -44,7 +44,7 @@ main() {
 
   const char *message = "{ \"id\": 1, \"method\": \"Runtime.evaluate\", \"params\": { \"expression\": \"1 + 2\" } }";
 
-  e = js_send_inspector_request_transitional(env, inspector, message, -1);
+  e = js_send_inspector_request(env, inspector, message, -1);
   assert(e == 0);
 
   assert(message_called);
