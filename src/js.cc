@@ -1349,7 +1349,6 @@ struct js_env_s {
     void *unhandled_rejection_data;
 
     js_dynamic_import_cb dynamic_import;
-    js_dynamic_import_transitional_cb dynamic_import_transitional;
     void *dynamic_import_data;
   } callbacks;
 
@@ -1931,7 +1930,7 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr && env->callbacks.dynamic_import_transitional == nullptr) {
+    if (env->callbacks.dynamic_import == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
       assert(err == 0);
 
@@ -1950,48 +1949,26 @@ struct js_module_s {
         .Check();
     }
 
-    if (env->callbacks.dynamic_import) {
-      auto result = env->callbacks.dynamic_import(
-        env,
-        js_from_local(specifier),
-        js_from_local(assertions),
-        js_from_local(referrer),
-        env->callbacks.dynamic_import_data
-      );
+    auto result = env->callbacks.dynamic_import(
+      env,
+      js_from_local(specifier),
+      js_from_local(assertions),
+      js_from_local(referrer),
+      env->callbacks.dynamic_import_data
+    );
 
-      if (env->exception.IsEmpty()) {
-        auto module = result->module.Get(env->isolate);
+    if (env->exception.IsEmpty()) {
+      auto local = js_to_local(result);
 
-        auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+      if (local->IsPromise()) return local.As<Promise>();
 
-        auto success = resolver->Resolve(context, module->GetModuleNamespace());
+      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-        success.Check();
+      auto success = resolver->Resolve(context, local);
 
-        return resolver->GetPromise();
-      }
-    } else {
-      auto result = env->callbacks.dynamic_import_transitional(
-        env,
-        js_from_local(specifier),
-        js_from_local(assertions),
-        js_from_local(referrer),
-        env->callbacks.dynamic_import_data
-      );
+      success.Check();
 
-      if (env->exception.IsEmpty()) {
-        auto local = js_to_local(result);
-
-        if (local->IsPromise()) return local.As<Promise>();
-
-        auto resolver = Promise::Resolver::New(context).ToLocalChecked();
-
-        auto success = resolver->Resolve(context, local);
-
-        success.Check();
-
-        return resolver->GetPromise();
-      }
+      return resolver->GetPromise();
     }
 
     auto error = env->exception.Get(env->isolate);
@@ -2843,7 +2820,6 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
   js_env_t *env;
   js_inspector_t *inspector;
   js_inspector_message_cb cb;
-  js_inspector_message_transitional_cb cb_transitional;
   void *data;
 
   js_inspector_channel_s(js_env_t *env, js_inspector_t *inspector)
@@ -2860,49 +2836,25 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
 private: // V8 embedder API
   void
   send(const StringView &string) {
-    if (cb == nullptr && cb_transitional == nullptr) return;
+    if (cb == nullptr) return;
 
-    if (cb) {
-      auto len = string.length();
+    std::vector<utf8_t> utf8;
 
-      auto scope = HandleScope(env->isolate);
+    if (string.is8Bit()) {
+      auto utf8_len = utf8_length_from_latin1(reinterpret_cast<const latin1_t *>(string.characters8()), string.length());
 
-      auto message =
-        (string.is8Bit()
-           ? String::NewFromOneByte(
-               env->isolate,
-               reinterpret_cast<const uint8_t *>(string.characters8()),
-               v8::NewStringType::kNormal,
-               int(len)
-             )
-           : String::NewFromTwoByte(
-               env->isolate,
-               reinterpret_cast<const uint16_t *>(string.characters16()),
-               v8::NewStringType::kNormal,
-               int(len)
-             ))
-          .ToLocalChecked();
+      utf8 = std::vector<utf8_t>(utf8_len + 1 /* NULL */);
 
-      cb(env, inspector, js_from_local(message), data);
+      latin1_convert_to_utf8(reinterpret_cast<const latin1_t *>(string.characters8()), string.length(), utf8.data());
     } else {
-      std::vector<utf8_t> utf8;
+      auto utf8_len = utf8_length_from_utf16le(reinterpret_cast<const utf16_t *>(string.characters16()), string.length());
 
-      if (string.is8Bit()) {
-        auto utf8_len = utf8_length_from_latin1(reinterpret_cast<const latin1_t *>(string.characters8()), string.length());
+      utf8 = std::vector<utf8_t>(utf8_len + 1 /* NULL */);
 
-        utf8 = std::vector<utf8_t>(utf8_len + 1 /* NULL */);
-
-        latin1_convert_to_utf8(reinterpret_cast<const latin1_t *>(string.characters8()), string.length(), utf8.data());
-      } else {
-        auto utf8_len = utf8_length_from_utf16le(reinterpret_cast<const utf16_t *>(string.characters16()), string.length());
-
-        utf8 = std::vector<utf8_t>(utf8_len + 1 /* NULL */);
-
-        utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
-      }
-
-      cb_transitional(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+      utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
+
+    cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
   }
 
   void
@@ -3026,17 +2978,6 @@ struct js_inspector_s {
   void
   detach(Local<Context> context) {
     client->inspector->contextDestroyed(context);
-  }
-
-  void
-  send(Local<String> message) {
-    auto utf16_len = size_t(message->Length());
-
-    auto utf16 = std::vector<uint16_t>(utf16_len);
-
-    message->WriteV2(env->isolate, 0, uint32_t(utf16_len), utf16.data());
-
-    session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
 
   void
@@ -3358,11 +3299,8 @@ js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
 }
 
 extern "C" int
-js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_transitional_cb cb, void *data) {
-  env->callbacks.dynamic_import_transitional = cb;
-  env->callbacks.dynamic_import_data = data;
-
-  return 0;
+js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_cb cb, void *data) {
+  return js_on_dynamic_import(env, cb, data);
 }
 
 extern "C" int
@@ -7422,11 +7360,8 @@ js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_
 }
 
 extern "C" int
-js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_transitional_cb cb, void *data) {
-  inspector->channel.cb_transitional = cb;
-  inspector->channel.data = data;
-
-  return 0;
+js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data) {
+  return js_on_inspector_response(env, inspector, cb, data);
 }
 
 extern "C" int
@@ -7445,17 +7380,15 @@ js_connect_inspector(js_env_t *env, js_inspector_t *inspector) {
 }
 
 extern "C" int
-js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, js_value_t *message) {
-  inspector->send(js_to_local<String>(message));
+js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len) {
+  inspector->send(message, len);
 
   return 0;
 }
 
 extern "C" int
 js_send_inspector_request_transitional(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len) {
-  inspector->send(message, len);
-
-  return 0;
+  return js_send_inspector_request(env, inspector, message, len);
 }
 
 extern "C" int

@@ -18,7 +18,7 @@ on_paused(js_env_t *env, js_inspector_t *inspector, void *data) {
 
   const char *message = "{ \"id\": 2, \"method\": \"Debugger.resume\" }";
 
-  e = js_send_inspector_request_transitional(env, inspector, message, -1);
+  e = js_send_inspector_request(env, inspector, message, -1);
   assert(e == 0);
 
   return true;
@@ -46,7 +46,7 @@ main() {
   e = js_create_inspector(env, &inspector);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, inspector, on_response, NULL);
+  e = js_on_inspector_response(env, inspector, on_response, NULL);
   assert(e == 0);
 
   e = js_on_inspector_paused(env, inspector, on_paused, NULL);
@@ -57,7 +57,7 @@ main() {
 
   const char *message = "{ \"id\": 1, \"method\": \"Debugger.enable\" }";
 
-  e = js_send_inspector_request_transitional(env, inspector, message, -1);
+  e = js_send_inspector_request(env, inspector, message, -1);
   assert(e == 0);
 
   js_value_t *script;

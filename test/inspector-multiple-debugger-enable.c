@@ -49,7 +49,7 @@ main() {
   e = js_create_inspector(env, &a);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, a, on_response, NULL);
+  e = js_on_inspector_response(env, a, on_response, NULL);
   assert(e == 0);
 
   e = js_connect_inspector(env, a);
@@ -57,7 +57,7 @@ main() {
 
   message = "{ \"id\": 1, \"method\": \"Debugger.enable\", \"params\": {} }";
 
-  e = js_send_inspector_request_transitional(env, a, message, -1);
+  e = js_send_inspector_request(env, a, message, -1);
   assert(e == 0);
 
   assert(message_called == 1);
@@ -65,7 +65,7 @@ main() {
   e = js_create_inspector(env, &b);
   assert(e == 0);
 
-  e = js_on_inspector_response_transitional(env, b, on_response, NULL);
+  e = js_on_inspector_response(env, b, on_response, NULL);
   assert(e == 0);
 
   e = js_connect_inspector(env, b);
@@ -73,7 +73,7 @@ main() {
 
   message = "{ \"id\": 2, \"method\": \"Debugger.enable\", \"params\": {} }";
 
-  e = js_send_inspector_request_transitional(env, b, message, -1);
+  e = js_send_inspector_request(env, b, message, -1);
   assert(e == 0);
 
   assert(message_called == 2);
