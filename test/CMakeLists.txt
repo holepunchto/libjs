@@ -168,20 +168,38 @@ list(APPEND tests
   is-arguments
   is-array
   is-arraybuffer
-  is-collections
+  is-bigint64array
+  is-biguint64array
   is-dataview
   is-date
   is-detached-arraybuffer
   is-error
   is-external
+  is-float16array
+  is-float32array
+  is-float64array
   is-generator
+  is-int8array
+  is-int16array
+  is-int32array
   is-int32-uint32
+  is-map
+  is-map-iterator
   is-module-namespace
   is-promise
+  is-proxy
   is-regexp
+  is-set
+  is-set-iterator
   is-sharedarraybuffer
   is-typedarray
-  is-typedarray-variants
+  is-uint8array
+  is-uint8clampedarray
+  is-uint16array
+  is-uint32array
+  is-weak-map
+  is-weak-ref
+  is-weak-set
   many-large-allocs
   many-small-allocs
   promise-rejection
