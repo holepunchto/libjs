@@ -22,20 +22,26 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "Uint8Array.from([1, 2, 3, 4])", -1, &script);
+  uint8_t *write;
+  js_value_t *arraybuffer;
+  e = js_create_arraybuffer(env, 4, (void **) &write, &arraybuffer);
   assert(e == 0);
 
+  write[0] = 1;
+  write[1] = 2;
+  write[2] = 3;
+  write[3] = 4;
+
   js_value_t *typedarray;
-  e = js_run_script(env, NULL, 0, 0, script, &typedarray);
+  e = js_create_typedarray(env, js_uint8array, 4, arraybuffer, 0, &typedarray);
   assert(e == 0);
 
   js_typedarray_type_t type;
   uint8_t *data;
   size_t len;
-  js_value_t *arraybuffer;
+  js_value_t *out_arraybuffer;
   size_t offset;
-  e = js_get_typedarray_info(env, typedarray, &type, (void **) &data, &len, &arraybuffer, &offset);
+  e = js_get_typedarray_info(env, typedarray, &type, (void **) &data, &len, &out_arraybuffer, &offset);
   assert(e == 0);
 
   assert(type == js_uint8array);
