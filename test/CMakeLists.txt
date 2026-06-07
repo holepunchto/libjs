@@ -16,15 +16,21 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  call-function-with-checkpoint
   call-threadsafe-function-after-release
   call-threadsafe-function-with-data
   coerce-number-to-string
   coerce-object-to-string
   coerce-string-to-number
   coerce-symbol-to-string
+  coerce-to-boolean
+  coerce-to-object
   create-arraybuffer
   create-arraybuffer-too-large
   create-arraybuffer-with-backing-store
+  create-bigint-int64
+  create-bigint-words
+  create-dataview
   create-date
   create-date-nan
   create-date-overflow
@@ -41,6 +47,7 @@ list(APPEND tests
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
   create-external-arraybuffer-with-finalizer-detach
+  create-external-sharedarraybuffer
   create-external-string-latin1
   create-external-string-latin1-with-finalizer
   create-external-string-utf8
@@ -56,9 +63,11 @@ list(APPEND tests
   create-function-throw-indirect
   create-function-with-finalizer
   create-function-with-source
+  create-int64
   create-module-import-missing
   create-promise-reject
   create-promise-resolve
+  create-property-key
   create-reference-array
   create-reference-bigint
   create-reference-boolean
@@ -73,12 +82,15 @@ list(APPEND tests
   create-reference-undefined
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
+  create-string-latin1
   create-string-utf8
   create-string-utf8-with-null
+  create-string-utf16le
   create-threadsafe-function
   create-threadsafe-function-with-callback
   create-threadsafe-function-with-context
   create-threadsafe-function-with-finalizer
+  create-typed-errors
   create-typed-function
   create-typed-function-no-jit
   create-typed-function-with-arraybuffer
@@ -99,44 +111,84 @@ list(APPEND tests
   create-typed-function-with-uint64
   create-uint8array
   create-unsafe-arraybuffer
+  create-unsafe-sharedarraybuffer
   define-class
   define-class-with-method
   define-class-with-static-method
   define-class-with-static-value
   define-class-with-symbol-property
   define-class-with-value
+  define-properties
+  delete-element
+  delete-property
   dynamic-import
   dynamic-import-with-promise
   dynamic-import-without-handler
+  escapable-handle-scope
   fatal-exception
   garbage-collection-tracking
+  get-array-elements
   get-arraybuffer-info
+  get-bindings
   get-dataview-info
+  get-env-loop
+  get-env-platform
   get-error-location
+  get-filtered-property-names
   get-heap-space-statistics
+  get-heap-statistics
+  get-module-name
+  get-new-target
   get-platform-identifier
   get-platform-limits
+  get-platform-loop
   get-platform-version
   get-property-missing
+  get-prototype
+  get-sharedarraybuffer-info
   get-typedarray-info-uint16array
   get-typedarray-info-uint16array-large
   get-typedarray-info-uint8array
   get-typedarray-info-uint8array-large
   get-typedarray-info-uint8array-with-offset
+  get-value-bigint-uint64
+  get-value-int32-int64
   get-value-string-utf8
   get-value-string-utf8-length
   get-value-string-utf8-no-null
+  has-element
+  has-own-property
+  has-property
   import-meta
   import-meta-throw
   inspector
+  inspector-attach-context
   inspector-multiple-debugger-enable
   inspector-pause
+  is-arguments
+  is-array
+  is-arraybuffer
+  is-collections
+  is-dataview
+  is-date
+  is-detached-arraybuffer
+  is-error
+  is-external
+  is-generator
+  is-int32-uint32
+  is-module-namespace
+  is-promise
+  is-regexp
+  is-sharedarraybuffer
+  is-typedarray
+  is-typedarray-variants
   many-large-allocs
   many-small-allocs
   promise-rejection
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  reference-unref
   run-module
   run-module-async
   run-module-cyclic-import
@@ -148,12 +200,21 @@ list(APPEND tests
   run-script-ignore-return
   run-script-in-context
   run-script-throw
+  set-array-elements
   set-named-property
+  set-property
+  symbol-for
   terminate-execution
+  threadsafe-function-context-acquire
+  threadsafe-function-ref-unref
   threads
   threads-platform-loop
   throw-error
   throw-error-formatted
+  throw-range-error
+  throw-reference-error
+  throw-syntax-error
+  throw-type-error
   typeof-bigint
   typeof-boolean
   typeof-external

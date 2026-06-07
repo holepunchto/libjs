@@ -5026,7 +5026,7 @@ js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_f
     finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
   }
 
-  auto store = ArrayBuffer::NewBackingStore(
+  auto store = SharedArrayBuffer::NewBackingStore(
     data,
     len,
     js_finalize_external_sharedarraybuffer,
