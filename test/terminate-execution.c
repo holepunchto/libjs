@@ -46,7 +46,7 @@ main() {
 
   {
     const char *source =
-      "try { terminate() } catch {}"
+      "try { terminate() } catch (err) {}"
       "(function () {})();" // Trigger a stack check
       "throw 'err'";
 
