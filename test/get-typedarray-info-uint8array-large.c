@@ -22,12 +22,17 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "new Uint8Array(1024).fill(42)", -1, &script);
+  uint8_t *write;
+  js_value_t *arraybuffer;
+  e = js_create_arraybuffer(env, 1024, (void **) &write, &arraybuffer);
   assert(e == 0);
 
+  write[0] = 1;
+  write[512] = 2;
+  write[1023] = 3;
+
   js_value_t *typedarray;
-  e = js_run_script(env, NULL, 0, 0, script, &typedarray);
+  e = js_create_typedarray(env, js_uint8array, 1024, arraybuffer, 0, &typedarray);
   assert(e == 0);
 
   js_typedarray_type_t type;
@@ -41,9 +46,9 @@ main() {
   assert(len == 1024);
   assert(offset == 0);
 
-  for (int i = 0; i < len; i++) {
-    assert(data[i] == 42);
-  }
+  assert(data[0] == 1);
+  assert(data[512] == 2);
+  assert(data[1023] == 3);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
