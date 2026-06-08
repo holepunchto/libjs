@@ -23,18 +23,18 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *small;
-  e = js_create_int32(env, -7, &small);
+  js_value_t *narrow;
+  e = js_create_int32(env, -7, &narrow);
   assert(e == 0);
 
   int32_t i32;
-  e = js_get_value_int32(env, small, &i32);
+  e = js_get_value_int32(env, narrow, &i32);
   assert(e == 0);
 
   assert(i32 == -7);
 
   int64_t i64;
-  e = js_get_value_int64(env, small, &i64);
+  e = js_get_value_int64(env, narrow, &i64);
   assert(e == 0);
 
   assert(i64 == -7);
