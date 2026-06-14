@@ -173,6 +173,7 @@ typedef void (*js_module_evaluate_cb)(js_env_t *, js_module_t *module, void *dat
 typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *data);
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_value_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data);
+typedef js_value_t *(*js_dynamic_import_transitional_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data);
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
 typedef void (*js_teardown_cb)(void *data);
 typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
@@ -481,8 +482,15 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
 int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data);
 
+/**
+ * Add a callback for dynamic `import()` statements that additionally receives
+ * the unique identifier of the referring script or module. The identifier is a
+ * `Symbol` owned by the engine that is stable for the lifetime of the referrer,
+ * allowing the caller to correlate the import with its own context. Scripts run
+ * with `js_run_script()` share a single identifier per environment.
+ */
 int
-js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_cb cb, void *data);
+js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_transitional_cb cb, void *data);
 
 int
 js_get_env_loop(js_env_t *env, uv_loop_t **result);
@@ -587,6 +595,28 @@ js_delete_module(js_env_t *env, js_module_t *module);
  */
 int
 js_get_module_name(js_env_t *env, js_module_t *module, const char **result);
+
+/**
+ * Get the unique identifier of the module. The identifier is a `Symbol` owned
+ * by the engine that is stable for the lifetime of the module and matches the
+ * `id` passed to the dynamic `import()` callback when the module is the
+ * referrer.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result);
+
+/**
+ * Get the identifier shared by all compilation units that do not carry one of
+ * their own, such as scripts run with `js_run_script()`. This is the `id`
+ * passed to the dynamic `import()` callback when the referrer is one of those
+ * units, allowing the caller to correlate the import with its context.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_default_module_id(js_env_t *env, js_value_t **result);
 
 /**
  * Get the namespace object of the module. The behavior is undefined if the
