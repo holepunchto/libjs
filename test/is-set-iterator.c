@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <stdint.h>
 #include <utf.h>
 #include <uv.h>
 
@@ -23,30 +22,26 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *narrow;
-  e = js_create_int32(env, -7, &narrow);
+  js_value_t *script;
+  e = js_create_string_utf8(env, (utf8_t *) "new Set().keys()", -1, &script);
   assert(e == 0);
 
-  int32_t i32;
-  e = js_get_value_int32(env, narrow, &i32);
+  js_value_t *value;
+  e = js_run_script(env, NULL, 0, 0, script, &value);
   assert(e == 0);
 
-  assert(i32 == -7);
+  bool result;
+  e = js_is_set_iterator(env, value, &result);
+  assert(e == 0);
+  assert(result);
 
-  int64_t i64;
-  e = js_get_value_int64(env, narrow, &i64);
+  js_value_t *object;
+  e = js_create_object(env, &object);
   assert(e == 0);
 
-  assert(i64 == -7);
-
-  js_value_t *big;
-  e = js_create_double(env, 1e10, &big);
+  e = js_is_set_iterator(env, object, &result);
   assert(e == 0);
-
-  e = js_get_value_int64(env, big, &i64);
-  assert(e == 0);
-
-  assert(i64 == (int64_t) 1e10);
+  assert(!result);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
