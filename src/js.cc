@@ -1351,7 +1351,6 @@ struct js_env_s {
     void *unhandled_rejection_data;
 
     js_dynamic_import_cb dynamic_import;
-    js_dynamic_import_transitional_cb dynamic_import_transitional;
     void *dynamic_import_data;
   } callbacks;
 
@@ -1951,7 +1950,7 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr && env->callbacks.dynamic_import_transitional == nullptr) {
+    if (env->callbacks.dynamic_import == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
       assert(err == 0);
 
@@ -1989,26 +1988,14 @@ struct js_module_s {
 
     if (id.IsEmpty()) id = env->default_module_identifier();
 
-    js_value_t *result;
-
-    if (env->callbacks.dynamic_import_transitional) {
-      result = env->callbacks.dynamic_import_transitional(
-        env,
-        js_from_local(specifier),
-        js_from_local(assertions),
-        js_from_local(referrer),
-        js_from_local(id),
-        env->callbacks.dynamic_import_data
-      );
-    } else {
-      result = env->callbacks.dynamic_import(
-        env,
-        js_from_local(specifier),
-        js_from_local(assertions),
-        js_from_local(referrer),
-        env->callbacks.dynamic_import_data
-      );
-    }
+    js_value_t *result = env->callbacks.dynamic_import(
+      env,
+      js_from_local(specifier),
+      js_from_local(assertions),
+      js_from_local(referrer),
+      js_from_local(id),
+      env->callbacks.dynamic_import_data
+    );
 
     if (env->exception.IsEmpty()) {
       auto local = js_to_local(result);
@@ -3346,19 +3333,14 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
 extern "C" int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
   env->callbacks.dynamic_import = cb;
-  env->callbacks.dynamic_import_transitional = nullptr;
   env->callbacks.dynamic_import_data = data;
 
   return 0;
 }
 
 extern "C" int
-js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_transitional_cb cb, void *data) {
-  env->callbacks.dynamic_import = nullptr;
-  env->callbacks.dynamic_import_transitional = cb;
-  env->callbacks.dynamic_import_data = data;
-
-  return 0;
+js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_cb cb, void *data) {
+  return js_on_dynamic_import(env, cb, data);
 }
 
 extern "C" int
