@@ -3339,11 +3339,6 @@ js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
 }
 
 extern "C" int
-js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_cb cb, void *data) {
-  return js_on_dynamic_import(env, cb, data);
-}
-
-extern "C" int
 js_get_env_loop(js_env_t *env, uv_loop_t **result) {
   *result = env->loop;
 
