@@ -4498,6 +4498,16 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
 
   if (string.IsEmpty()) return js_error(env);
 
+  // Mint a unique identifier for the function and stamp it into the
+  // host-defined options so it can be recovered as the referrer of any dynamic
+  // import().
+
+  auto id = Symbol::New(env->isolate, string.ToLocalChecked());
+
+  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+
+  host_defined_options->Set(env->isolate, 0, id);
+
   auto origin = ScriptOrigin(
     string.ToLocalChecked(),
     offset,
@@ -4508,7 +4518,7 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
     false,
     false,
     false,
-    Local<Data>()
+    host_defined_options
   );
 
   auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
@@ -4689,6 +4699,38 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
   }
 
   *result = js_from_local(local);
+
+  return 0;
+}
+
+extern "C" int
+js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  // Recover the identifier stamped into the host-defined options at compile
+  // time. Functions not compiled with `js_create_function_with_source()` carry
+  // no options of their own and are attributed to the environment's default
+  // identifier.
+
+  auto local = js_to_local<Function>(function);
+
+  auto data = local->GetScriptOrigin().GetHostDefinedOptions();
+
+  Local<Symbol> id;
+
+  if (!data.IsEmpty()) {
+    auto options = data.As<PrimitiveArray>();
+
+    if (options->Length() >= 1) {
+      auto value = options->Get(env->isolate, 0);
+
+      if (value->IsSymbol()) id = value.As<Symbol>();
+    }
+  }
+
+  if (id.IsEmpty()) id = env->default_module_identifier();
+
+  *result = js_from_local(id);
 
   return 0;
 }

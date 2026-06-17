@@ -794,6 +794,17 @@ int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result);
 
 /**
+ * Get the unique identifier of a function compiled with
+ * `js_create_function_with_source()`. The identifier is a `Symbol` owned by the
+ * engine that is stable for the lifetime of the function and matches the `id`
+ * passed to the dynamic `import()` callback when the function is the referrer.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result);
+
+/**
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
