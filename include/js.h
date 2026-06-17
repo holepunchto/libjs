@@ -1741,9 +1741,6 @@ int
 js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
 
 int
-js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
-
-int
 js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data);
 
 int
@@ -1751,9 +1748,6 @@ js_connect_inspector(js_env_t *env, js_inspector_t *inspector);
 
 int
 js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len);
-
-int
-js_send_inspector_request_transitional(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len);
 
 int
 js_attach_context_to_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len);

@@ -7449,11 +7449,6 @@ js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_
 }
 
 extern "C" int
-js_on_inspector_response_transitional(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data) {
-  return js_on_inspector_response(env, inspector, cb, data);
-}
-
-extern "C" int
 js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data) {
   inspector->cb = cb;
   inspector->data = data;
@@ -7473,11 +7468,6 @@ js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *
   inspector->send(message, len);
 
   return 0;
-}
-
-extern "C" int
-js_send_inspector_request_transitional(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len) {
-  return js_send_inspector_request(env, inspector, message, len);
 }
 
 extern "C" int
