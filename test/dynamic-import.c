@@ -23,7 +23,7 @@ on_module_evaluate(js_env_t *env, js_module_t *module, void *data) {
 }
 
 static js_value_t *
-on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, void *data) {
+on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data) {
   int e;
 
   js_value_t *export_names[1];
