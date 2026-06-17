@@ -123,6 +123,7 @@ list(APPEND tests
   delete-property
   dynamic-import
   dynamic-import-with-promise
+  dynamic-import-with-referrer
   dynamic-import-without-handler
   escapable-handle-scope
   fatal-exception

@@ -1335,6 +1335,8 @@ struct js_env_s {
 
   std::multimap<int, js_module_t *> modules;
 
+  Global<Symbol> default_module_id;
+
   std::list<Global<Promise>> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
@@ -1349,6 +1351,7 @@ struct js_env_s {
     void *unhandled_rejection_data;
 
     js_dynamic_import_cb dynamic_import;
+    js_dynamic_import_transitional_cb dynamic_import_transitional;
     void *dynamic_import_data;
   } callbacks;
 
@@ -1369,6 +1372,7 @@ struct js_env_s {
         tag(),
         exception(),
         modules(),
+        default_module_id(),
         unhandled_promises(),
         teardown_queue(),
         inspector(),
@@ -1435,6 +1439,7 @@ struct js_env_s {
       delegate.Reset();
       tag.Reset();
       exception.Reset();
+      default_module_id.Reset();
 
       context.Get(isolate)->Exit();
       context.Reset();
@@ -1454,6 +1459,19 @@ struct js_env_s {
 
   js_env_s &
   operator=(const js_env_s &) = delete;
+
+  // Returns the identifier shared by all compilation units that do not carry
+  // one of their own, such as scripts run with `js_run_script()`. The
+  // identifier is created lazily and remains stable for the lifetime of the
+  // environment.
+  inline Local<Symbol>
+  default_module_identifier() {
+    if (default_module_id.IsEmpty()) {
+      default_module_id.Reset(isolate, Symbol::New(isolate));
+    }
+
+    return default_module_id.Get(isolate);
+  }
 
   static inline js_env_t *
   from(Isolate *isolate) {
@@ -1815,6 +1833,8 @@ struct js_escapable_handle_scope_s {
 struct js_module_s {
   Global<Module> module;
 
+  Global<Symbol> id;
+
   std::string name;
 
   struct {
@@ -1828,8 +1848,9 @@ struct js_module_s {
     void *evaluate_data;
   } callbacks;
 
-  js_module_s(Isolate *isolate, Local<Module> module, std::string name)
+  js_module_s(Isolate *isolate, Local<Module> module, Local<Symbol> id, std::string name)
       : module(isolate, module),
+        id(isolate, id),
         name(std::move(name)),
         callbacks() {}
 
@@ -1930,7 +1951,7 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr) {
+    if (env->callbacks.dynamic_import == nullptr && env->callbacks.dynamic_import_transitional == nullptr) {
       err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
       assert(err == 0);
 
@@ -1949,13 +1970,45 @@ struct js_module_s {
         .Check();
     }
 
-    auto result = env->callbacks.dynamic_import(
-      env,
-      js_from_local(specifier),
-      js_from_local(assertions),
-      js_from_local(referrer),
-      env->callbacks.dynamic_import_data
-    );
+    // The host-defined options carry the identifier of the referring script or
+    // module, which we stamp into a single-element array at compile time. When
+    // the options are empty, such as for scripts run with `js_run_script()`, we
+    // fall back to a shared identifier owned by the environment.
+
+    Local<Symbol> id;
+
+    if (!data.IsEmpty()) {
+      auto options = data.As<PrimitiveArray>();
+
+      if (options->Length() >= 1) {
+        auto value = options->Get(env->isolate, 0);
+
+        if (value->IsSymbol()) id = value.As<Symbol>();
+      }
+    }
+
+    if (id.IsEmpty()) id = env->default_module_identifier();
+
+    js_value_t *result;
+
+    if (env->callbacks.dynamic_import_transitional) {
+      result = env->callbacks.dynamic_import_transitional(
+        env,
+        js_from_local(specifier),
+        js_from_local(assertions),
+        js_from_local(referrer),
+        js_from_local(id),
+        env->callbacks.dynamic_import_data
+      );
+    } else {
+      result = env->callbacks.dynamic_import(
+        env,
+        js_from_local(specifier),
+        js_from_local(assertions),
+        js_from_local(referrer),
+        env->callbacks.dynamic_import_data
+      );
+    }
 
     if (env->exception.IsEmpty()) {
       auto local = js_to_local(result);
@@ -3293,6 +3346,16 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
 extern "C" int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
   env->callbacks.dynamic_import = cb;
+  env->callbacks.dynamic_import_transitional = nullptr;
+  env->callbacks.dynamic_import_data = data;
+
+  return 0;
+}
+
+extern "C" int
+js_on_dynamic_import_transitional(js_env_t *env, js_dynamic_import_transitional_cb cb, void *data) {
+  env->callbacks.dynamic_import = nullptr;
+  env->callbacks.dynamic_import_transitional = cb;
   env->callbacks.dynamic_import_data = data;
 
   return 0;
@@ -3469,6 +3532,15 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
 
   if (string.IsEmpty()) return js_error(env);
 
+  // Mint a unique identifier for the module and stamp it into the host-defined
+  // options so it can be recovered as the referrer of any dynamic import().
+
+  auto id = Symbol::New(env->isolate, string.ToLocalChecked());
+
+  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+
+  host_defined_options->Set(env->isolate, 0, id);
+
   auto origin = ScriptOrigin(
     string.ToLocalChecked(),
     offset,
@@ -3479,7 +3551,7 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
     false,
     false,
     true,
-    Local<Data>()
+    host_defined_options
   );
 
   auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
@@ -3502,7 +3574,7 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, std::move(module_name));
+  auto module = new js_module_t(env->isolate, local, id, std::move(module_name));
 
   module->callbacks.meta = cb;
   module->callbacks.meta_data = data;
@@ -3521,6 +3593,8 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
   auto string = js_to_string_utf8(env, name, len, true);
 
   if (string.IsEmpty()) return js_error(env);
+
+  auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
   auto local_export_names = reinterpret_cast<Local<String> *>(const_cast<js_value_t **>(export_names));
 
@@ -3542,7 +3616,7 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, std::move(module_name));
+  auto module = new js_module_t(env->isolate, local, id, std::move(module_name));
 
   module->callbacks.evaluate = cb;
   module->callbacks.evaluate_data = data;
@@ -3581,6 +3655,24 @@ js_get_module_name(js_env_t *env, js_module_t *module, const char **result) {
   // Allow continuing even with a pending exception
 
   *result = module->name.data();
+
+  return 0;
+}
+
+extern "C" int
+js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(module->id.Get(env->isolate));
+
+  return 0;
+}
+
+extern "C" int
+js_get_default_module_id(js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(env->default_module_identifier());
 
   return 0;
 }
@@ -3871,9 +3963,11 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
     } else {
       auto value = js_to_local(property->value);
 
-      if ((property->attributes & js_writable) &&
-          (property->attributes & js_enumerable) &&
-          (property->attributes & js_configurable)) {
+      if (
+        (property->attributes & js_writable) &&
+        (property->attributes & js_enumerable) &&
+        (property->attributes & js_configurable)
+      ) {
         success = env->try_catch<bool>(
           [&] {
             return local->CreateDataProperty(context, name, value);
