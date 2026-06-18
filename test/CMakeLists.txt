@@ -205,6 +205,9 @@ list(APPEND tests
   is-weak-set
   many-large-allocs
   many-small-allocs
+  prepare-script
+  prepare-script-in-context
+  prepare-script-run-multiple
   promise-rejection
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
