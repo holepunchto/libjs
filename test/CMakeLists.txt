@@ -124,6 +124,7 @@ list(APPEND tests
   dynamic-import
   dynamic-import-with-promise
   dynamic-import-with-referrer
+  dynamic-import-with-referrer-function
   dynamic-import-without-handler
   escapable-handle-scope
   fatal-exception
