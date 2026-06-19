@@ -82,6 +82,7 @@ list(APPEND tests
   create-reference-undefined
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
+  create-snapshot
   create-string-latin1
   create-string-utf8
   create-string-utf8-with-null
@@ -127,6 +128,7 @@ list(APPEND tests
   dynamic-import-with-referrer-function
   dynamic-import-without-handler
   escapable-handle-scope
+  external-references
   fatal-exception
   garbage-collection-tracking
   get-array-elements
@@ -209,6 +211,13 @@ list(APPEND tests
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   reference-unref
+  run-from-snapshot
+  run-from-snapshot-delegate
+  run-from-snapshot-dynamic-import
+  run-from-snapshot-function
+  run-from-snapshot-import-meta
+  run-from-snapshot-module
+  run-from-snapshot-wrap
   run-module
   run-module-async
   run-module-cyclic-import

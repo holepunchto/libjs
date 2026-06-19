@@ -35,6 +35,12 @@ using namespace v8_inspector;
 typedef struct js_callback_s js_callback_t;
 typedef struct js_typed_callback_s js_typed_callback_t;
 typedef struct js_finalizer_s js_finalizer_t;
+template <typename T>
+struct js_binding_callbacks_s;
+typedef struct js_binding_callbacks_s<js_callback_t> js_function_callbacks_t;
+typedef struct js_binding_callbacks_s<js_finalizer_t> js_finalizer_callbacks_t;
+typedef struct js_binding_state_s js_binding_state_t;
+typedef struct js_snapshot_state_s js_snapshot_state_t;
 typedef struct js_delegate_s js_delegate_t;
 typedef struct js_external_string_utf16le_s js_external_string_utf16le_t;
 typedef struct js_external_string_latin1_s js_external_string_latin1_t;
@@ -103,10 +109,15 @@ js_from_local(Local<Value> local) {
 
 namespace {
 
-static const ExternalPointerTypeTag js_callback_info_type_tag = 1;
-static const ExternalPointerTypeTag js_delegate_type_tag = 2;
-static const ExternalPointerTypeTag js_finalizer_type_tag = 3;
-static const ExternalPointerTypeTag js_external_type_tag = 4;
+static const ExternalPointerTypeTag js_external_type_tag = 1;
+
+static const EmbedderDataTypeTag js_delegate_type_tag = 1;
+
+static StartupData
+js_serialize_internal_field(Local<Object> holder, int index, void *data);
+
+static void
+js_deserialize_internal_field(Local<Object> holder, int index, StartupData payload, void *data);
 
 } // namespace
 
@@ -1305,6 +1316,59 @@ private: // V8 embedder API
   }
 };
 
+template <typename T>
+struct js_binding_callbacks_s {
+  std::vector<T *> entries;
+  std::vector<uint32_t> free;
+
+  inline uint32_t
+  add(T *entry) {
+    if (!free.empty()) {
+      auto index = free.back();
+
+      free.pop_back();
+
+      entries[index] = entry;
+
+      return index;
+    }
+
+    entries.push_back(entry);
+
+    return uint32_t(entries.size() - 1);
+  }
+
+  inline void
+  remove(uint32_t index, T *entry) {
+    if (index >= entries.size() || entries[index] != entry) return;
+
+    entries[index] = nullptr;
+
+    free.push_back(index);
+  }
+};
+
+struct js_binding_state_s {
+  js_function_callbacks_t functions;
+
+  js_finalizer_callbacks_t finalizers;
+
+  void
+  destroy_function_callbacks();
+};
+
+struct js_snapshot_state_s {
+  SnapshotCreator *creator;
+  SnapshotCreator::FunctionCodeHandling function_code_handling;
+
+  std::vector<intptr_t> external_references;
+
+  js_snapshot_state_s(std::vector<intptr_t> references)
+      : creator(nullptr),
+        function_code_handling(SnapshotCreator::FunctionCodeHandling::kClear),
+        external_references(std::move(references)) {}
+};
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1354,7 +1418,11 @@ struct js_env_s {
     void *dynamic_import_data;
   } callbacks;
 
-  js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
+  js_binding_state_t bindings;
+
+  js_snapshot_state_t snapshot;
+
+  js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate, std::vector<intptr_t> references, const js_rebind_handlers_t *rebind_handlers)
       : loop(loop),
         prepare(),
         check(),
@@ -1375,7 +1443,9 @@ struct js_env_s {
         unhandled_promises(),
         teardown_queue(),
         inspector(),
-        callbacks() {
+        callbacks(),
+        bindings(),
+        snapshot(std::move(references)) {
     int err;
 
     std::unique_lock guard(platform->lock);
@@ -1420,7 +1490,20 @@ struct js_env_s {
 
     auto scope = HandleScope(isolate);
 
-    context.Reset(isolate, Context::New(isolate));
+    // Pass the delegate deserialize hook so a delegate's per-instance pointer is
+    // reconstructed from its internal field when booting from a snapshot. It is
+    // never invoked for a freshly created context.
+    context.Reset(
+      isolate,
+      Context::New(
+        isolate,
+        nullptr,
+        MaybeLocal<ObjectTemplate>(),
+        MaybeLocal<Value>(),
+        DeserializeInternalFieldsCallback(js_deserialize_internal_field, const_cast<js_rebind_handlers_t *>(rebind_handlers))
+      )
+    );
+
     context.Get(isolate)->Enter();
 
     wrapper.Reset(isolate, Private::New(isolate));
@@ -1431,7 +1514,16 @@ struct js_env_s {
   ~js_env_s() {
     if (inspector) inspector.reset();
 
-    {
+    bindings.destroy_function_callbacks();
+
+    // The finalizer table does not own its entries, so just drop the lookup
+    // mappings; any finalizer destructor firing during disposal then sees an
+    // empty table and skips its slot removal.
+    bindings.finalizers.entries.clear();
+    bindings.finalizers.free.clear();
+
+    if (snapshot.creator) delete snapshot.creator;
+    else {
       auto scope = HandleScope(isolate);
 
       wrapper.Reset();
@@ -1442,9 +1534,10 @@ struct js_env_s {
 
       context.Get(isolate)->Exit();
       context.Reset();
+
+      isolate->Exit();
     }
 
-    isolate->Exit();
     isolate->Dispose();
 
     std::unique_lock guard(platform->lock);
@@ -2090,36 +2183,51 @@ struct js_deferred_s {
 };
 
 struct js_callback_s {
-  Global<External> external;
+  Global<Value> function;
+  uint32_t index;
   js_env_t *env;
   js_function_cb cb;
   void *data;
 
   js_callback_s(js_env_t *env, js_function_cb cb, void *data)
-      : external(env->isolate, External::New(env->isolate, this, js_callback_info_type_tag)),
+      : function(),
+        index(env->bindings.functions.add(this)),
         env(env),
         cb(cb),
-        data(data) {
-    external.SetWeak(this, on_finalize, WeakCallbackType::kParameter);
-  }
+        data(data) {}
+
+  js_callback_s(js_env_t *env, js_function_cb cb, void *data, uint32_t index)
+      : function(),
+        index(index),
+        env(env),
+        cb(cb),
+        data(data) {}
 
   js_callback_s(const js_callback_s &) = delete;
 
-  virtual ~js_callback_s() = default;
+  virtual ~js_callback_s() {
+    env->bindings.functions.remove(index, this);
+  }
 
   js_callback_s &
   operator=(const js_callback_s &) = delete;
 
   MaybeLocal<Function>
   to_function(Isolate *isolate, Local<Context> context) {
-    return Function::New(
+    auto function = Function::New(
       context,
       on_call,
-      external.Get(isolate),
+      Integer::NewFromUnsigned(isolate, index),
       0,
       ConstructorBehavior::kAllow,
       SideEffectType::kHasSideEffect
     );
+
+    Local<Function> local;
+
+    if (function.ToLocal(&local)) hold_weakly(isolate, local);
+
+    return function;
   }
 
   Local<FunctionTemplate>
@@ -2127,7 +2235,7 @@ struct js_callback_s {
     return FunctionTemplate::New(
       isolate,
       on_call,
-      external.Get(isolate),
+      Integer::NewFromUnsigned(isolate, index),
       signature,
       0,
       ConstructorBehavior::kAllow,
@@ -2135,12 +2243,18 @@ struct js_callback_s {
     );
   }
 
-protected:
+  void
+  hold_weakly(Isolate *isolate, Local<Value> function) {
+    this->function.Reset(isolate, function);
+
+    this->function.SetWeak(static_cast<js_callback_t *>(this), on_finalize, WeakCallbackType::kParameter);
+  }
+
   static void
   on_call(const FunctionCallbackInfo<Value> &info) {
-    auto callback = reinterpret_cast<js_callback_t *>(info.Data().As<External>()->Value(js_callback_info_type_tag));
+    auto env = js_env_t::from(info.GetIsolate());
 
-    auto env = callback->env;
+    auto callback = env->bindings.functions.entries[size_t(info.Data().As<Integer>()->Value())];
 
     auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
 
@@ -2157,6 +2271,7 @@ protected:
     }
   }
 
+protected:
   static void
   on_finalize(const WeakCallbackInfo<js_callback_t> &info) {
     auto callback = info.GetParameter();
@@ -2164,6 +2279,19 @@ protected:
     delete callback;
   }
 };
+
+void
+js_binding_state_s::destroy_function_callbacks() {
+  std::vector<js_callback_t *> callbacks;
+
+  std::swap(callbacks, functions.entries);
+
+  functions.free.clear();
+
+  for (auto callback : callbacks) {
+    delete callback;
+  }
+}
 
 struct js_typed_callback_s : js_callback_t {
   CTypeInfo result;
@@ -2190,7 +2318,7 @@ struct js_typed_callback_s : js_callback_t {
     return FunctionTemplate::New(
       isolate,
       on_call,
-      external.Get(isolate),
+      Integer::NewFromUnsigned(isolate, index),
       signature,
       0,
       ConstructorBehavior::kThrow,
@@ -2201,22 +2329,30 @@ struct js_typed_callback_s : js_callback_t {
 };
 
 struct js_finalizer_s {
+  static constexpr uint32_t unregistered = UINT32_MAX;
+
   Global<Value> value;
+  uint32_t index;
   js_env_t *env;
   void *data;
   js_finalize_cb finalize_cb;
   void *finalize_hint;
+  bool is_delegate;
 
   js_finalizer_s(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : value(),
+        index(unregistered),
         env(env),
         data(data),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
+        finalize_hint(finalize_hint),
+        is_delegate(false) {}
 
   js_finalizer_s(const js_finalizer_s &) = delete;
 
-  virtual ~js_finalizer_s() = default;
+  virtual ~js_finalizer_s() {
+    env->bindings.finalizers.remove(index, this);
+  }
 
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
@@ -2262,7 +2398,9 @@ struct js_delegate_s : js_finalizer_t {
 
   js_delegate_s(js_env_t *env, js_delegate_callbacks_t callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : js_finalizer_t(env, data, finalize_cb, finalize_hint),
-        callbacks(std::move(callbacks)) {}
+        callbacks(std::move(callbacks)) {
+    is_delegate = true;
+  }
 
   js_delegate_s(const js_delegate_s &) = delete;
 
@@ -2271,26 +2409,23 @@ struct js_delegate_s : js_finalizer_t {
 
   Local<ObjectTemplate>
   to_object_template(Isolate *isolate) {
-    auto external = External::New(isolate, this, js_delegate_type_tag);
-
     auto tpl = ObjectTemplate::New(isolate);
+
+    tpl->SetInternalFieldCount(1);
 
     tpl->SetHandler(NamedPropertyHandlerConfiguration(
       on_get<Name>,
       on_set<Name>,
       nullptr,
       on_delete<Name>,
-      on_enumerate,
-      external
+      on_enumerate
     ));
 
     tpl->SetHandler(IndexedPropertyHandlerConfiguration(
       on_get_indexed,
       on_set_indexed,
       nullptr,
-      on_delete_indexed,
-      nullptr,
-      external
+      on_delete_indexed
     ));
 
     return tpl;
@@ -2298,11 +2433,18 @@ struct js_delegate_s : js_finalizer_t {
 
 private:
   template <typename T>
+  static js_delegate_t *
+  from(const PropertyCallbackInfo<T> &info) {
+    return reinterpret_cast<js_delegate_t *>(info.Holder()->GetAlignedPointerFromInternalField(0, js_delegate_type_tag));
+  }
+
+public:
+  template <typename T>
   static Intercepted
   on_get(Local<T> property, const PropertyCallbackInfo<Value> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
+    auto delegate = from(info);
 
     if (delegate->callbacks.has) {
       auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
@@ -2341,7 +2483,7 @@ private:
   on_set(Local<T> property, Local<Value> value, const PropertyCallbackInfo<Boolean> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
+    auto delegate = from(info);
 
     if (delegate->callbacks.set) {
       auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
@@ -2372,7 +2514,7 @@ private:
   on_delete(Local<T> property, const PropertyCallbackInfo<Boolean> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
+    auto delegate = from(info);
 
     if (delegate->callbacks.delete_property) {
       auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
@@ -2402,7 +2544,7 @@ private:
   on_enumerate(const PropertyCallbackInfo<Array> &info) {
     auto env = js_env_t::from(info.GetIsolate());
 
-    auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
+    auto delegate = from(info);
 
     if (delegate->callbacks.own_keys) {
       auto result = delegate->callbacks.own_keys(env, delegate->data);
@@ -3253,6 +3395,367 @@ js_option(const js_env_options_t *options, int min_version, T fallback = T(js_en
 
 } // namespace
 
+struct js_external_references_s {
+  std::vector<intptr_t> addresses;
+};
+
+extern "C" int
+js_create_external_references(js_external_references_t **result) {
+  *result = new js_external_references_t();
+
+  return 0;
+}
+
+extern "C" int
+js_add_external_reference(js_external_references_t *references, const void *address) {
+  auto &addresses = references->addresses;
+
+  // Drop any terminator a prior `js_get_external_references` appended so that
+  // adding remains valid regardless of call order. A real reference is never
+  // null, so a trailing zero can only be the terminator.
+  if (!addresses.empty() && addresses.back() == 0) addresses.pop_back();
+
+  addresses.push_back(reinterpret_cast<intptr_t>(address));
+
+  return 0;
+}
+
+extern "C" int
+js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len) {
+  auto &addresses = references->addresses;
+
+  // V8 expects a null-terminated array. Maintain the terminator lazily so the
+  // returned pointer is stable and safe to hand to `Isolate::CreateParams`.
+  if (addresses.empty() || addresses.back() != 0) addresses.push_back(0);
+
+  if (data) *data = addresses.data();
+  if (len) *len = addresses.size() - 1; // Excluding the terminator.
+
+  return 0;
+}
+
+extern "C" int
+js_destroy_external_references(js_external_references_t *references) {
+  delete references;
+
+  return 0;
+}
+
+struct js_rebind_handlers_s {
+  struct entry {
+    js_rebind_cb cb;
+    void *data;
+  };
+
+  std::vector<entry> entries;
+};
+
+extern "C" int
+js_create_rebind_handlers(js_rebind_handlers_t **result) {
+  *result = new js_rebind_handlers_t();
+
+  return 0;
+}
+
+extern "C" int
+js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data) {
+  handlers->entries.push_back({cb, data});
+
+  return 0;
+}
+
+extern "C" int
+js_destroy_rebind_handlers(js_rebind_handlers_t *handlers) {
+  delete handlers;
+
+  return 0;
+}
+
+namespace {
+
+// Snapshot data slot layout, shared by `js_take_snapshot` (which `AddData`s in
+// this order) and `js_rebind_from_snapshot` (which reads it back). The metadata
+// array and the wrapper symbol occupy fixed slots; each serialized module record
+// follows in iteration order, so module `i` lands at `js_snapshot_data_modules
+// + i`.
+enum {
+  js_snapshot_data_metadata = 0,
+  js_snapshot_data_wrapper = 1,
+  js_snapshot_data_modules = 2,
+};
+
+// Metadata array layout: the manifests and id list `js_rebind_from_snapshot`
+// replays, indexed within the metadata array stored at
+// `js_snapshot_data_metadata`.
+enum {
+  js_snapshot_metadata_functions = 0,
+  js_snapshot_metadata_wraps = 1,
+  js_snapshot_metadata_module_ids = 2,
+};
+
+// Asks each handler, in order, to claim a reconstructed binding - described by
+// the populated `info` (its type tag, the resolved callbacks, and any holder) -
+// and supply its `data` / `finalize_hint`. Returns an empty payload when none
+// claim it.
+static js_binding_payload_t
+js_rebind(const js_rebind_handlers_t *handlers, js_env_t *env, const js_rebind_info_t &info) {
+  if (handlers != nullptr) {
+    for (const auto &entry : handlers->entries) {
+      js_binding_payload_t result = {nullptr, nullptr};
+
+      if (entry.cb(env, &info, entry.data, &result)) {
+        return result;
+      }
+    }
+  }
+
+  return {nullptr, nullptr};
+}
+
+// Finds a native address's position in the combined external-reference array, so
+// it can be named in a snapshot manifest. Every snapshotted callback must be a
+// registered reference.
+static uint32_t
+js_external_reference_index(js_env_t *env, const void *address) {
+  auto value = reinterpret_cast<intptr_t>(address);
+
+  size_t index = 0;
+  while (index < env->snapshot.external_references.size() && env->snapshot.external_references[index] != value) {
+    index++;
+  }
+
+  assert(index < env->snapshot.external_references.size());
+
+  return uint32_t(index);
+}
+
+// Resolves an index in the combined external-reference array back to its
+// address, the inverse of `js_external_reference_index`. A negative index
+// denotes an absent callback and resolves to null.
+static void *
+js_external_reference(js_env_t *env, int64_t index) {
+  return index < 0 ? nullptr : reinterpret_cast<void *>(env->snapshot.external_references[size_t(index)]);
+}
+
+// The serialized form of a delegate's internal field: its callbacks' positions
+// in the combined external-reference array (-1 for a null callback). `data` and
+// `finalize_hint` are not serializable and are re-supplied on load.
+struct js_delegate_fields_t {
+  int32_t version;
+  int32_t get;
+  int32_t has;
+  int32_t set;
+  int32_t delete_property;
+  int32_t own_keys;
+  int32_t finalize_cb;
+};
+
+static StartupData
+js_serialize_internal_field(Local<Object> holder, int index, void *data) {
+  auto env = js_env_t::from(Isolate::GetCurrent());
+
+  auto delegate = reinterpret_cast<js_delegate_t *>(holder->GetAlignedPointerFromInternalField(index, js_delegate_type_tag));
+
+  auto reference = [&](const void *address) {
+    return address ? int32_t(js_external_reference_index(env, address)) : -1;
+  };
+
+  auto fields = new js_delegate_fields_t{
+    delegate->callbacks.version,
+    reference(reinterpret_cast<const void *>(delegate->callbacks.get)),
+    reference(reinterpret_cast<const void *>(delegate->callbacks.has)),
+    reference(reinterpret_cast<const void *>(delegate->callbacks.set)),
+    reference(reinterpret_cast<const void *>(delegate->callbacks.delete_property)),
+    reference(reinterpret_cast<const void *>(delegate->callbacks.own_keys)),
+    reference(reinterpret_cast<const void *>(delegate->finalize_cb)),
+  };
+
+  return StartupData{reinterpret_cast<const char *>(fields), int(sizeof(js_delegate_fields_t))};
+}
+
+static void
+js_deserialize_internal_field(Local<Object> holder, int index, StartupData payload, void *data) {
+  if (payload.raw_size != int(sizeof(js_delegate_fields_t))) return;
+
+  auto handlers = reinterpret_cast<const js_rebind_handlers_t *>(data);
+
+  auto env = js_env_t::from(Isolate::GetCurrent());
+
+  auto fields = reinterpret_cast<const js_delegate_fields_t *>(payload.data);
+
+  auto resolve = [&](int32_t reference) -> void * {
+    return js_external_reference(env, reference);
+  };
+
+  js_delegate_callbacks_t callbacks = {};
+  callbacks.version = fields->version;
+  callbacks.get = reinterpret_cast<js_delegate_get_cb>(resolve(fields->get));
+  callbacks.has = reinterpret_cast<js_delegate_has_cb>(resolve(fields->has));
+  callbacks.set = reinterpret_cast<js_delegate_set_cb>(resolve(fields->set));
+  callbacks.delete_property = reinterpret_cast<js_delegate_delete_property_cb>(resolve(fields->delete_property));
+  callbacks.own_keys = reinterpret_cast<js_delegate_own_keys_cb>(resolve(fields->own_keys));
+
+  auto finalize_cb = reinterpret_cast<js_finalize_cb>(resolve(fields->finalize_cb));
+
+  js_rebind_info_t info = {};
+  info.version = 0;
+  info.type = js_binding_delegate;
+  info.delegate.callbacks = callbacks;
+  info.delegate.holder = js_from_local(holder);
+
+  auto rebound = js_rebind(handlers, env, info);
+
+  auto delegate = new js_delegate_t(env, callbacks, rebound.data, finalize_cb, rebound.finalize_hint);
+
+  holder->SetAlignedPointerInInternalField(index, delegate, js_delegate_type_tag);
+
+  delegate->attach_to(env->isolate, holder);
+}
+
+// Builds the null-terminated external-reference array V8 needs: libjs's stable
+// core addresses first, then the embedder's, in a fixed order shared by snapshot
+// production and consumption. Snapshot manifest entries index into the result.
+static void
+js_build_external_references(std::vector<intptr_t> &result, const js_external_references_t *references) {
+  result.clear();
+
+  result.push_back(reinterpret_cast<intptr_t>(&js_callback_t::on_call));
+  result.push_back(reinterpret_cast<intptr_t>(&js_env_t::on_uncaught_exception));
+  result.push_back(reinterpret_cast<intptr_t>(&js_env_t::on_promise_reject));
+  result.push_back(reinterpret_cast<intptr_t>(&js_module_t::on_dynamic_import));
+  result.push_back(reinterpret_cast<intptr_t>(&js_module_t::on_import_meta));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_get<Name>));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_set<Name>));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_delete<Name>));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_enumerate));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_get_indexed));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_set_indexed));
+  result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_delete_indexed));
+
+  if (references) {
+    for (auto address : references->addresses) {
+      if (address != 0) result.push_back(address); // Skip a lazily-added terminator.
+    }
+  }
+
+  result.push_back(0);
+}
+
+// Rebuilds native binding state after deserializing a snapshot, from the data
+// `js_take_snapshot` attaches: a `[function manifest, wrap manifest]` array at
+// index 0 and the wrapper `Private` symbol at index 1.
+//
+//   - function manifest: flat `[slot, cb-index]` pairs; rebuilds the function
+//     side table, with `data` from the rebind handlers.
+//   - wrapper symbol: adopted as `env->wrapper` so deserialized wrapped objects'
+//     private properties resolve.
+//   - wrap manifest: flat `[object, slot, cb-index]` triples; rebuilds the
+//     finalizer side table and re-arms each finalizer (`cb-index` < 0 means no
+//     finalize callback).
+static void
+js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
+  auto isolate = env->isolate;
+
+  auto scope = HandleScope(isolate);
+
+  auto context = env->current_context();
+
+  Local<Value> value;
+  if (!context->GetDataFromSnapshotOnce<Value>(js_snapshot_data_metadata).ToLocal(&value)) return;
+  if (!value->IsArray()) return;
+
+  auto metadata = value.As<Array>();
+
+  auto functions = metadata->Get(context, js_snapshot_metadata_functions).ToLocalChecked().As<Array>();
+  auto wraps = metadata->Get(context, js_snapshot_metadata_wraps).ToLocalChecked().As<Array>();
+
+  // Adopt the serialized wrapper symbol so private properties on deserialized
+  // wrapped objects, keyed by it, resolve.
+  Local<Private> wrapper;
+  if (context->GetDataFromSnapshotOnce<Private>(js_snapshot_data_wrapper).ToLocal(&wrapper)) {
+    env->wrapper.Reset(isolate, wrapper);
+  }
+
+  for (uint32_t i = 0; i + 1 < functions->Length(); i += 2) {
+    auto slot = uint32_t(functions->Get(context, i).ToLocalChecked().As<Integer>()->Value());
+    auto cb_index = functions->Get(context, i + 1).ToLocalChecked().As<Integer>()->Value();
+
+    auto cb = reinterpret_cast<js_function_cb>(js_external_reference(env, cb_index));
+
+    js_rebind_info_t info = {};
+    info.version = 0;
+    info.type = js_binding_function;
+    info.function.cb = cb;
+
+    auto data = js_rebind(handlers, env, info).data;
+
+    if (env->bindings.functions.entries.size() <= slot) {
+      env->bindings.functions.entries.resize(slot + 1, nullptr);
+    }
+
+    env->bindings.functions.entries[slot] = new js_callback_t(env, cb, data, slot);
+  }
+
+  for (uint32_t i = 0; i + 2 < wraps->Length(); i += 3) {
+    auto object = wraps->Get(context, i).ToLocalChecked().As<Object>();
+    auto slot = uint32_t(wraps->Get(context, i + 1).ToLocalChecked().As<Integer>()->Value());
+    auto cb_index = wraps->Get(context, i + 2).ToLocalChecked().As<Integer>()->Value();
+
+    auto finalize_cb = reinterpret_cast<js_finalize_cb>(js_external_reference(env, cb_index));
+
+    js_rebind_info_t info = {};
+    info.version = 0;
+    info.type = js_binding_finalizer;
+    info.finalizer.cb = finalize_cb;
+    info.finalizer.holder = js_from_local(object);
+
+    auto payload = js_rebind(handlers, env, info);
+
+    auto finalizer = new js_finalizer_t(env, payload.data, finalize_cb, payload.finalize_hint);
+
+    finalizer->index = slot;
+
+    if (env->bindings.finalizers.entries.size() <= slot) {
+      env->bindings.finalizers.entries.resize(slot + 1, nullptr);
+    }
+
+    env->bindings.finalizers.entries[slot] = finalizer;
+
+    finalizer->attach_to(isolate, object);
+  }
+
+  // Module records: rebuild a `js_module_t` for each serialized module, paired by
+  // index with its id symbol. Only fully evaluated modules are serialized, so
+  // their callbacks are never invoked again and are left empty; the embedder
+  // reconnects its handles to the records by id via `js_get_module_by_id`.
+  auto modules = metadata->Get(context, js_snapshot_metadata_module_ids).ToLocalChecked().As<Array>();
+
+  for (uint32_t i = 0; i < modules->Length(); i++) {
+    auto id = modules->Get(context, i).ToLocalChecked().As<Symbol>();
+
+    Local<Module> module;
+    if (!context->GetDataFromSnapshotOnce<Module>(js_snapshot_data_modules + i).ToLocal(&module)) continue;
+
+    // Recover the name from the module's resource name (the same string passed at
+    // creation, for both source-text and synthetic modules).
+    std::string name;
+
+    auto resource = module->GetResourceName();
+    if (!resource.IsEmpty() && resource->IsString()) {
+      auto string = resource.As<String>();
+      auto length = string->Utf8LengthV2(isolate);
+      name.resize(length);
+      string->WriteUtf8V2(isolate, name.data(), length, String::WriteFlags::kReplaceInvalidUtf8);
+    }
+
+    auto record = new js_module_t(isolate, module, id, std::move(name));
+
+    env->modules.emplace(module->GetIdentityHash(), record);
+  }
+}
+
+} // namespace
+
 extern "C" int
 js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result) {
   Isolate::CreateParams params;
@@ -3274,6 +3777,33 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
     if (total_memory > 0) {
       params.constraints.ConfigureDefaults(total_memory, 0);
     }
+  }
+
+  auto user_references = js_option<&js_env_options_t::external_references, const js_external_references_t *>(options, 1);
+
+  auto snapshot = js_option<&js_env_options_t::snapshot, const void *>(options, 1);
+  auto snapshot_len = js_option<&js_env_options_t::snapshot_len, size_t>(options, 1);
+
+  // The combined core + embedder reference array. Built whenever a snapshot is
+  // consumed (the blob references libjs's core addresses) or the embedder
+  // supplies references. Moved onto the env below so it outlives the lazy
+  // deserialization that reads it.
+  std::vector<intptr_t> external_references;
+
+  if (snapshot || user_references) {
+    js_build_external_references(external_references, user_references);
+    params.external_references = external_references.data();
+  }
+
+  // Must outlive `Isolate::Initialize()` below; the snapshot bytes themselves
+  // must outlive the environment, as V8 deserializes from them lazily.
+  StartupData startup_data;
+
+  if (snapshot) {
+    startup_data.data = static_cast<const char *>(snapshot);
+    startup_data.raw_size = static_cast<int>(snapshot_len);
+
+    params.snapshot_blob = &startup_data;
   }
 
   auto isolate = Isolate::Allocate();
@@ -3300,7 +3830,15 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
 
-  auto env = new js_env_t(loop, platform, isolate);
+  auto rebind_handlers = js_option<&js_env_options_t::rebind_handlers, const js_rebind_handlers_t *>(options, 1);
+
+  // The reference buffer is moved, not copied, so the pointer handed to V8 above
+  // stays valid for the lifetime of the env. The rebind handlers are needed
+  // during construction (the delegate deserialize hook fires inside
+  // `Context::New`) as well as for the function and wrap rebuild below.
+  auto env = new js_env_t(loop, platform, isolate, std::move(external_references), rebind_handlers);
+
+  if (snapshot) js_rebind_from_snapshot(env, rebind_handlers);
 
   *result = env;
 
@@ -3309,6 +3847,224 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
 extern "C" int
 js_destroy_env(js_env_t *env) {
+  env->close_maybe();
+
+  return 0;
+}
+
+namespace {
+
+static const js_snapshot_options_t js_snapshot_default_options = {
+  .version = 0,
+};
+
+template <auto js_snapshot_options_t::*P, typename T>
+static inline T
+js_option(const js_snapshot_options_t *options, int min_version, T fallback = T(js_snapshot_default_options.*P)) {
+  return T(options && options->version >= min_version ? options->*P : fallback);
+}
+
+} // namespace
+
+extern "C" int
+js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_options_t *options, js_env_t **result) {
+  Isolate::CreateParams params;
+
+  params.array_buffer_allocator_shared = std::make_shared<js_allocator_t>();
+
+  auto user_references = js_option<&js_snapshot_options_t::external_references, const js_external_references_t *>(options, 0);
+
+  // The producer always needs the combined core + embedder references: `on_call`
+  // and the isolate callbacks installed below are serialized by index. Moved onto
+  // the env after construction so it outlives `CreateBlob`.
+  std::vector<intptr_t> external_references;
+  js_build_external_references(external_references, user_references);
+  params.external_references = external_references.data();
+
+  // Allocate the isolate ourselves and register its task runner *before* it is
+  // initialised, exactly as `js_create_env` does: the snapshot creator
+  // initialises and enters the isolate, which makes V8 call
+  // `GetForegroundTaskRunner` (an `operator[]` insert), and a later `emplace`
+  // would not overwrite that null entry. We therefore use the non-owning
+  // creator and dispose the isolate ourselves at teardown.
+  auto isolate = Isolate::Allocate();
+
+  auto tasks = new js_task_runner_t(loop);
+
+  std::unique_lock guard(platform->lock);
+
+  platform->foreground.emplace(isolate, std::move(tasks));
+
+  guard.unlock();
+
+  auto creator = new SnapshotCreator(isolate, params);
+
+  isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
+
+  isolate->AddMessageListener(js_env_t::on_uncaught_exception);
+
+  isolate->SetPromiseRejectCallback(js_env_t::on_promise_reject);
+
+  isolate->SetHostImportModuleDynamicallyCallback(js_module_t::on_dynamic_import);
+
+  isolate->SetHostInitializeImportMetaObjectCallback(js_module_t::on_import_meta);
+
+  auto env = new js_env_t(loop, platform, isolate, std::move(external_references), nullptr);
+
+  env->snapshot.creator = creator;
+
+  env->snapshot.function_code_handling =
+    js_option<&js_snapshot_options_t::function_code_handling, js_snapshot_function_code_handling_t>(options, 0) == js_snapshot_keep_function_code
+      ? SnapshotCreator::FunctionCodeHandling::kKeep
+      : SnapshotCreator::FunctionCodeHandling::kClear;
+
+  *result = env;
+
+  return 0;
+}
+
+extern "C" int
+js_take_snapshot(js_env_t *env, void **data, size_t *len) {
+  auto creator = env->snapshot.creator;
+
+  auto isolate = env->isolate;
+
+  {
+    auto scope = HandleScope(isolate);
+
+    auto context = env->context.Get(isolate);
+
+    // Snapshot metadata, built while the context is still entered and replayed by
+    // `js_rebind_from_snapshot` on load: a 3-element array
+    // `[function manifest, wrap manifest, module ids]`, plus the wrapper symbol
+    // and each module record attached as their own data slots.
+
+    // Function manifest: `[slot, cb-index]` pairs, `cb-index` indexing the
+    // combined external-reference array.
+    auto functions = Array::New(isolate);
+
+    uint32_t fn = 0;
+
+    for (uint32_t slot = 0; slot < env->bindings.functions.entries.size(); slot++) {
+      auto callback = env->bindings.functions.entries[slot];
+
+      if (callback == nullptr) continue;
+
+      auto cb_index = js_external_reference_index(env, reinterpret_cast<const void *>(callback->cb));
+
+      functions->Set(context, fn++, Integer::NewFromUnsigned(isolate, slot)).Check();
+      functions->Set(context, fn++, Integer::NewFromUnsigned(isolate, cb_index)).Check();
+    }
+
+    // Wrap manifest: `[object, slot, cb-index]` triples, the wrapped object
+    // stored inline so the consumer gets a handle to re-arm its finalizer
+    // (`cb-index` -1 when there is no finalize callback).
+    auto wraps = Array::New(isolate);
+
+    uint32_t wn = 0;
+
+    for (uint32_t slot = 0; slot < env->bindings.finalizers.entries.size(); slot++) {
+      auto finalizer = env->bindings.finalizers.entries[slot];
+
+      if (finalizer == nullptr || finalizer->value.IsEmpty() || finalizer->is_delegate) continue;
+
+      auto cb_index = finalizer->finalize_cb
+                        ? int32_t(js_external_reference_index(env, reinterpret_cast<const void *>(finalizer->finalize_cb)))
+                        : -1;
+
+      wraps->Set(context, wn++, finalizer->value.Get(isolate)).Check();
+      wraps->Set(context, wn++, Integer::NewFromUnsigned(isolate, slot)).Check();
+      wraps->Set(context, wn++, Integer::New(isolate, cb_index)).Check();
+    }
+
+    // Module ids: the id symbol of every module, in iteration order. Each
+    // module's compiled record is added below as snapshot data at index
+    // `js_snapshot_data_modules + i`, so the consumer pairs `ids[i]` with the
+    // module at the same offset.
+    auto modules = Array::New(isolate);
+
+    std::vector<Local<Module>> module_records;
+
+    uint32_t mn = 0;
+
+    for (const auto &entry : env->modules) {
+      auto module = entry.second;
+
+      auto record = module->module.Get(isolate);
+
+      // Only fully evaluated modules survive a snapshot: their callbacks are
+      // never invoked again, and other states (instantiating, mid-top-level-await,
+      // errored) carry no meaningful warmed-up result.
+      if (record->GetStatus() != Module::Status::kEvaluated) continue;
+
+      modules->Set(context, mn++, module->id.Get(isolate)).Check();
+      module_records.push_back(record);
+    }
+
+    auto metadata = Array::New(isolate);
+    metadata->Set(context, js_snapshot_metadata_functions, functions).Check();
+    metadata->Set(context, js_snapshot_metadata_wraps, wraps).Check();
+    metadata->Set(context, js_snapshot_metadata_module_ids, modules).Check();
+
+    // The wrapper symbol is a `Private`, not a `Value`, so it rides its own data
+    // slot rather than the metadata array.
+    auto wrapper = env->wrapper.Get(isolate);
+
+    context->Exit();
+
+    creator->SetDefaultContext(context, SerializeInternalFieldsCallback(js_serialize_internal_field));
+
+    // `AddData` assigns indices in call order; assert that order matches the
+    // shared slot layout the consumer reads back.
+    auto metadata_index = creator->AddData(context, metadata);
+    assert(metadata_index == size_t(js_snapshot_data_metadata));
+
+    auto wrapper_index = creator->AddData(context, wrapper);
+    assert(wrapper_index == size_t(js_snapshot_data_wrapper));
+
+    for (size_t i = 0; i < module_records.size(); i++) {
+      auto module_index = creator->AddData(context, module_records[i]);
+      assert(module_index == size_t(js_snapshot_data_modules) + i);
+    }
+  }
+
+  // Release every Global into the isolate before serializing: `CreateBlob()`
+  // takes ownership of the default context and rejects any lingering global
+  // handles into the serialized heap. The per-env privates are re-created from
+  // scratch when the blob is booted, and the side table's weak handles on each
+  // function instance are no longer needed (the table is rebuilt on load).
+  env->wrapper.Reset();
+  env->delegate.Reset();
+  env->tag.Reset();
+  env->exception.Reset();
+  env->default_module_id.Reset();
+  env->context.Reset();
+
+  for (auto callback : env->bindings.functions.entries) {
+    if (callback) callback->function.Reset();
+  }
+
+  for (auto finalizer : env->bindings.finalizers.entries) {
+    if (finalizer) finalizer->value.Reset();
+  }
+
+  for (auto &entry : env->modules) {
+    entry.second->module.Reset();
+    entry.second->id.Reset();
+  }
+
+  // Must run outside any handle scope.
+  auto blob = creator->CreateBlob(env->snapshot.function_code_handling);
+
+  *data = malloc(size_t(blob.raw_size));
+  memcpy(*data, blob.data, size_t(blob.raw_size));
+  *len = size_t(blob.raw_size);
+
+  // `CreateBlob()` hands back a buffer allocated with `new[]`.
+  delete[] blob.data;
+
+  // Consume the environment. The destructor deletes the creator, which disposes
+  // the isolate.
   env->close_maybe();
 
   return 0;
@@ -3643,6 +4399,30 @@ js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result) {
   *result = js_from_local(module->id.Get(env->isolate));
 
   return 0;
+}
+
+extern "C" int
+js_get_module_by_id(js_env_t *env, js_value_t *id, js_module_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  int err;
+
+  auto symbol = js_to_local<Symbol>(id);
+
+  for (const auto &entry : env->modules) {
+    auto module = entry.second;
+
+    if (module->id.Get(env->isolate) == symbol) {
+      *result = module;
+
+      return 0;
+    }
+  }
+
+  err = js_throw_error(env, NULL, "Could not find module");
+  assert(err == 0);
+
+  return js_error(env);
 }
 
 extern "C" int
@@ -3982,11 +4762,13 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
-  auto external = External::New(env->isolate, finalizer, js_finalizer_type_tag);
+  finalizer->index = env->bindings.finalizers.add(finalizer);
+
+  auto token = Integer::NewFromUnsigned(env->isolate, finalizer->index);
 
   auto success = env->try_catch<bool>(
     [&] {
-      return local->SetPrivate(context, key, external);
+      return local->SetPrivate(context, key, token);
     }
   );
 
@@ -4013,15 +4795,17 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result) {
 
   auto local = js_to_local<Object>(object);
 
-  auto external = env->try_catch<Value>(
+  auto token = env->try_catch<Value>(
     [&] {
       return local->GetPrivate(context, key);
     }
   );
 
-  if (external.IsEmpty()) return js_error(env);
+  if (token.IsEmpty()) return js_error(env);
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
+  auto index = size_t(token.ToLocalChecked().As<Integer>()->Value());
+
+  auto finalizer = env->bindings.finalizers.entries[index];
 
   *result = finalizer->data;
 
@@ -4038,17 +4822,19 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
   auto local = js_to_local<Object>(object);
 
-  auto external = env->try_catch<Value>(
+  auto token = env->try_catch<Value>(
     [&] {
       return local->GetPrivate(context, key);
     }
   );
 
-  if (external.IsEmpty()) return js_error(env);
+  if (token.IsEmpty()) return js_error(env);
 
   local->DeletePrivate(context, key).Check();
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
+  auto index = size_t(token.ToLocalChecked().As<Integer>()->Value());
+
+  auto finalizer = env->bindings.finalizers.entries[index];
 
   finalizer->detach();
 
@@ -4067,15 +4853,21 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
 
   auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
 
+  delegate->index = env->bindings.finalizers.add(delegate);
+
   auto tpl = delegate->to_object_template(env->isolate);
 
   auto object = tpl->NewInstance(context);
 
   if (object.IsEmpty()) return js_error(env);
 
-  delegate->attach_to(env->isolate, object.ToLocalChecked());
+  auto local = object.ToLocalChecked();
 
-  *result = js_from_local(object.ToLocalChecked());
+  local->SetAlignedPointerInInternalField(0, delegate, js_delegate_type_tag);
+
+  delegate->attach_to(env->isolate, local);
+
+  *result = js_from_local(local);
 
   return 0;
 }
@@ -4697,6 +5489,8 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
 
     local->SetName(string.ToLocalChecked());
   }
+
+  callback->hold_weakly(env->isolate, local);
 
   *result = js_from_local(local);
 
@@ -6636,7 +7430,7 @@ js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc
   if (receiver) *receiver = js_from_local(args->This());
 
   if (data) {
-    *data = reinterpret_cast<js_callback_t *>(args->Data().As<External>()->Value(js_callback_info_type_tag))->data;
+    *data = env->bindings.functions.entries[size_t(args->Data().As<Integer>()->Value())]->data;
   }
 
   return 0;
@@ -6648,10 +7442,12 @@ js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env,
 
   auto args = reinterpret_cast<const FastApiCallbackOptions *>(info);
 
-  if (env) *env = js_env_t::from(args->isolate);
+  auto callback_env = js_env_t::from(args->isolate);
+
+  if (env) *env = callback_env;
 
   if (data) {
-    *data = reinterpret_cast<js_typed_callback_t *>(args->data.As<External>()->Value(js_callback_info_type_tag))->data;
+    *data = callback_env->bindings.functions.entries[size_t(args->data.As<Integer>()->Value())]->data;
   }
 
   return 0;

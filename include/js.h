@@ -17,6 +17,7 @@ typedef struct js_platform_options_s js_platform_options_t;
 typedef struct js_platform_limits_s js_platform_limits_t;
 typedef struct js_env_s js_env_t;
 typedef struct js_env_options_s js_env_options_t;
+typedef struct js_snapshot_options_s js_snapshot_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_context_s js_context_t;
@@ -40,6 +41,10 @@ typedef struct js_error_location_s js_error_location_t;
 typedef struct js_inspector_s js_inspector_t;
 typedef struct js_garbage_collection_tracking_s js_garbage_collection_tracking_t;
 typedef struct js_garbage_collection_tracking_options_s js_garbage_collection_tracking_options_t;
+typedef struct js_external_references_s js_external_references_t;
+typedef struct js_rebind_handlers_s js_rebind_handlers_t;
+typedef struct js_binding_payload_s js_binding_payload_t;
+typedef struct js_rebind_info_s js_rebind_info_t;
 
 enum {
   /**
@@ -179,6 +184,7 @@ typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, const char *message, size_t len, void *data);
 typedef bool (*js_inspector_paused_cb)(js_env_t *, js_inspector_t *, void *data);
 typedef void (*js_garbage_collection_cb)(js_garbage_collection_type_t, void *data);
+typedef bool (*js_rebind_cb)(js_env_t *, const js_rebind_info_t *info, void *data, js_binding_payload_t *result);
 
 /** @version 1 */
 struct js_platform_options_s {
@@ -265,7 +271,7 @@ struct js_platform_limits_s {
   size_t string_length;
 };
 
-/** @version 0 */
+/** @version 1 */
 struct js_env_options_s {
   int version;
 
@@ -276,6 +282,74 @@ struct js_env_options_s {
    * @since 0
    */
   size_t memory_limit;
+
+  /**
+   * A startup snapshot to boot the environment from instead of building its
+   * default context from scratch. When set, the bytes must remain valid for the
+   * lifetime of the environment.
+   *
+   * @since 1
+   */
+  const void *snapshot;
+
+  /**
+   * The length of `snapshot` in bytes.
+   *
+   * @since 1
+   */
+  size_t snapshot_len;
+
+  /**
+   * The external references reachable from the snapshot. Must be the same array,
+   * byte-for-byte, that was used to produce the snapshot, and must remain valid
+   * for the lifetime of the environment.
+   *
+   * @since 1
+   */
+  const js_external_references_t *external_references;
+
+  /**
+   * Handlers consulted while booting from a snapshot to re-supply the
+   * per-instance `data` of reconstructed native bindings. May be NULL, in which
+   * case reconstructed bindings get no `data`.
+   *
+   * @since 1
+   */
+  const js_rebind_handlers_t *rebind_handlers;
+};
+
+typedef enum {
+  /**
+   * Clear compiled function code from the blob. Smaller, but functions are
+   * recompiled lazily on first call.
+   */
+  js_snapshot_clear_function_code = 0,
+
+  /**
+   * Keep compiled function code in the blob. Larger and locked to the exact
+   * engine build, but faster first execution.
+   */
+  js_snapshot_keep_function_code = 1,
+} js_snapshot_function_code_handling_t;
+
+/** @version 0 */
+struct js_snapshot_options_s {
+  int version;
+
+  /**
+   * How to treat compiled function code when serializing.
+   *
+   * @since 0
+   */
+  js_snapshot_function_code_handling_t function_code_handling;
+
+  /**
+   * The external references reachable from the snapshot. Must be the same array
+   * later passed to `js_create_env()` when booting from the resulting blob.
+   *
+   * @since 0
+   */
+  const js_external_references_t *external_references;
 };
 
 /** @version 0 */
@@ -330,6 +404,48 @@ struct js_delegate_callbacks_s {
 
   /** @since 0 */
   js_delegate_own_keys_cb own_keys;
+};
+
+/** @version 0 */
+struct js_binding_payload_s {
+  /** @since 0 */
+  void *data;
+
+  /** @since 0 */
+  void *finalize_hint;
+};
+
+typedef enum {
+  js_binding_function = 0,
+  js_binding_finalizer = 1,
+  js_binding_delegate = 2,
+} js_binding_type_t;
+
+/** @version 0 */
+struct js_rebind_info_s {
+  int version;
+
+  /** @since 0 */
+  js_binding_type_t type;
+
+  union {
+    /** @since 0 */
+    struct {
+      js_function_cb cb;
+    } function;
+
+    /** @since 0 */
+    struct {
+      js_finalize_cb cb;
+      js_value_t *holder;
+    } finalizer;
+
+    /** @since 0 */
+    struct {
+      js_delegate_callbacks_t callbacks;
+      js_value_t *holder;
+    } delegate;
+  };
 };
 
 /** @version 0 */
@@ -448,10 +564,48 @@ int
 js_get_platform_loop(js_platform_t *platform, uv_loop_t **result);
 
 int
+js_create_external_references(js_external_references_t **result);
+
+int
+js_add_external_reference(js_external_references_t *references, const void *address);
+
+int
+js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len);
+
+int
+js_destroy_external_references(js_external_references_t *references);
+
+int
+js_create_rebind_handlers(js_rebind_handlers_t **result);
+
+int
+js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data);
+
+int
+js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
+
+int
 js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result);
 
 int
 js_destroy_env(js_env_t *env);
+
+/**
+ * Create an environment set up for serialization. The returned environment is
+ * warmed up with the regular run/compile APIs, then serialized and consumed by
+ * `js_take_snapshot()`.
+ */
+int
+js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_options_t *options, js_env_t **result);
+
+/**
+ * Serialize a warmed-up snapshot environment into a blob and tear it down. The
+ * environment is consumed and must not be passed to `js_destroy_env()`. On
+ * success `*data` is a newly allocated buffer owned by the caller and freed with
+ * `free()`.
+ */
+int
+js_take_snapshot(js_env_t *env, void **data, size_t *len);
 
 /**
  * Add a callback for uncaught exceptions. By default, uncaught exceptions are
@@ -595,6 +749,14 @@ js_get_module_name(js_env_t *env, js_module_t *module, const char **result);
  */
 int
 js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result);
+
+/**
+ * Look up a module reconstructed from a snapshot by its `id` and return its
+ * handle. Only fully evaluated modules survive a snapshot; their callbacks are
+ * never invoked again after restore, so none need to be re-supplied.
+ */
+int
+js_get_module_by_id(js_env_t *env, js_value_t *id, js_module_t **result);
 
 /**
  * Get the identifier shared by all compilation units that do not carry one of
