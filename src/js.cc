@@ -357,7 +357,12 @@ struct js_task_runner_s : public TaskRunner {
 
     outstanding++;
 
-    task.on_completion = [this] { on_completion(); };
+    // Idle tasks only run when the loop is otherwise idle, so like best-effort
+    // delayed tasks they must not keep the loop alive or block draining; account
+    // for them as disposable.
+    disposable++;
+
+    task.on_completion = [this] { on_completion(true); };
 
     idle_tasks.push(std::move(task));
   }
