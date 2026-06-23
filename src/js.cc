@@ -42,6 +42,7 @@ typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
 typedef struct js_idle_task_handle_s js_idle_task_handle_t;
+typedef struct js_idle_task_s js_idle_task_t;
 typedef struct js_task_runner_s js_task_runner_t;
 typedef struct js_job_state_s js_job_state_t;
 typedef struct js_job_handle_s js_job_handle_t;
@@ -185,6 +186,27 @@ struct js_idle_task_handle_s {
   }
 };
 
+// The time budget, in seconds, granted to idle tasks when the loop is
+// otherwise idle and no delayed task constrains the deadline sooner. This is a
+// heuristic that lets background work such as incremental garbage collection
+// make progress without monopolising the thread.
+static const double js_idle_task_budget = 0.05;
+
+struct js_idle_task_s : public Task {
+  std::unique_ptr<IdleTask> task;
+  double deadline;
+
+  js_idle_task_s(std::unique_ptr<IdleTask> task, double deadline)
+      : task(std::move(task)),
+        deadline(deadline) {}
+
+private: // V8 embedder API
+  void
+  Run() override {
+    task->Run(deadline);
+  }
+};
+
 struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
@@ -205,6 +227,7 @@ struct js_task_runner_s : public TaskRunner {
   uint32_t disposable;
 
   bool closed;
+  bool idling;
 
   std::mutex lock;
   std::condition_variable available;
@@ -223,6 +246,7 @@ struct js_task_runner_s : public TaskRunner {
         outstanding(0),
         disposable(0),
         closed(false),
+        idling(false),
         lock(),
         available(),
         drained() {
@@ -252,10 +276,22 @@ struct js_task_runner_s : public TaskRunner {
 
     closed = true;
 
-    // TODO: Clear and cancel outstanding tasks and notify threads waiting for
-    // the outstanding tasks to drain.
+    // Cancel any outstanding tasks by dropping them. Tasks that are already
+    // in-flight on a worker thread aren't tracked here and will run to
+    // completion, but anything still queued is discarded.
+    tasks.clear();
 
+    while (!delayed_tasks.empty())
+      delayed_tasks.pop();
+
+    while (!idle_tasks.empty())
+      idle_tasks.pop();
+
+    // Wake any threads waiting for a task or for the queues to drain. They all
+    // observe `closed` and so will stop waiting regardless of the outstanding
+    // count, which we intentionally leave untouched for in-flight tasks.
     available.notify_all();
+    drained.notify_all();
 
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
 
@@ -321,7 +357,12 @@ struct js_task_runner_s : public TaskRunner {
 
     outstanding++;
 
-    task.on_completion = [this] { on_completion(); };
+    // Idle tasks only run when the loop is otherwise idle, so like best-effort
+    // delayed tasks they must not keep the loop alive or block draining; account
+    // for them as disposable.
+    disposable++;
+
+    task.on_completion = [this] { on_completion(true); };
 
     idle_tasks.push(std::move(task));
   }
@@ -378,11 +419,28 @@ struct js_task_runner_s : public TaskRunner {
   drain() {
     std::unique_lock guard(lock);
 
-    if (closed) return;
-
-    while (outstanding > disposable) {
+    while (!closed && outstanding > disposable) {
       drained.wait(guard);
     }
+  }
+
+  // Block until either a task becomes available to run or the runner drains
+  // completely, whichever comes first. Used to park the event loop thread
+  // while background work is still outstanding instead of busy-looping.
+  void
+  wait_for_idle() {
+    std::unique_lock guard(lock);
+
+    while (!closed && !can_pop_task(guard) && outstanding > disposable) {
+      available.wait(guard);
+    }
+  }
+
+  void
+  set_idling(bool value) {
+    std::unique_lock guard(lock);
+
+    idling = value;
   }
 
 private:
@@ -406,7 +464,26 @@ private:
     }
 
     if (task == tasks.end()) {
-      // TODO: Check if we're idling and return an idle task if available.
+      // If we're idling and there are no runnable tasks left, fall back to an
+      // idle task if one is available, wrapping it so that it runs with a
+      // deadline derived from the next delayed task.
+      if (idling && depth == 0 && !idle_tasks.empty()) {
+        auto idle = std::move(idle_tasks.front());
+
+        idle_tasks.pop();
+
+        auto value = js_task_handle_t(
+          TaskPriority::kBestEffort,
+          std::make_unique<js_idle_task_t>(std::move(idle.task), idle_deadline()),
+          js_task_non_nestable
+        );
+
+        // Preserve the completion callback so the outstanding count is still
+        // decremented once the idle task has run.
+        value.on_completion = std::move(idle.on_completion);
+
+        return std::move(value);
+      }
 
       return std::nullopt;
     }
@@ -416,6 +493,17 @@ private:
     tasks.erase(task);
 
     return std::move(value);
+  }
+
+  double
+  idle_deadline() {
+    auto deadline = double(now()) / 1e9 + js_idle_task_budget;
+
+    if (!delayed_tasks.empty()) {
+      deadline = std::min(deadline, double(delayed_tasks.top().expiry) / 1e9);
+    }
+
+    return deadline;
   }
 
   bool
@@ -464,6 +552,10 @@ private:
 
     if (--outstanding <= disposable) {
       drained.notify_all();
+
+      // Wake any thread parked in `wait_for_idle()` so that it observes the
+      // drain and stops waiting.
+      available.notify_all();
     }
   }
 
@@ -1159,9 +1251,10 @@ struct js_platform_s : public Platform {
 
   void
   idle() {
-    // TODO: This should wait until either the platform drains completely or a
-    // task is made available.
-    drain();
+    // Park the loop thread until the background runner either drains completely
+    // or has a task that can be run, rather than busy-looping or blocking until
+    // every outstanding task has finished.
+    background->wait_for_idle();
   }
 
   void
@@ -1515,9 +1608,17 @@ struct js_env_s {
 
   void
   idle() {
-    // TODO: This should wait until either the platform drains completely or a
-    // task is made available for the isolate.
-    platform->drain();
+    // Now that the loop would otherwise be idle, run any pending idle tasks for
+    // this isolate, giving them a deadline based on the next delayed task.
+    tasks->set_idling(true);
+
+    run_macrotasks();
+
+    tasks->set_idling(false);
+
+    // Then park until the platform either drains completely or a task is made
+    // available, at which point the loop is pumped again.
+    platform->idle();
   }
 
   void
