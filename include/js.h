@@ -591,6 +591,15 @@ int
 js_delete_script(js_env_t *env, js_script_t *script);
 
 /**
+ * Get the name of a script compiled with `js_prepare_script()`, as passed to
+ * `js_prepare_script()` when the script was compiled.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
+
+/**
  * Get the unique identifier of a script compiled with `js_prepare_script()`.
  * The identifier is a `Symbol` owned by the engine that is stable for the
  * lifetime of the script and matches the `id` passed to the dynamic `import()`

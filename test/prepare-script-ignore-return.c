@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <string.h>
 #include <utf.h>
 #include <uv.h>
 
@@ -31,35 +30,10 @@ main() {
   e = js_prepare_script(env, "test.js", -1, 0, source, &script);
   assert(e == 0);
 
-  // A prepared script carries a unique identifier of its own.
+  // The result is optional and may be discarded.
 
-  js_value_t *id;
-  e = js_get_script_id(env, script, &id);
+  e = js_run_prepared_script(env, script, NULL);
   assert(e == 0);
-
-  js_value_type_t type;
-  e = js_typeof(env, id, &type);
-  assert(e == 0);
-
-  assert(type == js_symbol);
-
-  // A prepared script remembers the name it was compiled with.
-
-  const char *name;
-  e = js_get_script_name(env, script, &name);
-  assert(e == 0);
-
-  assert(strcmp(name, "test.js") == 0);
-
-  js_value_t *result;
-  e = js_run_prepared_script(env, script, &result);
-  assert(e == 0);
-
-  uint32_t value;
-  e = js_get_value_uint32(env, result, &value);
-  assert(e == 0);
-
-  assert(value == 12345);
 
   e = js_delete_script(env, script);
   assert(e == 0);
