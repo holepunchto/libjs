@@ -126,6 +126,7 @@ list(APPEND tests
   dynamic-import-with-referrer
   dynamic-import-with-referrer-function
   dynamic-import-with-referrer-multiple-scripts
+  dynamic-import-with-referrer-prepared-and-script
   dynamic-import-with-referrer-script
   dynamic-import-without-handler
   escapable-handle-scope
