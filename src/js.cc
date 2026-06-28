@@ -2239,6 +2239,24 @@ struct js_module_s {
   }
 };
 
+struct js_script_s {
+  Global<UnboundScript> script;
+
+  Global<Symbol> id;
+
+  std::string name;
+
+  js_script_s(Isolate *isolate, Local<UnboundScript> script, Local<Symbol> id, std::string name)
+      : script(isolate, script),
+        id(isolate, id),
+        name(std::move(name)) {}
+
+  js_script_s(const js_script_s &) = delete;
+
+  js_script_s &
+  operator=(const js_script_s &) = delete;
+};
+
 struct js_ref_s {
   Global<Value> value;
   uint32_t count;
@@ -4354,6 +4372,112 @@ js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_
   if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_script_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto string = js_to_string_utf8(env, file, len, true);
+
+  if (string.IsEmpty()) return js_error(env);
+
+  // Mint a unique identifier for the script and stamp it into the host-defined
+  // options so it can be recovered as the referrer of any dynamic import().
+
+  auto id = Symbol::New(env->isolate, string.ToLocalChecked());
+
+  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+
+  host_defined_options->Set(env->isolate, 0, id);
+
+  auto origin = ScriptOrigin(
+    string.ToLocalChecked(),
+    offset,
+    0,
+    false,
+    -1,
+    Local<Value>(),
+    false,
+    false,
+    false,
+    host_defined_options
+  );
+
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
+
+  // Compile to a context-independent script so the handle can be run in any
+  // context entered when it is later run.
+
+  auto compiled = env->try_catch<UnboundScript>(
+    [&] {
+      return ScriptCompiler::CompileUnboundScript(env->isolate, &compiler_source);
+    }
+  );
+
+  if (compiled.IsEmpty()) return js_error(env);
+
+  std::string script_name;
+
+  if (len == size_t(-1)) {
+    script_name = std::string(file);
+  } else {
+    script_name = std::string(file, len);
+  }
+
+  auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, std::move(script_name));
+
+  *result = script;
+
+  return 0;
+}
+
+extern "C" int
+js_run_prepared_script(js_env_t *env, js_script_t *script, js_value_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  auto context = env->current_context();
+
+  auto compiled = script->script.Get(env->isolate)->BindToCurrentContext();
+
+  auto local = env->call_into_javascript<Value>(
+    [&] {
+      return compiled->Run(context);
+    }
+  );
+
+  if (local.IsEmpty()) return js_error(env);
+
+  if (result) *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_delete_script(js_env_t *env, js_script_t *script) {
+  // Allow continuing even with a pending exception
+
+  delete script;
+
+  return 0;
+}
+
+extern "C" int
+js_get_script_name(js_env_t *env, js_script_t *script, const char **result) {
+  // Allow continuing even with a pending exception
+
+  *result = script->name.data();
+
+  return 0;
+}
+
+extern "C" int
+js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  *result = js_from_local(script->id.Get(env->isolate));
 
   return 0;
 }
