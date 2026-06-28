@@ -21,6 +21,7 @@ typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
 typedef struct js_context_s js_context_t;
 typedef struct js_module_s js_module_t;
+typedef struct js_script_s js_script_t;
 typedef struct js_value_s js_value_t;
 typedef struct js_ref_s js_ref_t;
 typedef struct js_property_descriptor_s js_property_descriptor_t;
@@ -563,6 +564,51 @@ js_get_bindings(js_env_t *env, js_value_t **result);
 
 int
 js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
+
+/**
+ * Compile a script without running it, yielding a reusable handle that can be
+ * run with `js_run_prepared_script()`. Unlike `js_run_script()`, a prepared
+ * script carries a unique identifier of its own, allowing dynamic `import()`
+ * calls it initiates to be attributed to it specifically.
+ */
+int
+js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_script_t **result);
+
+/**
+ * Run a script previously compiled with `js_prepare_script()`. The script may
+ * be run more than once and in any context entered when it is run.
+ */
+int
+js_run_prepared_script(js_env_t *env, js_script_t *script, js_value_t **result);
+
+/**
+ * Delete a script previously compiled with `js_prepare_script()`, releasing the
+ * resources held by its handle.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_delete_script(js_env_t *env, js_script_t *script);
+
+/**
+ * Get the name of a script compiled with `js_prepare_script()`, as passed to
+ * `js_prepare_script()` when the script was compiled.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
+
+/**
+ * Get the unique identifier of a script compiled with `js_prepare_script()`.
+ * The identifier is a `Symbol` owned by the engine that is stable for the
+ * lifetime of the script and matches the `id` passed to the dynamic `import()`
+ * callback when the script is the referrer.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
 
 int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
