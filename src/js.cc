@@ -4816,6 +4816,19 @@ js_create_object(js_env_t *env, js_value_t **result) {
 }
 
 extern "C" int
+js_create_object_with_prototype(js_env_t *env, js_value_t *prototype, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto object = Object::New(env->isolate, js_to_local(prototype), nullptr, nullptr, 0);
+
+  *result = js_from_local(object);
+
+  return 0;
+}
+
+extern "C" int
 js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
@@ -6742,6 +6755,27 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result) {
   auto local = js_to_local<Object>(object);
 
   *result = js_from_local(local->GetPrototypeV2());
+
+  return 0;
+}
+
+extern "C" int
+js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_env_scope_t env_scope(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->SetPrototypeV2(context, js_to_local(prototype));
+    }
+  );
+
+  if (success.IsNothing()) return js_error(env);
 
   return 0;
 }
