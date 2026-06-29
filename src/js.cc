@@ -57,6 +57,7 @@ typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
+typedef struct js_microtask_s js_microtask_t;
 
 typedef enum {
   js_task_nestable,
@@ -3193,6 +3194,26 @@ struct js_garbage_collection_tracking_s {
   js_garbage_collection_tracking_s(js_garbage_collection_tracking_options_t options, void *data)
       : options(options),
         data(data) {}
+};
+
+struct js_microtask_s {
+  js_env_t *env;
+  js_task_cb cb;
+  void *data;
+
+  js_microtask_s(js_env_t *env, js_task_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
+
+  static void
+  on_run(void *data) {
+    auto task = static_cast<js_microtask_t *>(data);
+
+    task->cb(task->env, task->data);
+
+    delete task;
+  }
 };
 
 namespace {
@@ -7518,6 +7539,34 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
   if (local.IsEmpty()) return js_error(env);
 
   if (result) *result = js_from_local(local.ToLocalChecked());
+
+  return 0;
+}
+
+extern "C" int
+js_queue_microtask(js_env_t *env, js_value_t *function) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  env->isolate->EnqueueMicrotask(js_to_local<Function>(function));
+
+  if (env->depth == 0) env->run_microtasks();
+
+  return 0;
+}
+
+extern "C" int
+js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto task = new js_microtask_t(env, cb, data);
+
+  env->isolate->EnqueueMicrotask(js_microtask_t::on_run, task);
+
+  if (env->depth == 0) env->run_microtasks();
 
   return 0;
 }
