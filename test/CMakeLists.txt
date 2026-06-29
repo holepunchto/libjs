@@ -222,6 +222,8 @@ list(APPEND tests
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  queue-microtask
+  queue-microtask-with-callback
   reference-unref
   run-module
   run-module-async
