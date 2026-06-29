@@ -68,6 +68,7 @@ list(APPEND tests
   create-function-with-source
   create-int64
   create-module-import-missing
+  create-object-with-prototype
   create-promise-reject
   create-promise-resolve
   create-property-key
@@ -237,6 +238,7 @@ list(APPEND tests
   set-array-elements
   set-named-property
   set-property
+  set-prototype
   symbol-for
   terminate-execution
   threadsafe-function-context-acquire
