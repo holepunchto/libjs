@@ -831,6 +831,18 @@ js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **r
 int
 js_create_object(js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_object_with_prototype(js_env_t *env, js_value_t *prototype, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_object_with_properties(js_env_t *env, js_value_t *prototype, js_value_t *const property_names[], js_value_t *const property_values[], size_t property_count, js_value_t **result);
+
 int
 js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
@@ -1477,6 +1489,9 @@ js_set_array_elements(js_env_t *env, js_value_t *array, const js_value_t *elemen
  */
 int
 js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result);
+
+int
+js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype);
 
 int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
