@@ -7495,7 +7495,7 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
 
 extern "C" int
 js_queue_microtask(js_env_t *env, js_value_t *function) {
-  if (env->is_exception_pending()) return js_error(env);
+  // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
@@ -7508,7 +7508,7 @@ js_queue_microtask(js_env_t *env, js_value_t *function) {
 
 extern "C" int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
-  if (env->is_exception_pending()) return js_error(env);
+  // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 

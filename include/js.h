@@ -1604,12 +1604,16 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
 
 /**
  * Enqueue a JavaScript function to be called on the next microtask checkpoint.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_queue_microtask(js_env_t *env, js_value_t *function);
 
 /**
  * Enqueue a native callback to be called on the next microtask checkpoint.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data);
