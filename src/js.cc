@@ -1495,6 +1495,8 @@ struct js_env_s {
 
   std::multimap<int, js_module_t *> modules;
 
+  std::list<js_script_t *> scripts;
+
   Global<Symbol> default_module_id;
 
   std::list<Global<Promise>> unhandled_promises;
@@ -1535,6 +1537,7 @@ struct js_env_s {
         tag(),
         exception(),
         modules(),
+        scripts(),
         default_module_id(),
         unhandled_promises(),
         teardown_queue(),
@@ -1632,8 +1635,6 @@ struct js_env_s {
 
       context.Get(isolate)->Exit();
       context.Reset();
-
-      isolate->Exit();
     }
 
     isolate->Dispose();
@@ -3643,20 +3644,23 @@ namespace {
 // this order) and `js_rebind_from_snapshot` (which reads it back). The metadata
 // array and the wrapper symbol occupy fixed slots; each serialized module record
 // follows in iteration order, so module `i` lands at `js_snapshot_data_modules
-// + i`.
+// + i`. Each prepared script's `UnboundScript` follows the modules, so script
+// `j` lands at `js_snapshot_data_modules + module_count + j`; the consumer
+// recovers `module_count` from the length of the module id list.
 enum {
   js_snapshot_data_metadata = 0,
   js_snapshot_data_wrapper = 1,
   js_snapshot_data_modules = 2,
 };
 
-// Metadata array layout: the manifests and id list `js_rebind_from_snapshot`
+// Metadata array layout: the manifests and id lists `js_rebind_from_snapshot`
 // replays, indexed within the metadata array stored at
 // `js_snapshot_data_metadata`.
 enum {
   js_snapshot_metadata_functions = 0,
   js_snapshot_metadata_wraps = 1,
   js_snapshot_metadata_module_ids = 2,
+  js_snapshot_metadata_script_ids = 3,
 };
 
 // Asks each handler, in order, to claim a reconstructed binding - described by
@@ -3918,6 +3922,41 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
 
     env->modules.emplace(module->GetIdentityHash(), record);
   }
+
+  // Prepared scripts: rebuild a `js_script_t` for each serialized `UnboundScript`,
+  // paired by index with its id symbol. A prepared script carries no callbacks
+  // and no per-instance `data`, so there is nothing to rebind; the embedder
+  // reconnects its handles to the records by id via `js_get_script_by_id`. The
+  // records follow the modules in the data slots, so they begin at
+  // `js_snapshot_data_modules + module_count`.
+  auto scripts = metadata->Get(context, js_snapshot_metadata_script_ids).ToLocalChecked().As<Array>();
+
+  auto script_base = js_snapshot_data_modules + modules->Length();
+
+  for (uint32_t j = 0; j < scripts->Length(); j++) {
+    auto id = scripts->Get(context, j).ToLocalChecked().As<Symbol>();
+
+    Local<Data> data;
+    if (!context->GetDataFromSnapshotOnce<Data>(script_base + j).ToLocal(&data)) continue;
+
+    auto script = *reinterpret_cast<Local<UnboundScript> *>(&data);
+
+    // Recover the name from the script's resource name (the same string passed
+    // as the file name at preparation), exactly as modules recover theirs.
+    std::string name;
+
+    auto resource = script->GetScriptName();
+    if (!resource.IsEmpty() && resource->IsString()) {
+      auto string = resource.As<String>();
+      auto length = string->Utf8LengthV2(isolate);
+      name.resize(length);
+      string->WriteUtf8V2(isolate, name.data(), length, String::WriteFlags::kReplaceInvalidUtf8);
+    }
+
+    auto record = new js_script_t(isolate, script, id, std::move(name));
+
+    env->scripts.push_back(record);
+  }
 }
 
 } // namespace
@@ -4167,10 +4206,26 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
       module_records.push_back(record);
     }
 
+    // Script ids: the id symbol of every prepared script, in iteration order.
+    // Each script's compiled `UnboundScript` is added below as snapshot data at
+    // index `js_snapshot_data_modules + module_count + j`, so the consumer pairs
+    // `ids[j]` with the script at the same offset.
+    auto scripts = Array::New(isolate);
+
+    std::vector<Local<UnboundScript>> script_records;
+
+    uint32_t sn = 0;
+
+    for (auto script : env->scripts) {
+      scripts->Set(context, sn++, script->id.Get(isolate)).Check();
+      script_records.push_back(script->script.Get(isolate));
+    }
+
     auto metadata = Array::New(isolate);
     metadata->Set(context, js_snapshot_metadata_functions, functions).Check();
     metadata->Set(context, js_snapshot_metadata_wraps, wraps).Check();
     metadata->Set(context, js_snapshot_metadata_module_ids, modules).Check();
+    metadata->Set(context, js_snapshot_metadata_script_ids, scripts).Check();
 
     // The wrapper symbol is a `Private`, not a `Value`, so it rides its own data
     // slot rather than the metadata array.
@@ -4191,6 +4246,11 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
     for (size_t i = 0; i < module_records.size(); i++) {
       auto module_index = creator->AddData(context, module_records[i]);
       assert(module_index == size_t(js_snapshot_data_modules) + i);
+    }
+
+    for (size_t j = 0; j < script_records.size(); j++) {
+      auto script_index = creator->AddData(context, script_records[j]);
+      assert(script_index == size_t(js_snapshot_data_modules) + module_records.size() + j);
     }
   }
 
@@ -4217,6 +4277,11 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
   for (auto &entry : env->modules) {
     entry.second->module.Reset();
     entry.second->id.Reset();
+  }
+
+  for (auto script : env->scripts) {
+    script->script.Reset();
+    script->id.Reset();
   }
 
   // Must run outside any handle scope.
@@ -4500,6 +4565,10 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
 
   auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, std::move(script_name));
 
+  // Track the script so the snapshot producer can serialize its compiled record
+  // and reset its global handles before `CreateBlob()`.
+  env->scripts.push_back(script);
+
   *result = script;
 
   return 0;
@@ -4534,6 +4603,8 @@ js_delete_script(js_env_t *env, js_script_t *script) {
 
   js_env_scope_t env_scope(env);
 
+  env->scripts.remove(script);
+
   delete script;
 
   return 0;
@@ -4557,6 +4628,28 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result) {
   *result = js_from_local(script->id.Get(env->isolate));
 
   return 0;
+}
+
+extern "C" int
+js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  int err;
+
+  auto symbol = js_to_local<Symbol>(id);
+
+  for (auto script : env->scripts) {
+    if (script->id.Get(env->isolate) == symbol) {
+      *result = script;
+
+      return 0;
+    }
+  }
+
+  err = js_throw_error(env, NULL, "Could not find script");
+  assert(err == 0);
+
+  return js_error(env);
 }
 
 extern "C" int

@@ -765,6 +765,14 @@ js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
 int
 js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
 
+/**
+ * Look up a prepared script reconstructed from a snapshot by its `id` and return
+ * its handle. A prepared script carries no callbacks or per-instance state, so
+ * nothing needs to be re-supplied after restore.
+ */
+int
+js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result);
+
 int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
 
