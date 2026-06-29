@@ -69,6 +69,7 @@ list(APPEND tests
   create-int64
   create-module-import-missing
   create-object-with-prototype
+  create-object-with-properties
   create-promise-reject
   create-promise-resolve
   create-property-key
