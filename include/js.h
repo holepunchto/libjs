@@ -180,6 +180,7 @@ typedef void (*js_uncaught_exception_cb)(js_env_t *, js_value_t *error, void *da
 typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_value_t *promise, void *data);
 typedef js_value_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data);
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
+typedef void (*js_task_cb)(js_env_t *, void *data);
 typedef void (*js_teardown_cb)(void *data);
 typedef void (*js_deferred_teardown_cb)(js_deferred_teardown_t *, void *data);
 typedef void (*js_inspector_message_cb)(js_env_t *, js_inspector_t *, const char *message, size_t len, void *data);
@@ -992,6 +993,18 @@ js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **r
 int
 js_create_object(js_env_t *env, js_value_t **result);
 
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_object_with_prototype(js_env_t *env, js_value_t *prototype, js_value_t **result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_object_with_properties(js_env_t *env, js_value_t *prototype, js_value_t *const property_names[], js_value_t *const property_values[], size_t property_count, js_value_t **result);
+
 int
 js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
@@ -1640,6 +1653,9 @@ int
 js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result);
 
 int
+js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype);
+
+int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
 
 int
@@ -1762,6 +1778,22 @@ js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size
  */
 int
 js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
+
+/**
+ * Enqueue a JavaScript function to be called on the next microtask checkpoint.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_queue_microtask(js_env_t *env, js_value_t *function);
+
+/**
+ * Enqueue a native callback to be called on the next microtask checkpoint.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data);
 
 int
 js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result);

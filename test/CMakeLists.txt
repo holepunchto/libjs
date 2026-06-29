@@ -43,6 +43,9 @@ list(APPEND tests
   create-delegate-set-throw
   create-env
   create-env-multiple
+  create-env-multiple-concurrent
+  create-env-multiple-isolated
+  create-env-multiple-microtask
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
@@ -65,6 +68,8 @@ list(APPEND tests
   create-function-with-source
   create-int64
   create-module-import-missing
+  create-object-with-prototype
+  create-object-with-properties
   create-promise-reject
   create-promise-resolve
   create-property-key
@@ -221,6 +226,8 @@ list(APPEND tests
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  queue-microtask
+  queue-microtask-with-callback
   reference-unref
   run-from-snapshot
   run-from-snapshot-delegate
@@ -243,6 +250,7 @@ list(APPEND tests
   set-array-elements
   set-named-property
   set-property
+  set-prototype
   symbol-for
   terminate-execution
   threadsafe-function-context-acquire
