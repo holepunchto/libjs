@@ -136,6 +136,7 @@ list(APPEND tests
   dynamic-import-without-handler
   escapable-handle-scope
   fatal-exception
+  freeze
   garbage-collection-tracking
   get-array-elements
   get-arraybuffer-info
@@ -239,6 +240,7 @@ list(APPEND tests
   run-script-ignore-return
   run-script-in-context
   run-script-throw
+  seal
   set-array-elements
   set-named-property
   set-property

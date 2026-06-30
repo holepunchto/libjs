@@ -6821,6 +6821,48 @@ js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype) {
 }
 
 extern "C" int
+js_seal(js_env_t *env, js_value_t *object) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_env_scope_t env_scope(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->SetIntegrityLevel(context, IntegrityLevel::kSealed);
+    }
+  );
+
+  if (success.IsNothing()) return js_error(env);
+
+  return 0;
+}
+
+extern "C" int
+js_freeze(js_env_t *env, js_value_t *object) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_env_scope_t env_scope(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
+    }
+  );
+
+  if (success.IsNothing()) return js_error(env);
+
+  return 0;
+}
+
+extern "C" int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
