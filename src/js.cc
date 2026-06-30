@@ -1629,32 +1629,35 @@ struct js_env_s {
   run_microtasks() {
     if (isolate->IsExecutionTerminating()) return;
 
+    depth++;
+
     isolate->PerformMicrotaskCheckpoint();
 
-    if (callbacks.unhandled_rejection == nullptr) {
-      return unhandled_promises.clear();
+    if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
+    else {
+      while (!unhandled_promises.empty()) {
+        auto promise = std::move(unhandled_promises.front());
+
+        unhandled_promises.pop_front();
+
+        auto scope = HandleScope(isolate);
+
+        auto local = promise.Get(isolate);
+
+        callbacks.unhandled_rejection(
+          this,
+          js_from_local(local->Result()),
+          js_from_local(local),
+          callbacks.unhandled_rejection_data
+        );
+
+        if (isolate->IsExecutionTerminating()) break;
+
+        isolate->PerformMicrotaskCheckpoint();
+      }
     }
 
-    while (!unhandled_promises.empty()) {
-      auto promise = std::move(unhandled_promises.front());
-
-      unhandled_promises.pop_front();
-
-      auto scope = HandleScope(isolate);
-
-      auto local = promise.Get(isolate);
-
-      callbacks.unhandled_rejection(
-        this,
-        js_from_local(local->Result()),
-        js_from_local(local),
-        callbacks.unhandled_rejection_data
-      );
-
-      if (isolate->IsExecutionTerminating()) return;
-
-      isolate->PerformMicrotaskCheckpoint();
-    }
+    depth--;
   }
 
   void
