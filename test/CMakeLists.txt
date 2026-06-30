@@ -138,6 +138,7 @@ list(APPEND tests
   escapable-handle-scope
   external-references
   fatal-exception
+  freeze
   garbage-collection-tracking
   get-array-elements
   get-arraybuffer-info
@@ -223,6 +224,7 @@ list(APPEND tests
   prepare-script-syntax-error
   prepare-script-throw
   promise-rejection
+  promise-rejection-handled-reentrant-deferred
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
@@ -248,6 +250,7 @@ list(APPEND tests
   run-script-ignore-return
   run-script-in-context
   run-script-throw
+  seal
   set-array-elements
   set-named-property
   set-property

@@ -1724,32 +1724,35 @@ struct js_env_s {
   run_microtasks() {
     if (isolate->IsExecutionTerminating()) return;
 
+    depth++;
+
     isolate->PerformMicrotaskCheckpoint();
 
-    if (callbacks.unhandled_rejection == nullptr) {
-      return unhandled_promises.clear();
+    if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
+    else {
+      while (!unhandled_promises.empty()) {
+        auto promise = std::move(unhandled_promises.front());
+
+        unhandled_promises.pop_front();
+
+        auto scope = HandleScope(isolate);
+
+        auto local = promise.Get(isolate);
+
+        callbacks.unhandled_rejection(
+          this,
+          js_from_local(local->Result()),
+          js_from_local(local),
+          callbacks.unhandled_rejection_data
+        );
+
+        if (isolate->IsExecutionTerminating()) break;
+
+        isolate->PerformMicrotaskCheckpoint();
+      }
     }
 
-    while (!unhandled_promises.empty()) {
-      auto promise = std::move(unhandled_promises.front());
-
-      unhandled_promises.pop_front();
-
-      auto scope = HandleScope(isolate);
-
-      auto local = promise.Get(isolate);
-
-      callbacks.unhandled_rejection(
-        this,
-        js_from_local(local->Result()),
-        js_from_local(local),
-        callbacks.unhandled_rejection_data
-      );
-
-      if (isolate->IsExecutionTerminating()) return;
-
-      isolate->PerformMicrotaskCheckpoint();
-    }
+    depth--;
   }
 
   void
@@ -7697,6 +7700,48 @@ js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype) {
   auto success = env->call_into_javascript<bool>(
     [&] {
       return local->SetPrototypeV2(context, js_to_local(prototype));
+    }
+  );
+
+  if (success.IsNothing()) return js_error(env);
+
+  return 0;
+}
+
+extern "C" int
+js_seal(js_env_t *env, js_value_t *object) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_env_scope_t env_scope(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->SetIntegrityLevel(context, IntegrityLevel::kSealed);
+    }
+  );
+
+  if (success.IsNothing()) return js_error(env);
+
+  return 0;
+}
+
+extern "C" int
+js_freeze(js_env_t *env, js_value_t *object) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  js_env_scope_t env_scope(env);
+
+  auto context = env->current_context();
+
+  auto local = js_to_local<Object>(object);
+
+  auto success = env->call_into_javascript<bool>(
+    [&] {
+      return local->SetIntegrityLevel(context, IntegrityLevel::kFrozen);
     }
   );
 

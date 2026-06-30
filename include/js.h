@@ -1664,6 +1664,12 @@ int
 js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype);
 
 int
+js_seal(js_env_t *env, js_value_t *object);
+
+int
+js_freeze(js_env_t *env, js_value_t *object);
+
+int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
 
 int
