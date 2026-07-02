@@ -1795,10 +1795,6 @@ struct js_env_s {
     auto env = js_env_t::from(isolate);
 
     switch (message.GetEvent()) {
-    case kPromiseRejectAfterResolved:
-    case kPromiseResolveAfterResolved:
-      return;
-
     case kPromiseRejectWithNoHandler:
       env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
       break;
@@ -1813,6 +1809,10 @@ struct js_env_s {
           break;
         }
       }
+      break;
+
+    default:
+      return;
     }
   }
 
