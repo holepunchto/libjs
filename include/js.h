@@ -576,6 +576,34 @@ int
 js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_script_t **result);
 
 /**
+ * As `js_prepare_script()`, but with a code cache previously produced by
+ * `js_create_script_code_cache()` supplied up front. If the cache is accepted
+ * the engine grafts the cached bytecode onto a freshly minted identifier and
+ * skips the parse and compile step; if it is rejected the engine silently
+ * recompiles from `source`, so a rejected cache is a missed optimization, never
+ * a failure.
+ *
+ * The `source` text and origin must still be supplied, as the engine validates
+ * the cache against them. On return, `*cache_rejected` reports whether the cache
+ * was usable; it may be `NULL` if the caller does not care.
+ */
+int
+js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_script_t **result);
+
+/**
+ * Extract the compiled bytecode of a script prepared with `js_prepare_script()`
+ * as a code cache. On success, `*data` is a newly allocated buffer of `*len`
+ * bytes owned by the caller, to be released with `free()`. The bytes may be
+ * persisted (e.g. to disk) and later handed back to
+ * `js_prepare_script_with_code_cache()` to skip recompilation.
+ *
+ * The code cache stores compiled bytecode only; the script's identifier is not
+ * part of the cache and is re-minted on the consume side.
+ */
+int
+js_create_script_code_cache(js_env_t *env, js_script_t *script, void **data, size_t *len);
+
+/**
  * Run a script previously compiled with `js_prepare_script()`. The script may
  * be run more than once and in any context entered when it is run.
  */
@@ -613,6 +641,29 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
 
 int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
+
+/**
+ * As `js_create_module()`, but with a code cache previously produced by
+ * `js_create_module_code_cache()` supplied up front. Behaves exactly as
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
+ * validated against `source` and the origin, and `*cache_rejected` reports
+ * whether it was usable (`NULL` if the caller does not care).
+ */
+int
+js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_module_meta_cb cb, void *data, js_module_t **result);
+
+/**
+ * Extract the compiled bytecode of a source-text module created with
+ * `js_create_module()` as a code cache. On success, `*data` is a newly
+ * allocated buffer of `*len` bytes owned by the caller, to be released with
+ * `free()`.
+ *
+ * The module must be unevaluated: produce the cache after `js_create_module()`
+ * (or after `js_instantiate_module()`) but before `js_run_module()`. Synthetic
+ * modules have no source and are not supported.
+ */
+int
+js_create_module_code_cache(js_env_t *env, js_module_t *module, void **data, size_t *len);
 
 int
 js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result);
@@ -846,6 +897,42 @@ js_create_object_with_properties(js_env_t *env, js_value_t *prototype, js_value_
 int
 js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
+/**
+ * Compile a function from source text, binding the given argument names, and
+ * return the resulting callable. Like `js_prepare_script()`, the function
+ * carries a unique identifier of its own, allowing dynamic `import()` calls it
+ * initiates to be attributed to it specifically.
+ */
+int
+js_compile_function(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
+
+/**
+ * As `js_compile_function()`, but with a code cache previously produced by
+ * `js_create_function_code_cache()` supplied up front. Behaves exactly as
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
+ * validated against `source` and the origin, and `*cache_rejected` reports
+ * whether it was usable (`NULL` if the caller does not care). On a rejected
+ * cache the engine silently recompiles from `source`.
+ */
+int
+js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_value_t **result);
+
+/**
+ * Extract the compiled bytecode of a function compiled with
+ * `js_compile_function()` as a code cache. On success, `*data` is a newly
+ * allocated buffer of `*len` bytes owned by the caller, to be released with
+ * `free()`. The bytes may be persisted and later handed back to
+ * `js_compile_function_with_code_cache()` to skip recompilation.
+ *
+ * Only a function returned by `js_compile_function()` carries the serializable
+ * compiled form; passing any other function is an error. The code cache stores
+ * compiled bytecode only; the function's identifier is not part of the cache
+ * and is re-minted on the consume side.
+ */
+int
+js_create_function_code_cache(js_env_t *env, js_value_t *function, void **data, size_t *len);
+
+/** @deprecated */
 int
 js_create_function_with_source(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
 
@@ -853,10 +940,10 @@ int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result);
 
 /**
- * Get the unique identifier of a function compiled with
- * `js_create_function_with_source()`. The identifier is a `Symbol` owned by the
- * engine that is stable for the lifetime of the function and matches the `id`
- * passed to the dynamic `import()` callback when the function is the referrer.
+ * Get the unique identifier of a function compiled with `js_compile_function()`.
+ * The identifier is a `Symbol` owned by the engine that is stable for the
+ * lifetime of the function and matches the `id` passed to the dynamic `import()`
+ * callback when the function is the referrer.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */

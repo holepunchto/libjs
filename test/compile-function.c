@@ -33,7 +33,7 @@ main() {
   assert(e == 0);
 
   js_value_t *fn;
-  e = js_create_function_with_source(env, "hello", -1, "test.js", -1, args, 1, 0, source, &fn);
+  e = js_compile_function(env, "hello", -1, "test.js", -1, args, 1, 0, source, &fn);
   assert(e == 0);
 
   js_value_t *global;
