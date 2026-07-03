@@ -1890,10 +1890,6 @@ struct js_env_s {
     auto env = js_env_t::from(isolate);
 
     switch (message.GetEvent()) {
-    case kPromiseRejectAfterResolved:
-    case kPromiseResolveAfterResolved:
-      return;
-
     case kPromiseRejectWithNoHandler:
       env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
       break;
@@ -1908,6 +1904,10 @@ struct js_env_s {
           break;
         }
       }
+      break;
+
+    default:
+      return;
     }
   }
 
@@ -2447,14 +2447,14 @@ struct js_typed_callback_s : js_callback_t {
   CTypeInfo result;
   std::vector<CTypeInfo> args;
   CFunctionInfo type;
-  const void *address;
+  CFunction function;
 
   js_typed_callback_s(js_env_t *env, js_function_cb cb, void *data, CTypeInfo result, std::vector<CTypeInfo> args, const void *address, CFunctionInfo::Int64Representation integer_representation)
       : js_callback_t(env, cb, data),
         result(std::move(result)),
         args(std::move(args)),
         type(this->result, uint16_t(this->args.size()), this->args.data(), integer_representation),
-        address(address) {}
+        function(address, &this->type) {}
 
   js_typed_callback_s(const js_typed_callback_s &) = delete;
 
@@ -2463,8 +2463,6 @@ struct js_typed_callback_s : js_callback_t {
 
   Local<FunctionTemplate>
   to_function_template(Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
-    auto function = CFunction(address, &type);
-
     return FunctionTemplate::New(
       isolate,
       on_call,
