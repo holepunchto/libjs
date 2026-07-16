@@ -25,6 +25,9 @@ list(APPEND tests
   coerce-symbol-to-string
   coerce-to-boolean
   coerce-to-object
+  compile-function
+  compile-function-with-code-cache
+  compile-function-with-code-cache-rejected
   create-arraybuffer
   create-arraybuffer-too-large
   create-arraybuffer-with-backing-store
@@ -65,9 +68,10 @@ list(APPEND tests
   create-function-throw
   create-function-throw-indirect
   create-function-with-finalizer
-  create-function-with-source
   create-int64
   create-module-import-missing
+  create-module-with-code-cache
+  create-module-with-code-cache-rejected
   create-object-with-prototype
   create-object-with-properties
   create-promise-reject
@@ -91,6 +95,7 @@ list(APPEND tests
   create-string-utf8
   create-string-utf8-with-null
   create-string-utf16le
+  create-synthetic-module-code-cache
   create-threadsafe-function
   create-threadsafe-function-with-callback
   create-threadsafe-function-with-context
@@ -221,6 +226,8 @@ list(APPEND tests
   prepare-script-run-multiple
   prepare-script-syntax-error
   prepare-script-throw
+  prepare-script-with-code-cache
+  prepare-script-with-code-cache-rejected
   promise-rejection
   promise-rejection-handled-reentrant-deferred
   promise-rejection-unhandled

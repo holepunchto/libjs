@@ -3691,6 +3691,11 @@ js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_
 
 extern "C" int
 js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_script_t **result) {
+  return js_prepare_script_with_code_cache(env, file, len, offset, source, nullptr, 0, nullptr, result);
+}
+
+extern "C" int
+js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_script_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
   js_env_scope_t env_scope(env);
@@ -3700,7 +3705,9 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
   if (string.IsEmpty()) return js_error(env);
 
   // Mint a unique identifier for the script and stamp it into the host-defined
-  // options so it can be recovered as the referrer of any dynamic import().
+  // options so it can be recovered as the referrer of any dynamic import(). The
+  // identifier is embedder state, not part of any code cache, so it is minted
+  // afresh on every load whether or not the compile is served from a cache.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
@@ -3721,18 +3728,45 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
     host_defined_options
   );
 
-  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
+  // If the caller supplied a code cache, hand it to the engine as a consume
+  // hint. Ownership of the `CachedData` wrapper transfers to the `Source`, but
+  // the underlying buffer stays owned by the caller (`BufferNotOwned`).
+
+  ScriptCompiler::CachedData *cached = nullptr;
+
+  if (cached_data) {
+    cached = new ScriptCompiler::CachedData(
+      static_cast<const uint8_t *>(cached_data),
+      static_cast<int>(cached_data_len),
+      ScriptCompiler::CachedData::BufferNotOwned
+    );
+  }
+
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin, cached);
+
+  auto options = cached
+                   ? ScriptCompiler::kConsumeCodeCache
+                   : ScriptCompiler::kNoCompileOptions;
 
   // Compile to a context-independent script so the handle can be run in any
   // context entered when it is later run.
 
   auto compiled = env->try_catch<UnboundScript>(
     [&] {
-      return ScriptCompiler::CompileUnboundScript(env->isolate, &compiler_source);
+      return ScriptCompiler::CompileUnboundScript(env->isolate, &compiler_source, options);
     }
   );
 
   if (compiled.IsEmpty()) return js_error(env);
+
+  // A code cache is a hint, never correctness: on any mismatch the engine
+  // silently recompiles from source, so report the rejection but do not fail.
+
+  if (cache_rejected) {
+    auto data = compiler_source.GetCachedData();
+
+    *cache_rejected = data == nullptr ? false : data->rejected;
+  }
 
   std::string script_name;
 
@@ -3745,6 +3779,42 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
   auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, std::move(script_name));
 
   *result = script;
+
+  return 0;
+}
+
+extern "C" int
+js_create_script_code_cache(js_env_t *env, js_script_t *script, void **data, size_t *len) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto unbound = script->script.Get(env->isolate);
+
+  // The cache holds compiled bytecode only; the script's identifier is embedder
+  // state and is not serialized.
+
+  auto cached = ScriptCompiler::CreateCodeCache(unbound);
+
+  if (cached == nullptr) {
+    err = js_throw_error(env, NULL, "Failed to create code cache");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto length = static_cast<size_t>(cached->length);
+
+  auto buffer = malloc(length);
+
+  memcpy(buffer, cached->data, length);
+
+  *data = buffer;
+  *len = length;
+
+  delete cached;
 
   return 0;
 }
@@ -3805,6 +3875,11 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result) {
 
 extern "C" int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
+  return js_create_module_with_code_cache(env, name, len, offset, source, nullptr, 0, nullptr, cb, data, result);
+}
+
+extern "C" int
+js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_module_meta_cb cb, void *data, js_module_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
   js_env_scope_t env_scope(env);
@@ -3814,7 +3889,9 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
   if (string.IsEmpty()) return js_error(env);
 
   // Mint a unique identifier for the module and stamp it into the host-defined
-  // options so it can be recovered as the referrer of any dynamic import().
+  // options so it can be recovered as the referrer of any dynamic import(). The
+  // identifier is embedder state, not part of any code cache, so it is minted
+  // afresh on every load whether or not the compile is served from a cache.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
@@ -3835,15 +3912,42 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
     host_defined_options
   );
 
-  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
+  // If the caller supplied a code cache, hand it to the engine as a consume
+  // hint. Ownership of the `CachedData` wrapper transfers to the `Source`, but
+  // the underlying buffer stays owned by the caller (`BufferNotOwned`).
+
+  ScriptCompiler::CachedData *cached = nullptr;
+
+  if (cached_data) {
+    cached = new ScriptCompiler::CachedData(
+      static_cast<const uint8_t *>(cached_data),
+      static_cast<int>(cached_data_len),
+      ScriptCompiler::CachedData::BufferNotOwned
+    );
+  }
+
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin, cached);
+
+  auto options = cached
+                   ? ScriptCompiler::kConsumeCodeCache
+                   : ScriptCompiler::kNoCompileOptions;
 
   auto compiled = env->try_catch<Module>(
     [&] {
-      return ScriptCompiler::CompileModule(env->isolate, &compiler_source);
+      return ScriptCompiler::CompileModule(env->isolate, &compiler_source, options);
     }
   );
 
   if (compiled.IsEmpty()) return js_error(env);
+
+  // A code cache is a hint, never correctness: on any mismatch the engine
+  // silently recompiles from source, so report the rejection but do not fail.
+
+  if (cache_rejected) {
+    auto cache = compiler_source.GetCachedData();
+
+    *cache_rejected = cache == nullptr ? false : cache->rejected;
+  }
 
   auto local = compiled.ToLocalChecked();
 
@@ -3863,6 +3967,63 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
   env->modules.emplace(local->GetIdentityHash(), module);
 
   *result = module;
+
+  return 0;
+}
+
+extern "C" int
+js_create_module_code_cache(js_env_t *env, js_module_t *module, void **data, size_t *len) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto local = module->module.Get(env->isolate);
+
+  // Synthetic modules have no source and so cannot be serialized.
+
+  if (!local->IsSourceTextModule()) {
+    err = js_throw_error(env, NULL, "Cannot create a code cache for a synthetic module");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  // The unbound module script is only available while the module is unevaluated,
+  // i.e. its status is not kEvaluating, kEvaluated or kErrored.
+
+  if (local->GetStatus() >= Module::kEvaluating) {
+    err = js_throw_error(env, NULL, "Cannot create a code cache for an evaluated module");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto unbound = local->GetUnboundModuleScript();
+
+  // The cache holds compiled bytecode only; the module's identifier is embedder
+  // state and is not serialized.
+
+  auto cached = ScriptCompiler::CreateCodeCache(unbound);
+
+  if (cached == nullptr) {
+    err = js_throw_error(env, NULL, "Failed to create code cache");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto length = static_cast<size_t>(cached->length);
+
+  auto buffer = malloc(length);
+
+  memcpy(buffer, cached->data, length);
+
+  *data = buffer;
+  *len = length;
+
+  delete cached;
 
   return 0;
 }
@@ -4904,7 +5065,12 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
 }
 
 extern "C" int
-js_create_function_with_source(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
+js_compile_function(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
+  return js_compile_function_with_code_cache(env, name, name_len, file, file_len, args, args_len, offset, source, nullptr, 0, nullptr, result);
+}
+
+extern "C" int
+js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_value_t **result) {
   if (env->is_exception_pending()) return js_error(env);
 
   js_env_scope_t env_scope(env);
@@ -4917,7 +5083,9 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
 
   // Mint a unique identifier for the function and stamp it into the
   // host-defined options so it can be recovered as the referrer of any dynamic
-  // import().
+  // import(). The identifier is embedder state, not part of any code cache, so
+  // it is minted afresh on every load whether or not the compile is served from
+  // a cache.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
@@ -4938,7 +5106,25 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
     host_defined_options
   );
 
-  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin);
+  // If the caller supplied a code cache, hand it to the engine as a consume
+  // hint. Ownership of the `CachedData` wrapper transfers to the `Source`, but
+  // the underlying buffer stays owned by the caller (`BufferNotOwned`).
+
+  ScriptCompiler::CachedData *cached = nullptr;
+
+  if (cached_data) {
+    cached = new ScriptCompiler::CachedData(
+      static_cast<const uint8_t *>(cached_data),
+      static_cast<int>(cached_data_len),
+      ScriptCompiler::CachedData::BufferNotOwned
+    );
+  }
+
+  auto compiler_source = ScriptCompiler::Source(js_to_local<String>(source), origin, cached);
+
+  auto options = cached
+                   ? ScriptCompiler::kConsumeCodeCache
+                   : ScriptCompiler::kNoCompileOptions;
 
   auto function = env->try_catch<Function>(
     [&] {
@@ -4946,12 +5132,24 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
         context,
         &compiler_source,
         args_len,
-        const_cast<Local<String> *>(reinterpret_cast<const Local<String> *>(args))
+        const_cast<Local<String> *>(reinterpret_cast<const Local<String> *>(args)),
+        0,
+        nullptr,
+        options
       );
     }
   );
 
   if (function.IsEmpty()) return js_error(env);
+
+  // A code cache is a hint, never correctness: on any mismatch the engine
+  // silently recompiles from source, so report the rejection but do not fail.
+
+  if (cache_rejected) {
+    auto data = compiler_source.GetCachedData();
+
+    *cache_rejected = data == nullptr ? false : data->rejected;
+  }
 
   auto local = function.ToLocalChecked();
 
@@ -4966,6 +5164,47 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
   *result = js_from_local(local);
 
   return 0;
+}
+
+extern "C" int
+js_create_function_code_cache(js_env_t *env, js_value_t *function, void **data, size_t *len) {
+  if (env->is_exception_pending()) return js_error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local<Function>(function);
+
+  // The cache holds compiled bytecode only; the function's identifier is
+  // embedder state and is not serialized.
+
+  auto cached = ScriptCompiler::CreateCodeCacheForFunction(local);
+
+  if (cached == nullptr) {
+    err = js_throw_error(env, NULL, "Failed to create code cache");
+    assert(err == 0);
+
+    return js_error(env);
+  }
+
+  auto length = static_cast<size_t>(cached->length);
+
+  auto buffer = malloc(length);
+
+  memcpy(buffer, cached->data, length);
+
+  *data = buffer;
+  *len = length;
+
+  delete cached;
+
+  return 0;
+}
+
+extern "C" int
+js_create_function_with_source(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result) {
+  return js_compile_function(env, name, name_len, file, file_len, args, args_len, offset, source, result);
 }
 
 namespace {
