@@ -59,6 +59,11 @@ typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
 
+// Delivers any inspector protocol messages that were queued while it was unsafe
+// to re-enter JavaScript.
+static void
+js__flush_inspector(js_env_t *env);
+
 typedef enum {
   js_task_nestable,
   js_task_non_nestable,
@@ -1675,6 +1680,11 @@ struct js_env_s {
 
       tasks->depth--;
     }
+
+    // Deliver any inspector messages that were queued while a task ran (e.g.
+    // heap snapshot progress and chunk notifications emitted during snapshot
+    // generation). We are now at a safe point to re-enter JavaScript.
+    js__flush_inspector(this);
   }
 
   bool
@@ -3012,12 +3022,34 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
       : env(env),
         inspector(inspector),
         cb(),
-        data() {}
+        data(),
+        pending() {}
 
   js_inspector_channel_s(const js_inspector_channel_s &) = delete;
 
   js_inspector_channel_s &
   operator=(const js_inspector_channel_s &) = delete;
+
+  void
+  flush() {
+    auto cb = this->cb;
+
+    if (cb == nullptr) {
+      pending.clear();
+      return;
+    }
+
+    auto env = this->env;
+    auto inspector = this->inspector;
+    auto data = this->data;
+
+    auto batch = std::move(pending);
+    pending.clear();
+
+    for (auto &message : batch) {
+      cb(env, inspector, reinterpret_cast<char *>(message.data()), message.size() - 1, data);
+    }
+  }
 
 private: // V8 embedder API
   void
@@ -3040,7 +3072,8 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+    // Queue the message in order and let `js__flush_inspector()` deliver it from a safe point.
+    pending.push_back(std::move(utf8));
   }
 
   void
@@ -3055,6 +3088,9 @@ private: // V8 embedder API
 
   void
   flushProtocolNotifications() override {}
+
+private:
+  std::deque<std::vector<utf8_t>> pending;
 };
 
 struct js_inspector_client_s : public V8InspectorClient {
@@ -3177,6 +3213,8 @@ struct js_inspector_s {
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
+
+    channel.flush();
   }
 };
 
@@ -3185,6 +3223,24 @@ js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
 
   return session->cb(session->env, session, session->data);
+}
+
+static void
+js__flush_inspector(js_env_t *env) {
+  if (env->inspector == nullptr) return;
+
+  auto sessions = std::vector<js_inspector_t *>(
+    env->inspector->sessions.begin(),
+    env->inspector->sessions.end()
+  );
+
+  for (auto session : sessions) {
+    auto &live = env->inspector->sessions;
+
+    if (std::find(live.begin(), live.end(), session) == live.end()) continue;
+
+    session->channel.flush();
+  }
 }
 
 struct js_garbage_collection_tracking_s {
