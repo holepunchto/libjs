@@ -7,14 +7,6 @@
 
 #include "../include/js.h"
 
-// Regression test for a crash when taking a heap snapshot with progress
-// reporting enabled. `HeapProfiler.takeHeapSnapshot` with `reportProgress: true`
-// causes V8 to emit `HeapProfiler.reportHeapSnapshotProgress` notifications from
-// within snapshot generation, while the stack is being scanned and JavaScript
-// execution is disallowed. If the inspector channel delivers those messages by
-// synchronously re-entering JavaScript (as a real embedder's callback does),
-// the process crashes. The runtime must instead defer delivery to a safe point.
-
 static js_ref_t *fn = NULL;
 
 static int progress_called = 0;
