@@ -179,6 +179,7 @@ list(APPEND tests
   import-meta-throw
   inspector
   inspector-attach-context
+  inspector-heap-snapshot-report-progress
   inspector-multiple-debugger-enable
   inspector-pause
   is-arguments
