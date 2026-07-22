@@ -3030,26 +3030,14 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
   js_inspector_channel_s &
   operator=(const js_inspector_channel_s &) = delete;
 
-  void
-  flush() {
-    auto cb = this->cb;
-
-    if (cb == nullptr) {
-      pending.clear();
-      return;
-    }
-
-    auto env = this->env;
-    auto inspector = this->inspector;
-    auto data = this->data;
-
-    auto batch = std::move(pending);
-    pending.clear();
-
-    for (auto &message : batch) {
-      cb(env, inspector, reinterpret_cast<char *>(message.data()), message.size() - 1, data);
-    }
+  bool
+  has_pending() {
+    return !pending.empty();
   }
+
+  // Defined out of line once `js_inspector_t` is complete.
+  void
+  flush();
 
 private: // V8 embedder API
   void
@@ -3086,6 +3074,8 @@ private: // V8 embedder API
     send(message->string());
   }
 
+  // Intentionally a no-op: V8 may call this from contexts where JavaScript
+  // execution is disallowed, e.g. from within heap snapshot generation.
   void
   flushProtocolNotifications() override {}
 
@@ -3225,17 +3215,61 @@ js_inspector_client_s::on_pause(js_inspector_t *session) {
   return session->cb(session->env, session, session->data);
 }
 
+void
+js_inspector_channel_s::flush() {
+  auto cb = this->cb;
+
+  if (cb == nullptr) {
+    pending.clear();
+    return;
+  }
+
+  auto env = this->env;
+  auto inspector = this->inspector;
+  auto data = this->data;
+
+  // Keep the client alive so the session list remains valid across callbacks.
+  auto client = inspector->client;
+
+  auto batch = std::move(pending);
+  pending.clear();
+
+  for (auto &message : batch) {
+    // Stop if a callback destroyed the session; the remaining messages have no
+    // valid receiver.
+    auto &live = client->sessions;
+
+    if (std::find(live.begin(), live.end(), inspector) == live.end()) return;
+
+    cb(env, inspector, reinterpret_cast<char *>(message.data()), message.size() - 1, data);
+  }
+}
+
 static void
 js__flush_inspector(js_env_t *env) {
   if (env->inspector == nullptr) return;
 
+  // Keep the client alive so the session list remains valid across callbacks.
+  auto client = env->inspector;
+
+  auto any = false;
+
+  for (auto session : client->sessions) {
+    if (session->channel.has_pending()) {
+      any = true;
+      break;
+    }
+  }
+
+  if (!any) return;
+
   auto sessions = std::vector<js_inspector_t *>(
-    env->inspector->sessions.begin(),
-    env->inspector->sessions.end()
+    client->sessions.begin(),
+    client->sessions.end()
   );
 
   for (auto session : sessions) {
-    auto &live = env->inspector->sessions;
+    auto &live = client->sessions;
 
     if (std::find(live.begin(), live.end(), session) == live.end()) continue;
 
