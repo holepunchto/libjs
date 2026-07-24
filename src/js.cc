@@ -59,8 +59,7 @@ typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
 
-// Delivers any inspector protocol messages that were queued while it was unsafe
-// to re-enter JavaScript.
+// Delivers inspector messages queued while re-entering JavaScript was unsafe.
 static void
 js__flush_inspector(js_env_t *env);
 
@@ -1681,9 +1680,8 @@ struct js_env_s {
       tasks->depth--;
     }
 
-    // Deliver any inspector messages that were queued while a task ran (e.g.
-    // heap snapshot progress and chunk notifications emitted during snapshot
-    // generation). We are now at a safe point to re-enter JavaScript.
+    // Between tasks it is safe to re-enter JavaScript, so deliver any inspector
+    // messages queued while a task ran (e.g. heap snapshot progress).
     js__flush_inspector(this);
   }
 
@@ -3035,7 +3033,6 @@ struct js_inspector_channel_s : public V8Inspector::Channel {
     return !pending.empty();
   }
 
-  // Defined out of line once `js_inspector_t` is complete.
   void
   flush();
 
@@ -3060,7 +3057,7 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    // Queue the message in order and let `js__flush_inspector()` deliver it from a safe point.
+    // Queue in order; `js__flush_inspector()` delivers from a safe point.
     pending.push_back(std::move(utf8));
   }
 
@@ -3074,8 +3071,8 @@ private: // V8 embedder API
     send(message->string());
   }
 
-  // Intentionally a no-op: V8 may call this from contexts where JavaScript
-  // execution is disallowed, e.g. from within heap snapshot generation.
+  // No-op on purpose: V8 may call this while re-entering JavaScript is unsafe,
+  // e.g. during heap snapshot generation.
   void
   flushProtocolNotifications() override {}
 
@@ -3228,15 +3225,14 @@ js_inspector_channel_s::flush() {
   auto inspector = this->inspector;
   auto data = this->data;
 
-  // Keep the client alive so the session list remains valid across callbacks.
+  // Hold the client alive: a callback may destroy the last session.
   auto client = inspector->client;
 
   auto batch = std::move(pending);
   pending.clear();
 
   for (auto &message : batch) {
-    // Stop if a callback destroyed the session; the remaining messages have no
-    // valid receiver.
+    // A previous callback may have destroyed the session; don't deliver to it.
     auto &live = client->sessions;
 
     if (std::find(live.begin(), live.end(), inspector) == live.end()) return;
@@ -3249,7 +3245,7 @@ static void
 js__flush_inspector(js_env_t *env) {
   if (env->inspector == nullptr) return;
 
-  // Keep the client alive so the session list remains valid across callbacks.
+  // Hold the client alive: a callback may destroy the last session.
   auto client = env->inspector;
 
   auto any = false;
