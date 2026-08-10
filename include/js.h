@@ -1179,7 +1179,19 @@ js_is_boolean(js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_is_boolean_object(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_is_number(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_number_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -1203,7 +1215,19 @@ js_is_string(js_env_t *env, js_value_t *value, bool *result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
+js_is_string_object(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
 js_is_symbol(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_symbol_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -1270,6 +1294,12 @@ js_is_delegate(js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_bigint(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_bigint_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.

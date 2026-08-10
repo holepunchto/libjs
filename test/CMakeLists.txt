@@ -184,8 +184,10 @@ list(APPEND tests
   is-arguments
   is-array
   is-arraybuffer
+  is-bigint-object
   is-bigint64array
   is-biguint64array
+  is-boolean-object
   is-dataview
   is-date
   is-detached-arraybuffer
@@ -202,12 +204,15 @@ list(APPEND tests
   is-map
   is-map-iterator
   is-module-namespace
+  is-number-object
   is-promise
   is-proxy
   is-regexp
   is-set
   is-set-iterator
   is-sharedarraybuffer
+  is-string-object
+  is-symbol-object
   is-typedarray
   is-uint8array
   is-uint8clampedarray
