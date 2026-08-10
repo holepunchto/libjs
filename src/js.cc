@@ -6141,12 +6141,34 @@ js_is_boolean(js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_boolean_object(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_to_local(value)->IsBooleanObject();
+
+  return 0;
+}
+
+extern "C" int
 js_is_number(js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
   *result = js_to_local(value)->IsNumber();
+
+  return 0;
+}
+
+extern "C" int
+js_is_number_object(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_to_local(value)->IsNumberObject();
 
   return 0;
 }
@@ -6185,12 +6207,34 @@ js_is_string(js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_string_object(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_to_local(value)->IsStringObject();
+
+  return 0;
+}
+
+extern "C" int
 js_is_symbol(js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
   *result = js_to_local(value)->IsSymbol();
+
+  return 0;
+}
+
+extern "C" int
+js_is_symbol_object(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_to_local(value)->IsSymbolObject();
 
   return 0;
 }
@@ -6324,6 +6368,17 @@ js_is_bigint(js_env_t *env, js_value_t *value, bool *result) {
   js_env_scope_t env_scope(env);
 
   *result = js_to_local(value)->IsBigInt();
+
+  return 0;
+}
+
+extern "C" int
+js_is_bigint_object(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_to_local(value)->IsBigIntObject();
 
   return 0;
 }
