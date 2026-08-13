@@ -69,6 +69,49 @@ typedef enum {
   js_bigint = 9,
 } js_value_type_t;
 
+/**
+ * The type of an object, as reported by `js_get_object_type()`. The low byte is
+ * the value type, `js_object`, and the second byte the kind of object, the
+ * kinds being mutually exclusive and declared in order of precedence.
+ *
+ * An object of no particular kind is plain `js_object`. An external is likewise
+ * plain `js_external`, needing no kind of its own.
+ *
+ * The boxed types, `js_boolean_object` through `js_bigint_object`, are the
+ * wrapper objects reported by `js_is_boolean_object()` and its siblings, not
+ * the primitives themselves, which are not objects.
+ *
+ * The set of kinds is open and may be extended, so treat an unrecognized kind
+ * as `js_object`.
+ */
+typedef enum {
+  js_array = 1 << 8 | js_object,
+  js_arguments = 2 << 8 | js_object,
+  js_date = 3 << 8 | js_object,
+  js_regexp = 4 << 8 | js_object,
+  js_error = 5 << 8 | js_object,
+  js_promise = 6 << 8 | js_object,
+  js_proxy = 7 << 8 | js_object,
+  js_generator = 8 << 8 | js_object,
+  js_map = 9 << 8 | js_object,
+  js_set = 10 << 8 | js_object,
+  js_map_iterator = 11 << 8 | js_object,
+  js_set_iterator = 12 << 8 | js_object,
+  js_weak_map = 13 << 8 | js_object,
+  js_weak_set = 14 << 8 | js_object,
+  js_weak_ref = 15 << 8 | js_object,
+  js_arraybuffer = 16 << 8 | js_object,
+  js_sharedarraybuffer = 17 << 8 | js_object,
+  js_typedarray = 18 << 8 | js_object,
+  js_dataview = 19 << 8 | js_object,
+  js_module_namespace = 20 << 8 | js_object,
+  js_boolean_object = 21 << 8 | js_object,
+  js_number_object = 22 << 8 | js_object,
+  js_string_object = 23 << 8 | js_object,
+  js_symbol_object = 24 << 8 | js_object,
+  js_bigint_object = 25 << 8 | js_object,
+} js_object_type_t;
+
 typedef enum {
   js_int8array = 0,
   js_uint8array = 1,
@@ -1480,6 +1523,14 @@ js_is_dataview(js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_module_namespace(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * The behavior is undefined if the value is not an object.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_object_type(js_env_t *env, js_value_t *value, js_object_type_t *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
