@@ -155,6 +155,33 @@ list(APPEND tests
   get-heap-statistics
   get-module-name
   get-new-target
+  get-object-type
+  get-object-type-arguments
+  get-object-type-array
+  get-object-type-arraybuffer
+  get-object-type-bigint-object
+  get-object-type-boolean-object
+  get-object-type-dataview
+  get-object-type-date
+  get-object-type-error
+  get-object-type-external
+  get-object-type-generator
+  get-object-type-map
+  get-object-type-map-iterator
+  get-object-type-module-namespace
+  get-object-type-number-object
+  get-object-type-promise
+  get-object-type-proxy
+  get-object-type-regexp
+  get-object-type-set
+  get-object-type-set-iterator
+  get-object-type-sharedarraybuffer
+  get-object-type-string-object
+  get-object-type-symbol-object
+  get-object-type-typedarray
+  get-object-type-weak-map
+  get-object-type-weak-ref
+  get-object-type-weak-set
   get-platform-identifier
   get-platform-limits
   get-platform-loop
