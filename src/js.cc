@@ -1682,6 +1682,19 @@ struct js_env_s {
     return !exception.IsEmpty();
   }
 
+  bool
+  propagate_exception() {
+    if (exception.IsEmpty()) return false;
+
+    auto error = exception.Get(isolate);
+
+    exception.Reset();
+
+    isolate->ThrowException(error);
+
+    return true;
+  }
+
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
@@ -1757,6 +1770,14 @@ struct js_env_s {
   MaybeLocal<T>
   call_into_javascript(const std::function<MaybeLocal<T>()> &fn, bool always_checkpoint = false) {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
+  }
+
+  template <typename T>
+  T
+  call_into_native(const std::function<T()> &fn) {
+    auto try_catch = TryCatch(isolate);
+
+    return fn();
   }
 
   auto
@@ -2021,30 +2042,26 @@ struct js_module_s {
         .Check();
     }
 
-    auto result = module->callbacks.resolve(
-      env,
-      js_from_local(specifier),
-      js_from_local(assertions),
-      module,
-      module->callbacks.resolve_data
+    auto result = env->call_into_native<js_module_t *>(
+      [&] {
+        return module->callbacks.resolve(
+          env,
+          js_from_local(specifier),
+          js_from_local(assertions),
+          module,
+          module->callbacks.resolve_data
+        );
+      }
     );
 
-    if (env->exception.IsEmpty()) {
-      if (result->callbacks.resolve == nullptr) {
-        result->callbacks.resolve = module->callbacks.resolve;
-        result->callbacks.resolve_data = module->callbacks.resolve_data;
-      }
+    if (env->propagate_exception()) return MaybeLocal<Module>();
 
-      return result->module.Get(env->isolate);
+    if (result->callbacks.resolve == nullptr) {
+      result->callbacks.resolve = module->callbacks.resolve;
+      result->callbacks.resolve_data = module->callbacks.resolve_data;
     }
 
-    auto error = env->exception.Get(env->isolate);
-
-    env->exception.Reset();
-
-    env->isolate->ThrowException(error);
-
-    return MaybeLocal<Module>();
+    return result->module.Get(env->isolate);
   }
 
   static MaybeLocal<Value>
@@ -2053,25 +2070,21 @@ struct js_module_s {
 
     auto module = js_module_t::from_local(context, referrer);
 
-    module->callbacks.evaluate(env, module, module->callbacks.evaluate_data);
+    env->call_into_native<void>(
+      [&] {
+        module->callbacks.evaluate(env, module, module->callbacks.evaluate_data);
+      }
+    );
 
-    if (env->exception.IsEmpty()) {
-      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+    if (env->propagate_exception()) return MaybeLocal<Value>();
 
-      auto success = resolver->Resolve(context, Undefined(env->isolate));
+    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-      success.Check();
+    auto success = resolver->Resolve(context, Undefined(env->isolate));
 
-      return resolver->GetPromise();
-    }
+    success.Check();
 
-    auto error = env->exception.Get(env->isolate);
-
-    env->exception.Reset();
-
-    env->isolate->ThrowException(error);
-
-    return MaybeLocal<Value>();
+    return resolver->GetPromise();
   }
 
   static MaybeLocal<Promise>
@@ -2118,36 +2131,32 @@ struct js_module_s {
 
     if (id.IsEmpty()) id = env->default_module_identifier();
 
-    js_value_t *result = env->callbacks.dynamic_import(
-      env,
-      js_from_local(specifier),
-      js_from_local(assertions),
-      js_from_local(referrer),
-      js_from_local(id),
-      env->callbacks.dynamic_import_data
+    js_value_t *result = env->call_into_native<js_value_t *>(
+      [&] {
+        return env->callbacks.dynamic_import(
+          env,
+          js_from_local(specifier),
+          js_from_local(assertions),
+          js_from_local(referrer),
+          js_from_local(id),
+          env->callbacks.dynamic_import_data
+        );
+      }
     );
 
-    if (env->exception.IsEmpty()) {
-      auto local = js_to_local(result);
+    if (env->propagate_exception()) return MaybeLocal<Promise>();
 
-      if (local->IsPromise()) return local.As<Promise>();
+    auto local = js_to_local(result);
 
-      auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+    if (local->IsPromise()) return local.As<Promise>();
 
-      auto success = resolver->Resolve(context, local);
+    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-      success.Check();
+    auto success = resolver->Resolve(context, local);
 
-      return resolver->GetPromise();
-    }
+    success.Check();
 
-    auto error = env->exception.Get(env->isolate);
-
-    env->exception.Reset();
-
-    env->isolate->ThrowException(error);
-
-    return MaybeLocal<Promise>();
+    return resolver->GetPromise();
   }
 
   static void
@@ -2158,20 +2167,18 @@ struct js_module_s {
 
     if (module->callbacks.meta == nullptr) return;
 
-    module->callbacks.meta(
-      env,
-      module,
-      js_from_local(meta),
-      module->callbacks.meta_data
+    env->call_into_native<void>(
+      [&] {
+        module->callbacks.meta(
+          env,
+          module,
+          js_from_local(meta),
+          module->callbacks.meta_data
+        );
+      }
     );
 
-    if (env->exception.IsEmpty()) return;
-
-    auto error = env->exception.Get(env->isolate);
-
-    env->exception.Reset();
-
-    env->isolate->ThrowException(error);
+    env->propagate_exception();
   }
 };
 
@@ -2290,18 +2297,16 @@ protected:
 
     auto env = callback->env;
 
-    auto result = callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
-
-    if (env->exception.IsEmpty()) {
-      if (result) {
-        info.GetReturnValue().Set(js_to_local(result));
+    auto result = env->call_into_native<js_value_t *>(
+      [&] {
+        return callback->cb(env, reinterpret_cast<js_callback_info_t *>(const_cast<FunctionCallbackInfo<Value> *>(&info)));
       }
-    } else {
-      auto error = env->exception.Get(env->isolate);
+    );
 
-      env->exception.Reset();
+    if (env->propagate_exception()) return;
 
-      env->isolate->ThrowException(error);
+    if (result) {
+      info.GetReturnValue().Set(js_to_local(result));
     }
   }
 
@@ -2451,17 +2456,25 @@ private:
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.has) {
-      auto exists = delegate->callbacks.has(env, js_from_local(property), delegate->data);
+      auto exists = env->call_into_native<bool>(
+        [&] {
+          return delegate->callbacks.has(env, js_from_local(property), delegate->data);
+        }
+      );
 
-      if (env->is_exception_pending()) return Intercepted::kNo;
+      if (env->propagate_exception()) return Intercepted::kNo;
 
       if (!exists) return Intercepted::kYes;
     }
 
     if (delegate->callbacks.get) {
-      auto result = delegate->callbacks.get(env, js_from_local(property), delegate->data);
+      auto result = env->call_into_native<js_value_t *>(
+        [&] {
+          return delegate->callbacks.get(env, js_from_local(property), delegate->data);
+        }
+      );
 
-      if (env->is_exception_pending()) return Intercepted::kNo;
+      if (env->propagate_exception()) return Intercepted::kNo;
 
       if (result) {
         info.GetReturnValue().Set(js_to_local(result));
@@ -2490,9 +2503,13 @@ private:
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.set) {
-      auto result = delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
+      auto result = env->call_into_native<bool>(
+        [&] {
+          return delegate->callbacks.set(env, js_from_local(property), js_from_local(value), delegate->data);
+        }
+      );
 
-      if (env->is_exception_pending()) return Intercepted::kNo;
+      if (env->propagate_exception()) return Intercepted::kNo;
 
       if (result) {
         info.GetReturnValue().Set(true);
@@ -2521,9 +2538,13 @@ private:
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.delete_property) {
-      auto result = delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
+      auto result = env->call_into_native<bool>(
+        [&] {
+          return delegate->callbacks.delete_property(env, js_from_local(property), delegate->data);
+        }
+      );
 
-      if (env->is_exception_pending()) return Intercepted::kNo;
+      if (env->propagate_exception()) return Intercepted::kNo;
 
       if (result) {
         info.GetReturnValue().Set(true);
@@ -2551,9 +2572,13 @@ private:
     auto delegate = static_cast<js_delegate_t *>(info.Data().As<External>()->Value(js_delegate_type_tag));
 
     if (delegate->callbacks.own_keys) {
-      auto result = delegate->callbacks.own_keys(env, delegate->data);
+      auto result = env->call_into_native<js_value_t *>(
+        [&] {
+          return delegate->callbacks.own_keys(env, delegate->data);
+        }
+      );
 
-      if (env->is_exception_pending()) return;
+      if (env->propagate_exception()) return;
 
       if (result) {
         info.GetReturnValue().Set(js_to_local<Array>(result));
@@ -4182,14 +4207,25 @@ extern "C" int
 js_instantiate_module(js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data) {
   if (env->is_exception_pending()) return js__error(env);
 
+  int err;
+
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
+  auto local = module->module.Get(env->isolate);
+
+  auto status = local->GetStatus();
+
+  if (status == Module::Status::kInstantiating || status == Module::Status::kEvaluating) {
+    err = js_throw_error(env, NULL, "Cannot instantiate a module that is already being instantiated or evaluated");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
   module->callbacks.resolve = cb;
   module->callbacks.resolve_data = data;
-
-  auto local = module->module.Get(env->isolate);
 
   auto success = env->call_into_javascript<bool>(
     [&] {
@@ -4206,13 +4242,26 @@ extern "C" int
 js_run_module(js_env_t *env, js_module_t *module, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  int err;
+
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
+  auto module_local = module->module.Get(env->isolate);
+
+  auto status = module_local->GetStatus();
+
+  if (status != Module::Status::kInstantiated && status != Module::Status::kEvaluated && status != Module::Status::kErrored) {
+    err = js_throw_error(env, NULL, status == Module::Status::kEvaluating ? "Cannot run a module that is already evaluating" : "Cannot run an uninstantiated module");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
   auto local = env->call_into_javascript<Value>(
     [&] {
-      return module->module.Get(env->isolate)->Evaluate(context);
+      return module_local->Evaluate(context);
     }
   );
 
@@ -5145,6 +5194,8 @@ extern "C" int
 js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  int err;
+
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
@@ -5212,7 +5263,18 @@ js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name
     }
   );
 
-  if (function.IsEmpty()) return js__error(env);
+  // The engine rejects some argument lists, such as a name that is not an
+  // identifier, without throwing, so supply an error of our own rather than
+  // report a failure that nothing can be recovered from.
+
+  if (function.IsEmpty()) {
+    if (!env->is_exception_pending()) {
+      err = js_throw_error(env, NULL, "Could not compile function");
+      assert(err == 0);
+    }
+
+    return js__error(env);
+  }
 
   // A code cache is a hint, never correctness: on any mismatch the engine
   // silently recompiles from source, so report the rejection but do not fail.

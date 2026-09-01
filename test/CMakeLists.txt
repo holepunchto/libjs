@@ -29,6 +29,7 @@ list(APPEND tests
   coerce-to-boolean
   coerce-to-object
   compile-function
+  compile-function-invalid-argument-name
   compile-function-with-code-cache
   compile-function-with-code-cache-rejected
   create-arraybuffer
@@ -43,6 +44,7 @@ list(APPEND tests
   create-delegate
   create-delegate-delete-throw
   create-delegate-get-throw
+  create-delegate-get-throw-then-clear
   create-delegate-get-without-has
   create-delegate-has-throw
   create-delegate-keys-throw
@@ -70,6 +72,7 @@ list(APPEND tests
   create-function-return-double
   create-function-throw
   create-function-throw-indirect
+  create-function-throw-then-clear
   create-function-with-finalizer
   create-int64
   create-module-import-missing
@@ -210,6 +213,7 @@ list(APPEND tests
   has-property
   import-meta
   import-meta-throw
+  instantiate-module-evaluating
   inspector
   inspector-attach-context
   inspector-multiple-debugger-enable
@@ -278,10 +282,13 @@ list(APPEND tests
   run-module-async
   run-module-cyclic-import
   run-module-double-nested-import
+  run-module-evaluating
   run-module-in-context
   run-module-nested-import
   run-module-relative-import
   run-module-throw
+  run-module-throw-then-clear
+  run-module-uninstantiated
   run-script
   run-script-ignore-return
   run-script-in-context
