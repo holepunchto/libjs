@@ -247,6 +247,7 @@ list(APPEND tests
   run-module-double-nested-import
   run-module-in-context
   run-module-nested-import
+  run-module-relative-import
   run-module-throw
   run-script
   run-script-ignore-return
