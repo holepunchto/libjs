@@ -3219,6 +3219,18 @@ struct js_microtask_s {
 
 namespace {
 
+static inline MaybeLocal<String>
+js__checked_string(js_env_t *env, MaybeLocal<String> string) {
+  int err;
+
+  if (string.IsEmpty() && !env->is_exception_pending()) {
+    err = js_throw_range_error(env, NULL, "Invalid string length");
+    assert(err == 0);
+  }
+
+  return string;
+}
+
 template <int N>
 static inline Local<String>
 js_to_string_utf8_literal(js_env_t *env, const char (&literal)[N], bool internalize = false) {
@@ -3231,7 +3243,7 @@ static inline MaybeLocal<String>
 js_to_string_utf8(js_env_t *env, const char *data, int len = -1, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  return String::NewFromUtf8(env->isolate, data, type, len);
+  return js__checked_string(env, String::NewFromUtf8(env->isolate, data, type, len));
 }
 
 static inline MaybeLocal<String>
@@ -3259,7 +3271,7 @@ static inline MaybeLocal<String>
 js_to_string_utf16le(js_env_t *env, const utf16_t *data, int len = -1, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  return String::NewFromTwoByte(env->isolate, data, type, len);
+  return js__checked_string(env, String::NewFromTwoByte(env->isolate, data, type, len));
 }
 
 static inline MaybeLocal<String>
@@ -3282,7 +3294,7 @@ static inline MaybeLocal<String>
 js_to_string_latin1(js_env_t *env, const latin1_t *data, int len = -1, bool internalize = false) {
   auto type = internalize ? NewStringType::kInternalized : NewStringType::kNormal;
 
-  return String::NewFromOneByte(env->isolate, data, type, len);
+  return js__checked_string(env, String::NewFromOneByte(env->isolate, data, type, len));
 }
 
 static inline MaybeLocal<String>
@@ -4127,13 +4139,20 @@ js_get_default_module_id(js_env_t *env, js_value_t **result) {
 
 extern "C" int
 js_get_module_namespace(js_env_t *env, js_module_t *module, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
+
+  int err;
 
   js_env_scope_t env_scope(env);
 
   auto local = module->module.Get(env->isolate);
 
-  assert(local->GetStatus() >= Module::Status::kInstantiated);
+  if (local->GetStatus() < Module::Status::kInstantiated) {
+    err = js_throw_error(env, NULL, "Cannot get the namespace of an uninstantiated module");
+    assert(err == 0);
+
+    return js__error(env);
+  }
 
   *result = js_from_local(local->GetModuleNamespace());
 
@@ -4469,11 +4488,28 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
 
   js_env_scope_t env_scope(env);
 
+  int err;
+
   auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
 
   auto local = js_to_local<Object>(object);
+
+  auto has = env->try_catch<bool>(
+    [&] {
+      return local->HasPrivate(context, key);
+    }
+  );
+
+  if (has.IsNothing()) return js__error(env);
+
+  if (has.ToChecked()) {
+    err = js_throw_errorf(env, NULL, "Object is already wrapped");
+    assert(err == 0);
+
+    return js__error(env);
+  }
 
   auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
 
@@ -4504,6 +4540,8 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result) {
 
   js_env_scope_t env_scope(env);
 
+  int err;
+
   auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
@@ -4518,7 +4556,23 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result) {
 
   if (external.IsEmpty()) return js__error(env);
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
+  auto value = external.ToLocalChecked();
+
+  if (!value->IsExternal()) {
+    err = js_throw_type_errorf(env, NULL, "Object is not wrapped");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(value.As<External>()->Value(js_finalizer_type_tag));
+
+  if (finalizer == NULL) {
+    err = js_throw_type_errorf(env, NULL, "Object is not wrapped");
+    assert(err == 0);
+
+    return js__error(env);
+  }
 
   *result = finalizer->data;
 
@@ -4531,6 +4585,8 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
   js_env_scope_t env_scope(env);
 
+  int err;
+
   auto context = env->current_context();
 
   auto key = env->wrapper.Get(env->isolate);
@@ -4545,9 +4601,25 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
   if (external.IsEmpty()) return js__error(env);
 
-  local->DeletePrivate(context, key).Check();
+  auto value = external.ToLocalChecked();
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(external.ToLocalChecked().As<External>()->Value(js_finalizer_type_tag));
+  if (!value->IsExternal()) {
+    err = js_throw_type_errorf(env, NULL, "Object is not wrapped");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  auto finalizer = reinterpret_cast<js_finalizer_t *>(value.As<External>()->Value(js_finalizer_type_tag));
+
+  if (finalizer == NULL) {
+    err = js_throw_type_errorf(env, NULL, "Object is not wrapped");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  local->DeletePrivate(context, key).Check();
 
   finalizer->detach();
 
