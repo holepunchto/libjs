@@ -7,6 +7,7 @@ list(APPEND tests
   add-teardown-callback-remove
   add-type-tag
   add-type-tag-delegate
+  add-type-tag-twice
   adjust-external-memory
   atomics-wait-timeout
   atomics-wait-timeout-notify
@@ -19,6 +20,8 @@ list(APPEND tests
   call-function-with-checkpoint
   call-threadsafe-function-after-release
   call-threadsafe-function-with-data
+  check-type-tag-from-prototype
+  check-type-tag-not-tagged
   coerce-number-to-string
   coerce-object-to-string
   coerce-string-to-number
@@ -92,6 +95,7 @@ list(APPEND tests
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
   create-string-latin1
+  create-string-too-long
   create-string-utf8
   create-string-utf8-with-null
   create-string-utf16le
@@ -154,6 +158,7 @@ list(APPEND tests
   get-heap-space-statistics
   get-heap-statistics
   get-module-name
+  get-module-namespace-uninstantiated
   get-new-target
   get-object-type
   get-object-type-arguments
@@ -199,6 +204,7 @@ list(APPEND tests
   get-value-string-utf8
   get-value-string-utf8-length
   get-value-string-utf8-no-null
+  get-value-string-utf8-truncate
   has-element
   has-own-property
   has-property
@@ -307,12 +313,16 @@ list(APPEND tests
   typeof-string
   typeof-symbol
   typeof-undefined
+  unwrap-from-prototype
+  unwrap-not-wrapped
   wasm
   wasm-async
   wasm-async-io
   wasm-async-io-multiple
   wrap
+  wrap-remove-then-unwrap
   wrap-remove-with-finalizer
+  wrap-twice
   wrap-with-finalizer
   wrap-with-reference
 )

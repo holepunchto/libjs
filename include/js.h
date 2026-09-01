@@ -749,10 +749,9 @@ int
 js_get_default_module_id(js_env_t *env, js_value_t **result);
 
 /**
- * Get the namespace object of the module. The behavior is undefined if the
- * module is not yet instantiated.
- *
- * This function can be called even if there is a pending JavaScript exception.
+ * Get the namespace object of the module. The module must have been
+ * instantiated with `js_instantiate_module()`, as the namespace does not exist
+ * before then.
  */
 int
 js_get_module_namespace(js_env_t *env, js_module_t *module, js_value_t **result);
