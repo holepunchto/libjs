@@ -32,6 +32,7 @@ list(APPEND tests
   compile-function-invalid-argument-name
   compile-function-with-code-cache
   compile-function-with-code-cache-rejected
+  create-array-with-elements
   create-arraybuffer
   create-arraybuffer-too-large
   create-arraybuffer-with-backing-store

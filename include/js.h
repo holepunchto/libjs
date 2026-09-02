@@ -1002,6 +1002,12 @@ int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result);
 
 /**
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_create_array_with_elements(js_env_t *env, js_value_t *const elements[], size_t element_count, js_value_t **result);
+
+/**
  * Create an external value from a pointer. The pointer must remain valid until
  * the finalize callback is invoked. The finalize callback may be omitted if the
  * pointer is guaranteed to outlive the JavaScript environment.
