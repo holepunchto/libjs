@@ -1712,12 +1712,26 @@ int
 js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *result);
 
 /**
+ * Borrow the contents of a string without copying or transcoding them. How a
+ * string is stored is up to the engine, so `encoding` reports which encoding
+ * the contents are already in and the caller must handle any of them. `str`
+ * points into the string's own storage and `len` is its length in code units of
+ * that encoding, both valid until the view is released with
+ * `js_release_string_view()`.
+ *
+ * As the storage belongs to the engine, no other API may be called with `env`
+ * while the view is open, as anything that allocates may move the string and
+ * invalidate `str`. Release the view first, or copy out what must outlive it.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **str, size_t *len, js_string_view_t **result);
 
 /**
+ * Release a view returned by `js_get_string_view()`, invalidating its `str` and
+ * lifting the restriction on calling other APIs with `env`.
+ *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
