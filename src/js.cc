@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cmath>
 #include <condition_variable>
 #include <deque>
 #include <list>
@@ -7057,7 +7058,17 @@ js_get_value_int64(js_env_t *env, js_value_t *value, int64_t *result) {
 
   auto local = js_to_local<Number>(value);
 
-  *result = static_cast<int64_t>(local->Value());
+  auto number = local->Value();
+
+  if (!std::isfinite(number)) {
+    *result = 0;
+  } else if (number <= static_cast<double>(INT64_MIN)) {
+    *result = INT64_MIN;
+  } else if (number >= static_cast<double>(INT64_MAX)) {
+    *result = INT64_MAX;
+  } else {
+    *result = static_cast<int64_t>(number);
+  }
 
   return 0;
 }
