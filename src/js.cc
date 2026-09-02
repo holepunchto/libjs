@@ -5565,6 +5565,21 @@ js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result) {
 }
 
 extern "C" int
+js_create_array_with_elements(js_env_t *env, js_value_t *const elements[], size_t element_count, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto values = reinterpret_cast<Local<Value> *>(const_cast<js_value_t **>(elements));
+
+  auto array = Array::New(env->isolate, values, element_count);
+
+  *result = js_from_local(array);
+
+  return 0;
+}
+
+extern "C" int
 js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   // Allow continuing even with a pending exception
 
