@@ -204,6 +204,7 @@ list(APPEND tests
   get-typedarray-info-uint8array-with-offset
   get-value-bigint-uint64
   get-value-int32-int64
+  get-value-int64-out-of-range
   get-value-string-utf8
   get-value-string-utf8-length
   get-value-string-utf8-no-null
