@@ -198,6 +198,7 @@ list(APPEND tests
   get-property-missing
   get-prototype
   get-sharedarraybuffer-info
+  get-string-view
   get-typedarray-info-uint16array
   get-typedarray-info-uint16array-large
   get-typedarray-info-uint8array

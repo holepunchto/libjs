@@ -2659,6 +2659,26 @@ struct js_external_string_latin1_s : String::ExternalOneByteStringResource {
   }
 };
 
+struct js_string_view_s {
+  String::ValueView value;
+
+  js_string_encoding_t encoding;
+
+  const void *data;
+  size_t len;
+
+  js_string_view_s(Isolate *isolate, Local<String> string)
+      : value(isolate, string),
+        encoding(value.is_one_byte() ? js_latin1 : js_utf16le),
+        data(value.is_one_byte() ? reinterpret_cast<const void *>(value.data8()) : reinterpret_cast<const void *>(value.data16())),
+        len(value.length()) {}
+
+  js_string_view_s(const js_string_view_s &) = delete;
+
+  js_string_view_s &
+  operator=(const js_string_view_s &) = delete;
+};
+
 struct js_arraybuffer_backing_store_s {
   std::shared_ptr<BackingStore> backing_store;
 
@@ -7819,16 +7839,15 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
   // V8 might flatten the string, which requires a handle scope.
   js_env_scope_t env_scope(env, {.handle_scope = true});
 
-  auto view = String::ValueView(env->isolate, js_to_local<String>(string));
+  auto view = new js_string_view_t(env->isolate, js_to_local<String>(string));
 
-  if (encoding) *encoding = view.is_one_byte() ? js_latin1 : js_utf16le;
+  if (encoding) *encoding = view->encoding;
 
-  if (data) *data = view.is_one_byte() ? reinterpret_cast<const void *>(view.data8())
-                                       : reinterpret_cast<const void *>(view.data16());
+  if (data) *data = view->data;
 
-  if (len) *len = view.length();
+  if (len) *len = view->len;
 
-  *result = nullptr;
+  *result = view;
 
   return 0;
 }
@@ -7836,6 +7855,8 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
 extern "C" int
 js_release_string_view(js_env_t *env, js_string_view_t *view) {
   // Allow continuing even with a pending exception
+
+  delete view;
 
   return 0;
 }
