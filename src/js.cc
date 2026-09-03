@@ -1434,6 +1434,8 @@ struct js_env_s {
 
   Global<Symbol> default_module_id;
 
+  std::vector<std::pair<js_dynamic_import_cb, void *>> dynamic_import_handlers;
+
   std::list<Global<Promise>> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
@@ -1981,10 +1983,22 @@ struct js_escapable_handle_scope_s {
   operator=(const js_escapable_handle_scope_s &) = delete;
 };
 
+// Every unit compiled by this library carries host-defined options of its own,
+// which the engine hands back when the unit dynamically imports. Slot 0 holds
+// the identifier of the unit and slot 1 the index of the handler registered for
+// it, if any.
+
+static const int js_host_defined_option_id = 0;
+static const int js_host_defined_option_dynamic_import = 1;
+
+static const int js_host_defined_options_len = 2;
+
 struct js_module_s {
   Global<Module> module;
 
   Global<Symbol> id;
+
+  Global<PrimitiveArray> host_defined_options;
 
   std::string name;
 
@@ -1999,9 +2013,10 @@ struct js_module_s {
     void *evaluate_data;
   } callbacks;
 
-  js_module_s(Isolate *isolate, Local<Module> module, Local<Symbol> id, std::string name)
+  js_module_s(Isolate *isolate, Local<Module> module, Local<Symbol> id, Local<PrimitiveArray> host_defined_options, std::string name)
       : module(isolate, module),
         id(isolate, id),
+        host_defined_options(isolate, host_defined_options),
         name(std::move(name)),
         callbacks() {}
 
@@ -2094,13 +2109,6 @@ struct js_module_s {
 
     auto env = js_env_t::from(Isolate::GetCurrent());
 
-    if (env->callbacks.dynamic_import == nullptr) {
-      err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
-      assert(err == 0);
-
-      return MaybeLocal<Promise>();
-    }
-
     auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
 
     for (int i = 0; i < raw_assertions->Length(); i += 3) {
@@ -2114,33 +2122,58 @@ struct js_module_s {
     }
 
     // The host-defined options carry the identifier of the referring script or
-    // module, which we stamp into a single-element array at compile time. When
+    // module, and the handler registered for it if it has one of its own. When
     // the options are empty, such as for scripts run with `js_run_script()`, we
-    // fall back to a shared identifier owned by the environment.
+    // fall back to a shared identifier owned by the environment and to the
+    // handler registered for the environment as a whole.
 
     Local<Symbol> id;
+
+    auto cb = env->callbacks.dynamic_import;
+    auto cb_data = env->callbacks.dynamic_import_data;
 
     if (!data.IsEmpty()) {
       auto options = data.As<PrimitiveArray>();
 
-      if (options->Length() >= 1) {
-        auto value = options->Get(env->isolate, 0);
+      if (options->Length() > js_host_defined_option_id) {
+        auto value = options->Get(env->isolate, js_host_defined_option_id);
 
         if (value->IsSymbol()) id = value.As<Symbol>();
+      }
+
+      if (options->Length() > js_host_defined_option_dynamic_import) {
+        auto value = options->Get(env->isolate, js_host_defined_option_dynamic_import);
+
+        if (value->IsUint32()) {
+          const auto &handler = env->dynamic_import_handlers[value.As<Uint32>()->Value()];
+
+          cb = handler.first;
+          cb_data = handler.second;
+        }
       }
     }
 
     if (id.IsEmpty()) id = env->default_module_identifier();
 
+    // A unit with a handler of its own may import even when the environment has
+    // none, which is the point of registering one.
+
+    if (cb == nullptr) {
+      err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
+      assert(err == 0);
+
+      return MaybeLocal<Promise>();
+    }
+
     js_value_t *result = env->call_into_native<js_value_t *>(
       [&] {
-        return env->callbacks.dynamic_import(
+        return cb(
           env,
           js_from_local(specifier),
           js_from_local(assertions),
           js_from_local(referrer),
           js_from_local(id),
-          env->callbacks.dynamic_import_data
+          cb_data
         );
       }
     );
@@ -2188,11 +2221,14 @@ struct js_script_s {
 
   Global<Symbol> id;
 
+  Global<PrimitiveArray> host_defined_options;
+
   std::string name;
 
-  js_script_s(Isolate *isolate, Local<UnboundScript> script, Local<Symbol> id, std::string name)
+  js_script_s(Isolate *isolate, Local<UnboundScript> script, Local<Symbol> id, Local<PrimitiveArray> host_defined_options, std::string name)
       : script(isolate, script),
         id(isolate, id),
+        host_defined_options(isolate, host_defined_options),
         name(std::move(name)) {}
 
   js_script_s(const js_script_s &) = delete;
@@ -3585,6 +3621,55 @@ js__error(js_env_t *env) {
 
 } // namespace
 
+namespace {
+
+// Handlers are interned, so the table is bounded by the number of distinct
+// handlers rather than by the number of units sharing one. An entry is reachable
+// for as long as any unit stamped with its index survives, and so is only
+// released with the environment.
+
+static uint32_t
+js__intern_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data) {
+  auto &handlers = env->dynamic_import_handlers;
+
+  for (uint32_t i = 0; i < handlers.size(); i++) {
+    if (handlers[i].first == cb && handlers[i].second == data) return i;
+  }
+
+  handlers.emplace_back(cb, data);
+
+  return static_cast<uint32_t>(handlers.size() - 1);
+}
+
+static int
+js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options, js_dynamic_import_cb cb, void *data) {
+  int err;
+
+  // A handler is write-once, so that a unit cannot be taken over by whoever
+  // reaches it second.
+
+  auto value = host_defined_options->Get(env->isolate, js_host_defined_option_dynamic_import);
+
+  if (value->IsUint32()) {
+    err = js_throw_error(env, NULL, "Dynamic import handler has already been registered");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  auto index = js__intern_dynamic_import(env, cb, data);
+
+  host_defined_options->Set(
+    env->isolate,
+    js_host_defined_option_dynamic_import,
+    Integer::NewFromUnsigned(env->isolate, index)
+  );
+
+  return 0;
+}
+
+} // namespace
+
 extern "C" int
 js_open_handle_scope(js_env_t *env, js_handle_scope_t **result) {
   // Allow continuing even with a pending exception
@@ -3765,13 +3850,15 @@ js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, i
   // Mint a unique identifier for the script and stamp it into the host-defined
   // options so it can be recovered as the referrer of any dynamic import(). The
   // identifier is embedder state, not part of any code cache, so it is minted
-  // afresh on every load whether or not the compile is served from a cache.
+  // afresh on every load whether or not the compile is served from a cache. So
+  // is the handler slot beside it, which starts empty either way and must be
+  // registered again for every load.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
-  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+  auto host_defined_options = PrimitiveArray::New(env->isolate, js_host_defined_options_len);
 
-  host_defined_options->Set(env->isolate, 0, id);
+  host_defined_options->Set(env->isolate, js_host_defined_option_id, id);
 
   auto origin = ScriptOrigin(
     string.ToLocalChecked(),
@@ -3834,7 +3921,7 @@ js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, i
     script_name = std::string(file, len);
   }
 
-  auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, std::move(script_name));
+  auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, host_defined_options, std::move(script_name));
 
   *result = script;
 
@@ -3932,6 +4019,15 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result) {
 }
 
 extern "C" int
+js_on_script_dynamic_import(js_env_t *env, js_script_t *script, js_dynamic_import_cb cb, void *data) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  js_env_scope_t env_scope(env);
+
+  return js__on_dynamic_import(env, script->host_defined_options.Get(env->isolate), cb, data);
+}
+
+extern "C" int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result) {
   return js_create_module_with_code_cache(env, name, len, offset, source, nullptr, 0, nullptr, cb, data, result);
 }
@@ -3949,13 +4045,15 @@ js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, in
   // Mint a unique identifier for the module and stamp it into the host-defined
   // options so it can be recovered as the referrer of any dynamic import(). The
   // identifier is embedder state, not part of any code cache, so it is minted
-  // afresh on every load whether or not the compile is served from a cache.
+  // afresh on every load whether or not the compile is served from a cache. So
+  // is the handler slot beside it, which starts empty either way and must be
+  // registered again for every load.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
-  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+  auto host_defined_options = PrimitiveArray::New(env->isolate, js_host_defined_options_len);
 
-  host_defined_options->Set(env->isolate, 0, id);
+  host_defined_options->Set(env->isolate, js_host_defined_option_id, id);
 
   auto origin = ScriptOrigin(
     string.ToLocalChecked(),
@@ -4017,7 +4115,7 @@ js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, in
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, id, std::move(module_name));
+  auto module = new js_module_t(env->isolate, local, id, host_defined_options, std::move(module_name));
 
   module->callbacks.meta = cb;
   module->callbacks.meta_data = data;
@@ -4118,7 +4216,7 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, id, std::move(module_name));
+  auto module = new js_module_t(env->isolate, local, id, Local<PrimitiveArray>(), std::move(module_name));
 
   module->callbacks.evaluate = cb;
   module->callbacks.evaluate_data = data;
@@ -4291,6 +4389,27 @@ js_run_module(js_env_t *env, js_module_t *module, js_value_t **result) {
   if (result) *result = js_from_local(local.ToLocalChecked());
 
   return 0;
+}
+
+extern "C" int
+js_on_module_dynamic_import(js_env_t *env, js_module_t *module, js_dynamic_import_cb cb, void *data) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  // Synthetic modules have no source and so can never be the referrer of a
+  // dynamic import().
+
+  if (module->host_defined_options.IsEmpty()) {
+    err = js_throw_error(env, NULL, "Cannot register a dynamic import handler for a synthetic module");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  return js__on_dynamic_import(env, module->host_defined_options.Get(env->isolate), cb, data);
 }
 
 extern "C" int
@@ -5229,13 +5348,14 @@ js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name
   // host-defined options so it can be recovered as the referrer of any dynamic
   // import(). The identifier is embedder state, not part of any code cache, so
   // it is minted afresh on every load whether or not the compile is served from
-  // a cache.
+  // a cache. So is the handler slot beside it, which starts empty either way
+  // and must be registered again for every load.
 
   auto id = Symbol::New(env->isolate, string.ToLocalChecked());
 
-  auto host_defined_options = PrimitiveArray::New(env->isolate, 1);
+  auto host_defined_options = PrimitiveArray::New(env->isolate, js_host_defined_options_len);
 
-  host_defined_options->Set(env->isolate, 0, id);
+  host_defined_options->Set(env->isolate, js_host_defined_option_id, id);
 
   auto origin = ScriptOrigin(
     string.ToLocalChecked(),
@@ -5548,6 +5668,35 @@ js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result) {
   *result = js_from_local(id);
 
   return 0;
+}
+
+extern "C" int
+js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_import_cb cb, void *data) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local<Function>(function);
+
+  auto host_defined_options = local->GetScriptOrigin().GetHostDefinedOptions();
+
+  // Only a function compiled with `js_create_function_with_source()` carries
+  // options of its own, and so has anywhere to record a handler.
+
+  auto options = host_defined_options.IsEmpty()
+                   ? Local<PrimitiveArray>()
+                   : host_defined_options.As<PrimitiveArray>();
+
+  if (options.IsEmpty() || options->Length() < js_host_defined_options_len) {
+    err = js_throw_error(env, NULL, "Cannot register a dynamic import handler for a function without source");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  return js__on_dynamic_import(env, options, cb, data);
 }
 
 extern "C" int
