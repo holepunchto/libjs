@@ -140,6 +140,10 @@ list(APPEND tests
   delete-element
   delete-property
   dynamic-import
+  dynamic-import-function-handler
+  dynamic-import-handler-code-cache
+  dynamic-import-module-handler
+  dynamic-import-script-handler
   dynamic-import-with-promise
   dynamic-import-with-referrer
   dynamic-import-with-referrer-function

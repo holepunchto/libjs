@@ -682,6 +682,23 @@ js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
 int
 js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
 
+/**
+ * Add a callback for dynamic `import()` statements appearing in a single
+ * compiled unit, taking precedence over the callback added with
+ * `js_on_dynamic_import()`. A unit with a callback of its own may import even
+ * if the environment has none.
+ *
+ * A unit takes at most one callback, and registering a second one throws. The
+ * callback is not part of any code cache and must be added again for every
+ * load, as the identifier of the unit must.
+ *
+ * Code compiled without a unit of its own, such as scripts run with
+ * `js_run_script()`, has nothing to register against and always falls back to
+ * the callback added with `js_on_dynamic_import()`.
+ */
+int
+js_on_script_dynamic_import(js_env_t *env, js_script_t *script, js_dynamic_import_cb cb, void *data);
+
 int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
 
@@ -764,6 +781,22 @@ js_instantiate_module(js_env_t *env, js_module_t *module, js_module_resolve_cb c
 
 int
 js_run_module(js_env_t *env, js_module_t *module, js_value_t **result);
+
+/**
+ * Add a callback for dynamic `import()` statements appearing in a single
+ * compiled unit, taking precedence over the callback added with
+ * `js_on_dynamic_import()`. A unit with a callback of its own may import even
+ * if the environment has none.
+ *
+ * A unit takes at most one callback, and registering a second one throws. The
+ * callback is not part of any code cache and must be added again for every
+ * load, as the identifier of the unit must.
+ *
+ * Synthetic modules have no source and so can never be the referrer of a
+ * dynamic `import()`; registering against one throws.
+ */
+int
+js_on_module_dynamic_import(js_env_t *env, js_module_t *module, js_dynamic_import_cb cb, void *data);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
@@ -991,6 +1024,22 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
  */
 int
 js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result);
+
+/**
+ * Add a callback for dynamic `import()` statements appearing in a single
+ * compiled unit, taking precedence over the callback added with
+ * `js_on_dynamic_import()`. A unit with a callback of its own may import even
+ * if the environment has none.
+ *
+ * A unit takes at most one callback, and registering a second one throws. The
+ * callback is not part of any code cache and must be added again for every
+ * load, as the identifier of the unit must.
+ *
+ * A function compiled any other way than `js_compile_function()` carries no
+ * unit of its own; registering against one throws.
+ */
+int
+js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_import_cb cb, void *data);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
