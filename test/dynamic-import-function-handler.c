@@ -73,7 +73,7 @@ compile(js_env_t *env, const char *file) {
   assert(e == 0);
 
   js_value_t *fn;
-  e = js_create_function_with_source(env, "fn", -1, file, -1, NULL, 0, 0, source, &fn);
+  e = js_compile_function(env, "fn", -1, file, -1, NULL, 0, 0, source, &fn);
   assert(e == 0);
 
   return fn;

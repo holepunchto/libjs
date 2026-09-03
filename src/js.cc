@@ -5643,9 +5643,8 @@ js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result) {
   js_env_scope_t env_scope(env);
 
   // Recover the identifier stamped into the host-defined options at compile
-  // time. Functions not compiled with `js_create_function_with_source()` carry
-  // no options of their own and are attributed to the environment's default
-  // identifier.
+  // time. Functions not compiled with `js_compile_function()` carry no options
+  // of their own and are attributed to the environment's default identifier.
 
   auto local = js_to_local<Function>(function);
 
@@ -5682,8 +5681,8 @@ js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_im
 
   auto host_defined_options = local->GetScriptOrigin().GetHostDefinedOptions();
 
-  // Only a function compiled with `js_create_function_with_source()` carries
-  // options of its own, and so has anywhere to record a handler.
+  // Only a function compiled with `js_compile_function()` carries options of
+  // its own, and so has anywhere to record a handler.
 
   auto options = host_defined_options.IsEmpty()
                    ? Local<PrimitiveArray>()
