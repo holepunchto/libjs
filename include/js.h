@@ -692,9 +692,11 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
  * callback is not part of any code cache and must be added again for every
  * load, as the identifier of the unit must.
  *
- * Code compiled without a unit of its own, such as scripts run with
- * `js_run_script()`, has nothing to register against and always falls back to
- * the callback added with `js_on_dynamic_import()`.
+ * A unit must have an identifier of its own to take a callback. Code compiled
+ * without one, such as scripts run with `js_run_script()`, shares the
+ * identifier returned by `js_get_default_module_id()`, cannot be told apart
+ * from any other such code, and so is refused; it always falls back to the
+ * callback added with `js_on_dynamic_import()`.
  */
 int
 js_on_script_dynamic_import(js_env_t *env, js_script_t *script, js_dynamic_import_cb cb, void *data);
@@ -1035,8 +1037,11 @@ js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result);
  * callback is not part of any code cache and must be added again for every
  * load, as the identifier of the unit must.
  *
- * A function compiled any other way than `js_compile_function()` carries no
- * unit of its own; registering against one throws.
+ * The callback belongs to the unit that contains the function, which for a
+ * function compiled with `js_compile_function()` is the function itself. A
+ * function defined inside a script or module carries that unit instead, and
+ * registering against it registers for the whole of it. One carrying no unit,
+ * or one attributed to the default identifier, is refused.
  */
 int
 js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_import_cb cb, void *data);
