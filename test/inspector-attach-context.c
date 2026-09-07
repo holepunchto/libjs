@@ -49,6 +49,13 @@ main() {
   e = js_detach_context_from_inspector(env, inspector, context);
   assert(e == 0);
 
+  // A NUL terminated name is accepted here as it is everywhere else.
+  e = js_attach_context_to_inspector(env, inspector, context, "extra", -1);
+  assert(e == 0);
+
+  e = js_detach_context_from_inspector(env, inspector, context);
+  assert(e == 0);
+
   e = js_destroy_inspector(env, inspector);
   assert(e == 0);
 
