@@ -7447,7 +7447,7 @@ js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t **elements, s
 }
 
 extern "C" int
-js_set_array_elements(js_env_t *env, js_value_t *array, const js_value_t *elements[], size_t len, size_t offset) {
+js_set_array_elements(js_env_t *env, js_value_t *array, js_value_t *const elements[], size_t len, size_t offset) {
   if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
@@ -8915,7 +8915,7 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
         .version = 0,
 
         .space_name = heap_space_statistics.space_name(),
-        .space_size = heap_space_statistics.space_used_size(),
+        .space_size = heap_space_statistics.space_size(),
         .space_used_size = heap_space_statistics.space_used_size(),
         .space_available_size = heap_space_statistics.space_available_size()
       };
@@ -8984,6 +8984,8 @@ js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *
 extern "C" int
 js_attach_context_to_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len) {
   js_env_scope_t env_scope(env);
+
+  if (name && len == size_t(-1)) len = strlen(name);
 
   inspector->attach(context->context.Get(env->isolate), name ? StringView(reinterpret_cast<const uint8_t *>(name), len) : StringView());
 

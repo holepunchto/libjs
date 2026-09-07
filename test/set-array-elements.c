@@ -32,7 +32,7 @@ main() {
     assert(e == 0);
   }
 
-  e = js_set_array_elements(env, array, (const js_value_t **) values, 3, 0);
+  e = js_set_array_elements(env, array, values, 3, 0);
   assert(e == 0);
 
   for (uint32_t i = 0; i < 3; i++) {
