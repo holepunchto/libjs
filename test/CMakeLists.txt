@@ -87,6 +87,8 @@ list(APPEND tests
   create-reference-array
   create-reference-bigint
   create-reference-boolean
+  create-reference-churn
+  create-reference-churn-with-collection
   create-reference-function
   create-reference-null
   create-reference-number
