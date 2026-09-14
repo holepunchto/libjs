@@ -230,6 +230,14 @@ struct js_segment_array_s {
     available = nullptr;
   }
 
+  template <typename F>
+  void
+  each(F fn) {
+    for (uint32_t i = 0; i < len; i++) {
+      if (is_live(i)) fn(std::launder(reinterpret_cast<T *>(at(i)->value)));
+    }
+  }
+
   // Releases the segments at the end of the array that hold no live element.
   // Elements that are still live do not move, so pointers to them remain valid,
   // but the free list is rebuilt as it may have held elements in the segments
@@ -1677,6 +1685,9 @@ static void
 js__shrink_allocations(js_allocations_t *allocations);
 
 static void
+js__release_allocations(js_allocations_t *allocations);
+
+static void
 js__destroy_allocations(js_allocations_t *allocations);
 
 } // namespace
@@ -1830,10 +1841,12 @@ struct js_env_s {
       context.Get(isolate)->Exit();
       context.Reset();
 
-      js__destroy_allocations(allocations);
+      js__release_allocations(allocations);
     }
 
     isolate->Dispose();
+
+    js__destroy_allocations(allocations);
 
     std::unique_lock guard(platform->lock);
 
@@ -3687,6 +3700,27 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
+}
+
+static void
+js__release_allocations(js_allocations_t *allocations) {
+  allocations->delegates.clear();
+  allocations->finalizers.clear();
+  allocations->callbacks.clear();
+  allocations->inspectors.clear();
+  allocations->deferred_teardowns.clear();
+  allocations->garbage_collection_tracking.clear();
+  allocations->backing_stores.clear();
+  allocations->string_views.clear();
+  allocations->deferreds.clear();
+  allocations->references.clear();
+  allocations->modules.clear();
+  allocations->scripts.clear();
+  allocations->contexts.clear();
+
+  allocations->typed_callbacks.each([](js_typed_callback_t *callback) {
+    callback->external.Reset();
+  });
 }
 
 static void
