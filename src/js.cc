@@ -1698,6 +1698,17 @@ struct js_env_s {
     return true;
   }
 
+  MaybeLocal<Value>
+  take_exception() {
+    if (exception.IsEmpty()) return MaybeLocal<Value>();
+
+    auto error = exception.Get(isolate);
+
+    exception.Reset();
+
+    return error;
+  }
+
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
@@ -2105,8 +2116,6 @@ struct js_module_s {
 
   static MaybeLocal<Promise>
   on_dynamic_import(Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
-    int err;
-
     auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
@@ -2159,10 +2168,9 @@ struct js_module_s {
     // none, which is the point of registering one.
 
     if (cb == nullptr) {
-      err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
-      assert(err == 0);
+      auto message = String::NewFromUtf8Literal(env->isolate, "Dynamic import() is not supported");
 
-      return MaybeLocal<Promise>();
+      return reject_dynamic_import(context, Exception::Error(message));
     }
 
     js_value_t *result = env->call_into_native<js_value_t *>(
@@ -2178,7 +2186,11 @@ struct js_module_s {
       }
     );
 
-    if (env->propagate_exception()) return MaybeLocal<Promise>();
+    Local<Value> error;
+
+    if (env->take_exception().ToLocal(&error)) return reject_dynamic_import(context, error);
+
+    if (result == nullptr) return MaybeLocal<Promise>();
 
     auto local = js_to_local(result);
 
@@ -2213,6 +2225,18 @@ struct js_module_s {
     );
 
     env->propagate_exception();
+  }
+
+private:
+  static MaybeLocal<Promise>
+  reject_dynamic_import(Local<Context> context, Local<Value> error) {
+    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+    auto success = resolver->Reject(context, error);
+
+    success.Check();
+
+    return resolver->GetPromise();
   }
 };
 
