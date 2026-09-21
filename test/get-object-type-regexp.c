@@ -22,30 +22,25 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *array;
-  e = js_create_array_with_length(env, 3, &array);
+  js_value_t *script;
+  e = js_create_string_utf8(env, (utf8_t *) "/abc/", -1, &script);
   assert(e == 0);
 
-  js_value_t *values[3];
-  for (uint32_t i = 0; i < 3; i++) {
-    e = js_create_uint32(env, i + 1, &values[i]);
-    assert(e == 0);
-  }
-
-  e = js_set_array_elements(env, array, values, 3, 0);
+  js_value_t *regexp;
+  e = js_run_script(env, NULL, 0, 0, script, &regexp);
   assert(e == 0);
 
-  for (uint32_t i = 0; i < 3; i++) {
-    js_value_t *element;
-    e = js_get_element(env, array, i, &element);
-    assert(e == 0);
+  js_object_type_t type;
+  e = js_get_object_type(env, regexp, &type);
+  assert(e == 0);
 
-    uint32_t n;
-    e = js_get_value_uint32(env, element, &n);
-    assert(e == 0);
+  assert(type == js_regexp);
 
-    assert(n == i + 1);
-  }
+  bool is_regexp;
+  e = js_is_regexp(env, regexp, &is_regexp);
+  assert(e == 0);
+
+  assert(is_regexp);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

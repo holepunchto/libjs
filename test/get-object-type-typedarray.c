@@ -22,30 +22,25 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *array;
-  e = js_create_array_with_length(env, 3, &array);
+  js_value_t *arraybuffer;
+  e = js_create_arraybuffer(env, 8, NULL, &arraybuffer);
   assert(e == 0);
 
-  js_value_t *values[3];
-  for (uint32_t i = 0; i < 3; i++) {
-    e = js_create_uint32(env, i + 1, &values[i]);
-    assert(e == 0);
-  }
-
-  e = js_set_array_elements(env, array, values, 3, 0);
+  js_value_t *typedarray;
+  e = js_create_typedarray(env, js_uint8array, 8, arraybuffer, 0, &typedarray);
   assert(e == 0);
 
-  for (uint32_t i = 0; i < 3; i++) {
-    js_value_t *element;
-    e = js_get_element(env, array, i, &element);
-    assert(e == 0);
+  js_object_type_t type;
+  e = js_get_object_type(env, typedarray, &type);
+  assert(e == 0);
 
-    uint32_t n;
-    e = js_get_value_uint32(env, element, &n);
-    assert(e == 0);
+  assert(type == js_typedarray);
 
-    assert(n == i + 1);
-  }
+  bool is_typedarray;
+  e = js_is_typedarray(env, typedarray, &is_typedarray);
+  assert(e == 0);
+
+  assert(is_typedarray);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

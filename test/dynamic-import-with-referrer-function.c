@@ -77,16 +77,15 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  // A dynamic import() from a function compiled with
-  // `js_create_function_with_source()` is attributed to the function's
-  // identifier.
+  // A dynamic import() from a function compiled with `js_compile_function()` is
+  // attributed to the function's identifier.
 
   js_value_t *source;
   e = js_create_string_utf8(env, (utf8_t *) "return import('foo.js')", -1, &source);
   assert(e == 0);
 
   js_value_t *fn;
-  e = js_create_function_with_source(env, "fn", -1, "test.js", -1, NULL, 0, 0, source, &fn);
+  e = js_compile_function(env, "fn", -1, "test.js", -1, NULL, 0, 0, source, &fn);
   assert(e == 0);
 
   e = js_get_function_id(env, fn, &expected_id);

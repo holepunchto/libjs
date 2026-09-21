@@ -4,13 +4,6 @@
 
 #include "../include/js.h"
 
-int uncaught_called = 0;
-
-static void
-on_uncaught_exception(js_env_t *env, js_value_t *error, void *data) {
-  uncaught_called++;
-}
-
 int
 main() {
   int e;
@@ -25,31 +18,41 @@ main() {
   e = js_create_env(loop, platform, NULL, &env);
   assert(e == 0);
 
-  e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
-  assert(e == 0);
-
   js_handle_scope_t *scope;
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "import('foo.js')", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "Object(Symbol('abc'))", -1, &script);
   assert(e == 0);
 
-  // An import that no handler answers must reject the promise it evaluates to
-  // rather than throw at the call site.
-
-  js_value_t *result;
-  e = js_run_script(env, "test.js", -1, 0, script, &result);
+  js_value_t *boxed;
+  e = js_run_script(env, NULL, 0, 0, script, &boxed);
   assert(e == 0);
 
-  assert(uncaught_called == 0);
-
-  js_promise_state_t state;
-  e = js_get_promise_state(env, result, &state);
+  bool is_symbol_object;
+  e = js_is_symbol_object(env, boxed, &is_symbol_object);
   assert(e == 0);
 
-  assert(state == js_promise_rejected);
+  assert(is_symbol_object);
+
+  js_value_t *primitive;
+  e = js_create_symbol(env, NULL, &primitive);
+  assert(e == 0);
+
+  e = js_is_symbol_object(env, primitive, &is_symbol_object);
+  assert(e == 0);
+
+  assert(!is_symbol_object);
+
+  js_value_t *object;
+  e = js_create_object(env, &object);
+  assert(e == 0);
+
+  e = js_is_symbol_object(env, object, &is_symbol_object);
+  assert(e == 0);
+
+  assert(!is_symbol_object);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

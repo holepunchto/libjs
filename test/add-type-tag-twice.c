@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -22,30 +21,34 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *array;
-  e = js_create_array_with_length(env, 3, &array);
+  js_value_t *object;
+  e = js_create_object(env, &object);
   assert(e == 0);
 
-  js_value_t *values[3];
-  for (uint32_t i = 0; i < 3; i++) {
-    e = js_create_uint32(env, i + 1, &values[i]);
-    assert(e == 0);
-  }
-
-  e = js_set_array_elements(env, array, values, 3, 0);
+  js_type_tag_t tag = {1, 2};
+  e = js_add_type_tag(env, object, &tag);
   assert(e == 0);
 
-  for (uint32_t i = 0; i < 3; i++) {
-    js_value_t *element;
-    e = js_get_element(env, array, i, &element);
-    assert(e == 0);
+  // An object carries one tag, so a second must be refused rather than take
+  // over the identity the first gave it.
+  e = js_add_type_tag(env, object, &(js_type_tag_t) {2, 3});
+  assert(e != 0);
 
-    uint32_t n;
-    e = js_get_value_uint32(env, element, &n);
-    assert(e == 0);
+  js_value_t *exception;
+  e = js_get_and_clear_last_exception(env, &exception);
+  assert(e == 0);
 
-    assert(n == i + 1);
-  }
+  bool result;
+
+  e = js_check_type_tag(env, object, &tag, &result);
+  assert(e == 0);
+
+  assert(result);
+
+  e = js_check_type_tag(env, object, &(js_type_tag_t) {2, 3}, &result);
+  assert(e == 0);
+
+  assert(!result);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

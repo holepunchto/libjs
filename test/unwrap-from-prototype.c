@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <utf.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -22,30 +21,34 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *array;
-  e = js_create_array_with_length(env, 3, &array);
+  js_value_t *prototype;
+  e = js_create_object(env, &prototype);
   assert(e == 0);
 
-  js_value_t *values[3];
-  for (uint32_t i = 0; i < 3; i++) {
-    e = js_create_uint32(env, i + 1, &values[i]);
-    assert(e == 0);
-  }
-
-  e = js_set_array_elements(env, array, values, 3, 0);
+  e = js_wrap(env, prototype, (void *) 42, NULL, NULL, NULL);
   assert(e == 0);
 
-  for (uint32_t i = 0; i < 3; i++) {
-    js_value_t *element;
-    e = js_get_element(env, array, i, &element);
-    assert(e == 0);
+  js_value_t *object;
+  e = js_create_object_with_prototype(env, prototype, &object);
+  assert(e == 0);
 
-    uint32_t n;
-    e = js_get_value_uint32(env, element, &n);
-    assert(e == 0);
+  // A wrap belongs to the object it was installed on, so an object that merely
+  // inherits from it carries none.
+  bool is_wrapped;
+  e = js_is_wrapped(env, object, &is_wrapped);
+  assert(e == 0);
 
-    assert(n == i + 1);
-  }
+  assert(!is_wrapped);
+
+  void *data = NULL;
+  e = js_unwrap(env, object, &data);
+  assert(e != 0);
+
+  assert(data == NULL);
+
+  js_value_t *exception;
+  e = js_get_and_clear_last_exception(env, &exception);
+  assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 #include <utf.h>
 #include <uv.h>
 
@@ -22,29 +23,28 @@ main() {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  js_value_t *array;
-  e = js_create_array_with_length(env, 3, &array);
+  js_value_t *string;
+  e = js_create_string_utf8(env, (utf8_t *) "hello", -1, &string);
   assert(e == 0);
 
-  js_value_t *values[3];
-  for (uint32_t i = 0; i < 3; i++) {
-    e = js_create_uint32(env, i + 1, &values[i]);
-    assert(e == 0);
-  }
+  // The guard catches a conversion that writes the whole string rather than as
+  // much of it as was asked for.
+  struct {
+    utf8_t value[3];
+    utf8_t guard[8];
+  } buffer;
 
-  e = js_set_array_elements(env, array, values, 3, 0);
+  memset(buffer.guard, 0xaa, sizeof(buffer.guard));
+
+  size_t written;
+  e = js_get_value_string_utf8(env, string, buffer.value, sizeof(buffer.value), &written);
   assert(e == 0);
 
-  for (uint32_t i = 0; i < 3; i++) {
-    js_value_t *element;
-    e = js_get_element(env, array, i, &element);
-    assert(e == 0);
+  assert(memcmp(buffer.value, "hel", 3) == 0);
+  assert(written == 3);
 
-    uint32_t n;
-    e = js_get_value_uint32(env, element, &n);
-    assert(e == 0);
-
-    assert(n == i + 1);
+  for (size_t i = 0; i < sizeof(buffer.guard); i++) {
+    assert(buffer.guard[i] == 0xaa);
   }
 
   e = js_close_handle_scope(env, scope);
