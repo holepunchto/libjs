@@ -295,6 +295,7 @@ list(APPEND tests
   run-from-snapshot-import-meta
   run-from-snapshot-module
   run-from-snapshot-script
+  run-from-snapshot-script-dynamic-import
   run-from-snapshot-wrap
   run-module
   run-module-async

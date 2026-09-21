@@ -140,10 +140,12 @@ snapshot__write(uv_loop_t *loop, const char *path, void *data, size_t len) {
 }
 
 static int snapshot__exit_status = -1;
+static int snapshot__exit_signal = -1;
 
 static inline void
 snapshot__on_exit(uv_process_t *process, int64_t status, int signal) {
   snapshot__exit_status = (int) status;
+  snapshot__exit_signal = signal;
 
   uv_close((uv_handle_t *) process, NULL);
 }
@@ -200,10 +202,18 @@ snapshot__produce(const snapshot_test_t *test, uv_loop_t *loop, js_platform_t *p
 
   char *args[] = {exepath, NULL};
 
+  uv_stdio_container_t stdio[3] = {
+    {.flags = UV_INHERIT_FD, .data.fd = 0},
+    {.flags = UV_INHERIT_FD, .data.fd = 1},
+    {.flags = UV_INHERIT_FD, .data.fd = 2},
+  };
+
   uv_process_options_t process_options = {
     .file = exepath,
     .args = args,
     .exit_cb = snapshot__on_exit,
+    .stdio_count = 3,
+    .stdio = stdio,
   };
 
   uv_process_t process;
@@ -216,6 +226,7 @@ snapshot__produce(const snapshot_test_t *test, uv_loop_t *loop, js_platform_t *p
   // The blob is left in place so it can be inspected after the test runs.
 
   assert(snapshot__exit_status == 0);
+  assert(snapshot__exit_signal == 0);
 }
 
 static inline void

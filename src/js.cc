@@ -3761,23 +3761,34 @@ js_destroy_rebind_handlers(js_rebind_handlers_t *handlers) {
 
 namespace {
 
-// Snapshot data slot layout, shared by `js_take_snapshot` (which `AddData`s in
+// Context data slot layout, shared by `js_take_snapshot` (which `AddData`s in
 // this order) and `js_rebind_from_snapshot` (which reads it back). The metadata
-// array and the wrapper symbol occupy fixed slots, after which every serialized
-// unit takes a pair of slots: its compiled record followed by its host-defined
-// options. The modules come first in iteration order, so module `i` lands at
-// `js_snapshot_data_units + 2 * i`, and the prepared scripts follow, so script
-// `j` lands at `js_snapshot_data_units + 2 * (module_count + j)`; the consumer
+// array and the wrapper symbol occupy fixed slots; each serialized module record
+// follows in iteration order, so module `i` lands at `js_snapshot_data_modules
+// + i`. Each prepared script's `UnboundScript` follows the modules, so script
+// `j` lands at `js_snapshot_data_modules + module_count + j`; the consumer
 // recovers `module_count` from the length of the module id list.
-//
-// The options ride their own slot because they are a `PrimitiveArray`, which no
-// public accessor hands back from a deserialized `Module` or `UnboundScript`,
-// and the consumer needs the very array the engine embedded in the unit for a
-// handler registered after restore to be the one dynamic `import()` finds.
 enum {
   js_snapshot_data_metadata = 0,
   js_snapshot_data_wrapper = 1,
-  js_snapshot_data_units = 2,
+  js_snapshot_data_modules = 2,
+};
+
+// Isolate data slot layout, holding the host-defined options of each serialized
+// unit in the same order as the records above: module `i` at
+// `js_snapshot_data_module_options + i` and script `j` at
+// `js_snapshot_data_module_options + module_count + j`.
+//
+// The options need a slot of their own because they are a `PrimitiveArray`,
+// which no public accessor hands back from a deserialized `Module` or
+// `UnboundScript`, and the consumer needs the very array the engine embedded in
+// the unit for a handler registered after restore to be the one dynamic
+// `import()` finds. They ride the isolate rather than the context because V8
+// keeps every `Script` on the isolate, which puts the options in the startup
+// snapshot; referencing them from the context snapshot instead trips a debug
+// check forbidding context-to-startup pointers outside the root array.
+enum {
+  js_snapshot_data_module_options = 0,
 };
 
 // Metadata array layout: the manifests and id lists `js_rebind_from_snapshot`
@@ -3796,9 +3807,9 @@ enum {
 // keeps a stale index from being dispatched through and lets the embedder
 // register a handler again, the slot being write-once.
 static Local<PrimitiveArray>
-js_restore_host_defined_options(Isolate *isolate, Local<Context> context, size_t index) {
+js_restore_host_defined_options(Isolate *isolate, size_t index) {
   Local<Data> data;
-  if (!context->GetDataFromSnapshotOnce<Data>(index).ToLocal(&data)) return Local<PrimitiveArray>();
+  if (!isolate->GetDataFromSnapshotOnce<Data>(index).ToLocal(&data)) return Local<PrimitiveArray>();
 
   auto options = *reinterpret_cast<Local<PrimitiveArray> *>(&data);
 
@@ -4052,9 +4063,9 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
     auto id = modules->Get(context, i).ToLocalChecked().As<Symbol>();
 
     Local<Module> module;
-    if (!context->GetDataFromSnapshotOnce<Module>(js_snapshot_data_units + 2 * i).ToLocal(&module)) continue;
+    if (!context->GetDataFromSnapshotOnce<Module>(js_snapshot_data_modules + i).ToLocal(&module)) continue;
 
-    auto options = js_restore_host_defined_options(isolate, context, js_snapshot_data_units + 2 * i + 1);
+    auto options = js_restore_host_defined_options(isolate, js_snapshot_data_module_options + i);
 
     // Recover the name from the module's resource name (the same string passed at
     // creation, for both source-text and synthetic modules).
@@ -4078,20 +4089,18 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
   // and no per-instance `data`, so there is nothing to rebind; the embedder
   // reconnects its handles to the records by id via `js_get_script_by_id`. The
   // records follow the modules in the data slots, so they begin at
-  // `js_snapshot_data_units + 2 * module_count`.
+  // `js_snapshot_data_modules + module_count`.
   auto scripts = metadata->Get(context, js_snapshot_metadata_script_ids).ToLocalChecked().As<Array>();
 
   for (uint32_t j = 0; j < scripts->Length(); j++) {
     auto id = scripts->Get(context, j).ToLocalChecked().As<Symbol>();
 
-    auto script_base = js_snapshot_data_units + 2 * (modules->Length() + j);
-
     Local<Data> data;
-    if (!context->GetDataFromSnapshotOnce<Data>(script_base).ToLocal(&data)) continue;
+    if (!context->GetDataFromSnapshotOnce<Data>(js_snapshot_data_modules + modules->Length() + j).ToLocal(&data)) continue;
 
     auto script = *reinterpret_cast<Local<UnboundScript> *>(&data);
 
-    auto options = js_restore_host_defined_options(isolate, context, script_base + 1);
+    auto options = js_restore_host_defined_options(isolate, js_snapshot_data_module_options + modules->Length() + j);
 
     // Recover the name from the script's resource name (the same string passed
     // as the file name at preparation), exactly as modules recover theirs.
@@ -4341,7 +4350,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
 
     // Module ids: the id symbol of every module, in iteration order. Each
     // module's compiled record is added below as snapshot data at index
-    // `js_snapshot_data_units + 2 * i`, so the consumer pairs `ids[i]` with the
+    // `js_snapshot_data_modules + i`, so the consumer pairs `ids[i]` with the
     // module at the same offset.
     auto modules = Array::New(isolate);
 
@@ -4372,7 +4381,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
 
     // Script ids: the id symbol of every prepared script, in iteration order.
     // Each script's compiled `UnboundScript` is added below as snapshot data at
-    // index `js_snapshot_data_units + 2 * (module_count + j)`, so the consumer
+    // index `js_snapshot_data_modules + module_count + j`, so the consumer
     // pairs `ids[j]` with the script at the same offset.
     auto scripts = Array::New(isolate);
 
@@ -4411,20 +4420,22 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
 
     for (size_t i = 0; i < module_records.size(); i++) {
       auto module_index = creator->AddData(context, module_records[i]);
-      assert(module_index == size_t(js_snapshot_data_units) + 2 * i);
-
-      auto options_index = creator->AddData(context, module_options[i]);
-      assert(options_index == size_t(js_snapshot_data_units) + 2 * i + 1);
+      assert(module_index == size_t(js_snapshot_data_modules) + i);
     }
 
     for (size_t j = 0; j < script_records.size(); j++) {
-      auto base = size_t(js_snapshot_data_units) + 2 * (module_records.size() + j);
-
       auto script_index = creator->AddData(context, script_records[j]);
-      assert(script_index == base);
+      assert(script_index == size_t(js_snapshot_data_modules) + module_records.size() + j);
+    }
 
-      auto options_index = creator->AddData(context, script_options[j]);
-      assert(options_index == base + 1);
+    for (size_t i = 0; i < module_options.size(); i++) {
+      auto options_index = creator->AddData(module_options[i]);
+      assert(options_index == size_t(js_snapshot_data_module_options) + i);
+    }
+
+    for (size_t j = 0; j < script_options.size(); j++) {
+      auto options_index = creator->AddData(script_options[j]);
+      assert(options_index == size_t(js_snapshot_data_module_options) + module_options.size() + j);
     }
   }
 

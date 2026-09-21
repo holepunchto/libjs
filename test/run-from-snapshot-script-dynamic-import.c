@@ -6,20 +6,22 @@
 #include "../include/js.h"
 #include "snapshot.h"
 
-// Verifies that dynamic import() works after booting from a snapshot: the
-// producer warms up a plain global, and the consumer registers a dynamic import
-// handler and runs a script that imports a module. The import is resolved
-// asynchronously from a timer, so it only completes once the event loop runs,
-// proving the restored environment drives dynamic import end to end.
+// Verifies that a prepared script restored from a snapshot can still be given a
+// dynamic import() handler of its own. The handler lives in the host-defined
+// options the engine embedded in the script when it was compiled, so the
+// consumer can only register one if the very same options array came back with
+// the script; a fresh array would leave the engine consulting the original and
+// fall back to the environment handler instead.
 //
-// The import handler is set at runtime with js_on_dynamic_import() rather than
-// serialized, so the consumer reinstates it after restore.
+// The environment handler is registered too, and must never run: that is what
+// tells the per-unit handler apart from the fallback.
 
 static js_env_t *import_env;
 static js_deferred_t *import_deferred;
 static js_ref_t *import_namespace;
 static uv_timer_t import_timer;
 static bool import_resolved;
+static bool unit_import_called;
 
 static void
 on_module_evaluate(js_env_t *env, js_module_t *module, void *data) {
@@ -37,8 +39,6 @@ on_module_evaluate(js_env_t *env, js_module_t *module, void *data) {
   assert(e == 0);
 }
 
-// Fires from the event loop and resolves the pending dynamic import, so the
-// import only completes once the loop has run.
 static void
 on_timer(uv_timer_t *timer) {
   int e;
@@ -65,11 +65,11 @@ on_timer(uv_timer_t *timer) {
   uv_close((uv_handle_t *) timer, NULL);
 }
 
-// Builds and evaluates the requested module synchronously, but defers handing
-// back its namespace until a timer fires on the event loop.
 static js_value_t *
-on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data) {
+on_unit_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data) {
   int e;
+
+  unit_import_called = true;
 
   js_value_t *export_names[1];
   e = js_create_string_utf8(env, (utf8_t *) "answer", -1, &export_names[0]);
@@ -112,12 +112,35 @@ on_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value
   return promise;
 }
 
+// Registered for the environment as a whole, and only reached if the script's
+// own handler was lost with its host-defined options.
+static js_value_t *
+on_env_import(js_env_t *env, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data) {
+  assert(false);
+
+  return NULL;
+}
+
 static void
 produce(js_env_t *env, js_value_t *global) {
   int e;
 
-  // Seed the slot the consumer overwrites once the import resolves, to prove the
-  // import ran after restore rather than during warmup.
+  js_value_t *source;
+  e = js_create_string_utf8(env, (utf8_t *) "import('foo.js').then((ns) => { globalThis.answer = ns.answer })", -1, &source);
+  assert(e == 0);
+
+  js_script_t *script;
+  e = js_prepare_script(env, "importer.js", -1, 0, source, &script);
+  assert(e == 0);
+
+  js_value_t *id;
+  e = js_get_script_id(env, script, &id);
+  assert(e == 0);
+
+  e = js_set_named_property(env, global, "scriptId", id);
+  assert(e == 0);
+
+  // Seeded so the consumer can tell the import ran after restore.
   js_value_t *value;
   e = js_create_uint32(env, 0, &value);
   assert(e == 0);
@@ -130,29 +153,24 @@ static void
 consume(js_env_t *env, js_value_t *global) {
   int e;
 
-  e = js_on_dynamic_import(env, on_import, NULL);
+  js_value_t *id;
+  e = js_get_named_property(env, global, "scriptId", &id);
   assert(e == 0);
 
-  js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "import('foo.js').then((ns) => { globalThis.answer = ns.answer })", -1, &script);
+  js_script_t *script;
+  e = js_get_script_by_id(env, id, &script);
+  assert(e == 0);
+
+  e = js_on_dynamic_import(env, on_env_import, NULL);
+  assert(e == 0);
+
+  e = js_on_script_dynamic_import(env, script, on_unit_import, NULL);
   assert(e == 0);
 
   js_value_t *result;
-  e = js_run_script(env, "test.js", -1, 0, script, &result);
+  e = js_run_prepared_script(env, script, &result);
   assert(e == 0);
 
-  // The import is still pending; it resolves only once the timer fires.
-  js_value_t *answer;
-  e = js_get_named_property(env, global, "answer", &answer);
-  assert(e == 0);
-
-  uint32_t value;
-  e = js_get_value_uint32(env, answer, &value);
-  assert(e == 0);
-
-  assert(value == 0);
-
-  // Run the loop until the import resolves.
   uv_loop_t *loop;
   e = js_get_env_loop(env, &loop);
   assert(e == 0);
@@ -162,19 +180,26 @@ consume(js_env_t *env, js_value_t *global) {
     assert(e >= 0);
   }
 
+  assert(unit_import_called);
+
+  js_value_t *answer;
   e = js_get_named_property(env, global, "answer", &answer);
   assert(e == 0);
 
+  uint32_t value;
   e = js_get_value_uint32(env, answer, &value);
   assert(e == 0);
 
   assert(value == 42);
+
+  e = js_delete_script(env, script);
+  assert(e == 0);
 }
 
 int
 main() {
   snapshot_test_t test = {
-    .name = "run-from-snapshot-dynamic-import",
+    .name = "run-from-snapshot-script-dynamic-import",
     .produce = produce,
     .consume = consume,
   };
