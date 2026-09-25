@@ -7457,6 +7457,19 @@ js_get_value_date(js_env_t *env, js_value_t *value, double *result) {
 }
 
 extern "C" int
+js_get_value_number_object(js_env_t *env, js_value_t *value, double *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local<NumberObject>(value);
+
+  *result = local->ValueOf();
+
+  return 0;
+}
+
+extern "C" int
 js_get_array_length(js_env_t *env, js_value_t *array, uint32_t *result) {
   // Allow continuing even with a pending exception
 
