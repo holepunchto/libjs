@@ -2849,6 +2849,14 @@ int
 js_get_value_date(js_env_t *env, js_value_t *value, double *result);
 
 /**
+ * Get the value of a `NumberObject`.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_value_number_object(js_env_t *env, js_value_t *value, double *result);
+
+/**
  * Get the length of an array, which is the index of its last element plus one
  * and so may be larger than the number of elements it actually holds.
  *
