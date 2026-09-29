@@ -1,5 +1,6 @@
 list(APPEND tests
   add-finalizer
+  add-finalizer-destroy-env
   add-teardown-callback
   add-teardown-callback-deferred
   add-teardown-callback-deferred-remove
@@ -50,6 +51,7 @@ list(APPEND tests
   create-delegate-has-throw
   create-delegate-keys-throw
   create-delegate-set-throw
+  create-delegate-with-finalizer-destroy-env
   create-env
   create-env-multiple
   create-env-multiple-concurrent
@@ -67,6 +69,7 @@ list(APPEND tests
   create-external-string-utf16le
   create-external-string-utf16le-with-finalizer
   create-external-with-finalizer
+  create-external-with-finalizer-destroy-env
   create-function
   create-function-args-extra
   create-function-args-fewer
@@ -344,6 +347,7 @@ list(APPEND tests
   wrap-remove-with-finalizer
   wrap-twice
   wrap-with-finalizer
+  wrap-with-finalizer-destroy-env
   wrap-with-reference
 )
 
