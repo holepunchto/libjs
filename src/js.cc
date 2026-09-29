@@ -3065,6 +3065,9 @@ struct js_string_view_s {
   operator=(const js_string_view_s &) = delete;
 };
 
+// A backing store is how memory is shared between environments, so it is taken
+// in one and released in another, possibly on another thread and after the
+// first is gone. It is therefore allocated on its own rather than from either.
 struct js_arraybuffer_backing_store_s {
   std::shared_ptr<BackingStore> backing_store;
 
@@ -3666,7 +3669,6 @@ struct js_allocations_s {
   js_segment_array_t<js_ref_t> references;
   js_segment_array_t<js_deferred_t> deferreds;
   js_segment_array_t<js_string_view_t> string_views;
-  js_segment_array_t<js_arraybuffer_backing_store_t> backing_stores;
   js_segment_array_t<js_garbage_collection_tracking_t> garbage_collection_tracking;
   js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
   js_segment_array_t<js_inspector_t> inspectors;
@@ -3692,7 +3694,6 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->references.shrink();
   allocations->deferreds.shrink();
   allocations->string_views.shrink();
-  allocations->backing_stores.shrink();
   allocations->garbage_collection_tracking.shrink();
   allocations->deferred_teardowns.shrink();
   allocations->inspectors.shrink();
@@ -3710,7 +3711,6 @@ js__release_allocations(js_allocations_t *allocations) {
   allocations->inspectors.clear();
   allocations->deferred_teardowns.clear();
   allocations->garbage_collection_tracking.clear();
-  allocations->backing_stores.clear();
   allocations->string_views.clear();
   allocations->deferreds.clear();
   allocations->references.clear();
@@ -6554,7 +6554,7 @@ js_get_arraybuffer_backing_store(js_env_t *env, js_value_t *arraybuffer, js_arra
 
   auto local = js_to_local<ArrayBuffer>(arraybuffer);
 
-  *result = env->allocations->backing_stores.alloc(local->GetBackingStore());
+  *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
   return 0;
 }
@@ -6655,7 +6655,7 @@ js_get_sharedarraybuffer_backing_store(js_env_t *env, js_value_t *sharedarraybuf
 
   auto local = js_to_local<SharedArrayBuffer>(sharedarraybuffer);
 
-  *result = env->allocations->backing_stores.alloc(local->GetBackingStore());
+  *result = new js_arraybuffer_backing_store_t(local->GetBackingStore());
 
   return 0;
 }
@@ -6666,7 +6666,7 @@ js_release_arraybuffer_backing_store(js_env_t *env, js_arraybuffer_backing_store
 
   js_env_scope_t env_scope(env);
 
-  env->allocations->backing_stores.free(backing_store);
+  delete backing_store;
 
   return 0;
 }

@@ -100,6 +100,7 @@ list(APPEND tests
   create-reference-undefined
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
+  create-sharedarraybuffer-with-backing-store-across-envs
   create-string-latin1
   create-string-too-long
   create-string-utf8
