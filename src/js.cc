@@ -1735,10 +1735,12 @@ private: // V8 embedder API
   }
 };
 
-// Every allocation this library hands back to a caller lives in one of these
-// arrays, which the environment owns and empties when it is torn down. A
-// caller therefore never holds memory that outlives the isolate, not even for
-// the constructs that would otherwise only be released by garbage collection.
+// Allocations this library hands back to a caller live in one of these arrays,
+// which the environment owns and empties when it is torn down. Such memory
+// therefore never outlives the isolate, not even for the constructs that would
+// otherwise only be released by garbage collection. The few allocations that
+// the environment cannot own are allocated on their own instead, each saying
+// why where it is declared.
 struct js_allocations_s;
 
 namespace {

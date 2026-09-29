@@ -115,7 +115,7 @@ main() {
     assert(e == 0);
   }
 
-  assert(finalized > 0);
+  assert(finalized == rounds * len * 2);
 
   for (int i = 0; i < survivors; i++) {
     char name[16];
