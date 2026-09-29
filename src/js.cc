@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <queue>
 #include <set>
@@ -35,6 +36,7 @@ using namespace v8_inspector;
 
 typedef struct js_callback_s js_callback_t;
 typedef struct js_typed_callback_s js_typed_callback_t;
+typedef struct js_deleter_s js_deleter_t;
 typedef struct js_finalizer_s js_finalizer_t;
 template <typename T>
 struct js_binding_callbacks_s;
@@ -65,6 +67,13 @@ typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
+typedef struct js_allocations_s js_allocations_t;
+
+template <typename T, uint32_t S = 4>
+struct js_segment_array_s;
+
+template <typename T, uint32_t S = 4>
+using js_segment_array_t = js_segment_array_s<T, S>;
 
 typedef enum {
   js_task_nestable,
@@ -125,6 +134,277 @@ static void
 js_deserialize_internal_field(Local<Object> holder, int index, StartupData payload, void *data);
 
 } // namespace
+
+// A segment array holds its elements in a series of segments of geometrically
+// increasing size. Elements never move once allocated and so may be referenced
+// directly for as long as they live, while the array itself still grows in
+// amortized constant time.
+//
+// https://danielchasehooper.com/posts/segment_array/
+template <typename T, uint32_t S>
+struct js_segment_array_s {
+  // Elements are stored without a header of their own. A free element lends its
+  // storage to the link to the next free element, and whether an element is
+  // live is held in a bitmap allocated alongside the segment holding it.
+  static_assert(sizeof(T) >= sizeof(void *), "Element must be able to hold a free list link");
+  static_assert(alignof(T) >= alignof(void *), "Element must be aligned for a free list link");
+  static_assert(alignof(T) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Element must not be overaligned");
+
+  struct slot_t {
+    alignas(T) unsigned char value[sizeof(T)];
+  };
+
+  static_assert(sizeof(slot_t) == sizeof(T), "Element must be stored without padding");
+
+  static constexpr uint32_t segment_len = 1 << S;
+  static constexpr uint32_t segments_len = 32 - S;
+
+  slot_t *segments[segments_len];
+  uint32_t segments_used;
+  uint32_t len;
+  slot_t *available;
+
+  js_segment_array_s()
+      : segments(),
+        segments_used(0),
+        len(0),
+        available(nullptr) {}
+
+  js_segment_array_s(const js_segment_array_s &) = delete;
+
+  ~js_segment_array_s() {
+    clear();
+
+    for (uint32_t segment = 0; segment < segments_used; segment++) {
+      ::operator delete(segments[segment], segment_bytes(segment));
+    }
+  }
+
+  js_segment_array_s &
+  operator=(const js_segment_array_s &) = delete;
+
+  template <typename... Args>
+  T *
+  alloc(Args &&...args) {
+    slot_t *slot;
+    uint32_t i;
+
+    if (available == nullptr) {
+      i = len++;
+      slot = reserve(i);
+    } else {
+      slot = available;
+      i = index_of(slot);
+
+      available = link(slot);
+    }
+
+    // Taken live before the element is constructed, as constructing it may
+    // allocate with the engine and so collect, and a sweep that did not see the
+    // slot as live could release the segment holding it.
+    set_live(i, true);
+
+    return new (slot->value) T(std::forward<Args>(args)...);
+  }
+
+  void
+  free(T *value) {
+    auto slot = reinterpret_cast<slot_t *>(value);
+
+    auto i = index_of(slot);
+
+    assert(is_live(i));
+
+    value->~T();
+
+    set_live(i, false);
+
+    link(slot) = available;
+
+    available = slot;
+  }
+
+  // Destroys every element still live, in reverse order of allocation so that
+  // elements whose destruction must observe a stack discipline are destroyed
+  // in the order they would have been by hand. An element stays live until its
+  // destructor returns, as it would when freed, so that a destructor may itself
+  // allocate or free elements. Those it allocates are picked up by another
+  // sweep.
+  void
+  clear() {
+    bool swept;
+
+    do {
+      swept = false;
+
+      for (auto i = len; i-- > 0;) {
+        if (!is_live(i)) continue;
+
+        std::launder(reinterpret_cast<T *>(at(i)->value))->~T();
+
+        set_live(i, false);
+
+        swept = true;
+      }
+    } while (swept);
+
+    len = 0;
+
+    available = nullptr;
+  }
+
+  template <typename F>
+  void
+  each(F fn) {
+    for (uint32_t i = 0; i < len; i++) {
+      if (is_live(i)) fn(std::launder(reinterpret_cast<T *>(at(i)->value)));
+    }
+  }
+
+  // Releases the segments at the end of the array that hold no live element.
+  // Elements that are still live do not move, so pointers to them remain valid,
+  // but the free list is rebuilt as it may have held elements in the segments
+  // being released.
+  void
+  shrink() {
+    auto end = live_end();
+
+    auto used = end == 0 ? 0 : segment_of(end - 1) + 1;
+
+    if (used == segments_used) return;
+
+    len = end;
+
+    while (segments_used > used) {
+      auto segment = --segments_used;
+
+      ::operator delete(segments[segment], segment_bytes(segment));
+
+      segments[segment] = nullptr;
+    }
+
+    available = nullptr;
+
+    // Threaded back to front so that the lowest element is handed out first.
+    for (auto i = len; i-- > 0;) {
+      if (is_live(i)) continue;
+
+      auto slot = at(i);
+
+      link(slot) = available;
+
+      available = slot;
+    }
+  }
+
+private:
+  // The index just past the last live element, or zero if none are live.
+  uint32_t
+  live_end() {
+    for (auto segment = segments_used; segment-- > 0;) {
+      auto bits = bitmap(segment);
+
+      for (auto byte = (segment_slots(segment) + 7) / 8; byte-- > 0;) {
+        if (bits[byte] == 0) continue;
+
+        return segment_base(segment) + byte * 8 + uint32_t(std::bit_width(bits[byte]));
+      }
+    }
+
+    return 0;
+  }
+
+  static slot_t *&
+  link(slot_t *slot) {
+    return *reinterpret_cast<slot_t **>(slot->value);
+  }
+
+  static uint32_t
+  segment_of(uint32_t i) {
+    return uint32_t(std::bit_width((i >> S) + 1)) - 1;
+  }
+
+  static uint32_t
+  segment_slots(uint32_t segment) {
+    return segment_len << segment;
+  }
+
+  // The index the segment starts at, being the total size of those before it.
+  static uint32_t
+  segment_base(uint32_t segment) {
+    return segment_slots(segment) - segment_len;
+  }
+
+  static size_t
+  segment_bytes(uint32_t segment) {
+    auto slots = size_t(segment_slots(segment));
+
+    return slots * sizeof(slot_t) + (slots + 7) / 8;
+  }
+
+  uint8_t *
+  bitmap(uint32_t segment) {
+    return reinterpret_cast<uint8_t *>(segments[segment]) + size_t(segment_slots(segment)) * sizeof(slot_t);
+  }
+
+  bool
+  is_live(uint32_t i) {
+    auto segment = segment_of(i);
+    auto offset = i - segment_base(segment);
+
+    return bitmap(segment)[offset / 8] & (1 << (offset % 8));
+  }
+
+  void
+  set_live(uint32_t i, bool live) {
+    auto segment = segment_of(i);
+    auto offset = i - segment_base(segment);
+
+    auto &byte = bitmap(segment)[offset / 8];
+
+    if (live) byte |= uint8_t(1 << (offset % 8));
+    else byte &= uint8_t(~(1 << (offset % 8)));
+  }
+
+  slot_t *
+  at(uint32_t i) {
+    auto segment = segment_of(i);
+
+    return &segments[segment][i - segment_base(segment)];
+  }
+
+  slot_t *
+  reserve(uint32_t i) {
+    auto segment = segment_of(i);
+
+    if (segment == segments_used) {
+      auto slots = size_t(segment_slots(segment));
+
+      segments[segment] = reinterpret_cast<slot_t *>(::operator new(segment_bytes(segment)));
+
+      segments_used++;
+
+      memset(bitmap(segment), 0, (slots + 7) / 8);
+    }
+
+    return at(i);
+  }
+
+  uint32_t
+  index_of(slot_t *slot) {
+    auto address = reinterpret_cast<uintptr_t>(slot);
+
+    // Half of all slots belong to the last segment, so searching from the back
+    // settles on the right one in around two steps.
+    for (auto segment = segments_used; segment-- > 0;) {
+      auto offset = (address - reinterpret_cast<uintptr_t>(segments[segment])) / sizeof(slot_t);
+
+      if (offset < segment_slots(segment)) return segment_base(segment) + uint32_t(offset);
+    }
+
+    abort();
+  }
+};
 
 struct js_tracing_controller_s : public TracingController {
 private: // V8 embedder API
@@ -201,10 +481,10 @@ struct js_idle_task_handle_s {
   }
 };
 
-// The time budget, in seconds, granted to idle tasks when the loop is
-// otherwise idle and no delayed task constrains the deadline sooner. This is a
-// heuristic that lets background work such as incremental garbage collection
-// make progress without monopolising the thread.
+// The time budget, in seconds, granted to idle tasks when the loop is otherwise
+// idle and no delayed task constrains the deadline sooner. This is a heuristic
+// that lets background work such as incremental garbage collection make
+// progress without monopolising the thread.
 static const double js_idle_task_budget = 0.05;
 
 struct js_idle_task_s : public Task {
@@ -226,8 +506,19 @@ struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
   uv_async_t async;
+  uv_idle_t ready;
 
   int active_handles;
+
+  // Whether the tasks of this runner may only be run by the thread that drives
+  // the loop, in which case that thread has to be kept awake for them rather
+  // than merely kept from exiting.
+  bool exclusive;
+
+  // The thread that last drove the loop. Liveness is held by loop handles,
+  // which only that thread may touch, so work queued from anywhere else wakes
+  // the loop and leaves it to settle liveness itself.
+  uv_thread_t thread;
 
   // Keep a cyclic reference to the task runner itself that we'll only reset
   // once its handles have fully closed.
@@ -248,11 +539,14 @@ struct js_task_runner_s : public TaskRunner {
   std::condition_variable available;
   std::condition_variable drained;
 
-  js_task_runner_s(uv_loop_t *loop)
+  js_task_runner_s(uv_loop_t *loop, bool exclusive)
       : loop(loop),
         timer(),
         async(),
-        active_handles(2),
+        ready(),
+        active_handles(3),
+        exclusive(exclusive),
+        thread(uv_thread_self()),
         self(),
         tasks(),
         delayed_tasks(),
@@ -272,12 +566,24 @@ struct js_task_runner_s : public TaskRunner {
 
     timer.data = this;
 
+    // The async handle is what holds the loop open while there is work
+    // outstanding, as well as what wakes it when that work comes from another
+    // thread. It starts out holding the loop open so that work queued before
+    // the loop is ever run isn't lost, and is settled from then on by whichever
+    // thread drives it.
     err = uv_async_init(loop, &async, on_async);
     assert(err == 0);
 
     async.data = this;
 
-    uv_unref(reinterpret_cast<uv_handle_t *>(&async));
+    err = uv_idle_init(loop, &ready);
+    assert(err == 0);
+
+    ready.data = this;
+
+    // The ready handle is started only to keep the loop from blocking, and so
+    // must never hold it open on its own.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&ready));
   }
 
   js_task_runner_s(const js_task_runner_s &) = delete;
@@ -311,6 +617,8 @@ struct js_task_runner_s : public TaskRunner {
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&async), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&ready), on_handle_close);
   }
 
   uint64_t
@@ -318,11 +626,16 @@ struct js_task_runner_s : public TaskRunner {
     return uv_hrtime();
   }
 
-  bool
-  inactive() {
+  // Settle liveness on behalf of the thread that drives the loop, taking
+  // ownership of the handles in the process. Only ever called from the loop's
+  // own callbacks.
+  void
+  settle() {
     std::unique_lock guard(lock);
 
-    return inactive(guard);
+    thread = uv_thread_self();
+
+    update(guard);
   }
 
   void
@@ -343,10 +656,14 @@ struct js_task_runner_s : public TaskRunner {
 
     err = uv_async_send(&async);
     assert(err == 0);
+
+    update_maybe(guard);
   }
 
   void
   push_task(js_delayed_task_handle_t &&task) {
+    int err;
+
     std::unique_lock guard(lock);
 
     if (closed) return;
@@ -362,6 +679,13 @@ struct js_task_runner_s : public TaskRunner {
     task.on_completion = [this, is_disposable] { on_completion(is_disposable); };
 
     delayed_tasks.push(std::move(task));
+
+    if (driving(guard)) return update(guard);
+
+    // The timer that delayed tasks expire on may only be armed by the loop
+    // thread, so wake the loop and leave it to arm the timer itself.
+    err = uv_async_send(&async);
+    assert(err == 0);
   }
 
   void
@@ -380,6 +704,8 @@ struct js_task_runner_s : public TaskRunner {
     task.on_completion = [this] { on_completion(true); };
 
     idle_tasks.push(std::move(task));
+
+    update_maybe(guard);
   }
 
   std::optional<js_task_handle_t>
@@ -428,6 +754,8 @@ struct js_task_runner_s : public TaskRunner {
     }
 
     adjust_timer(guard);
+
+    update_maybe(guard);
   }
 
   void
@@ -436,18 +764,6 @@ struct js_task_runner_s : public TaskRunner {
 
     while (!closed && outstanding > disposable) {
       drained.wait(guard);
-    }
-  }
-
-  // Block until either a task becomes available to run or the runner drains
-  // completely, whichever comes first. Used to park the event loop thread
-  // while background work is still outstanding instead of busy-looping.
-  void
-  wait_for_idle() {
-    std::unique_lock guard(lock);
-
-    while (!closed && !can_pop_task(guard) && outstanding > disposable) {
-      available.wait(guard);
     }
   }
 
@@ -460,13 +776,41 @@ struct js_task_runner_s : public TaskRunner {
 
 private:
   bool
-  empty(const std::unique_lock<std::mutex> &) {
-    return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
+  driving(const std::unique_lock<std::mutex> &) {
+    auto self = uv_thread_self();
+
+    return uv_thread_equal(&thread, &self);
   }
 
-  bool
-  inactive(const std::unique_lock<std::mutex> &guard) {
-    return empty(guard) || outstanding == disposable;
+  // Hold the loop open for as long as there is work outstanding, including
+  // work that a worker thread has already claimed, and keep it from blocking
+  // while there is work that only the loop thread can run. Both are handle
+  // operations, so this may only be called from the thread driving the loop.
+  void
+  update(const std::unique_lock<std::mutex> &guard) {
+    int err;
+
+    if (closed) return;
+
+    auto handle = reinterpret_cast<uv_handle_t *>(&async);
+
+    if (outstanding > disposable) uv_ref(handle);
+    else uv_unref(handle);
+
+    if (!exclusive) return;
+
+    if (can_pop_task(guard)) err = uv_idle_start(&ready, on_ready);
+    else err = uv_idle_stop(&ready);
+
+    assert(err == 0);
+  }
+
+  // Liveness has to be settled as work is queued rather than once the loop
+  // comes back around, as the loop runs timers after everything else and so
+  // offers nowhere to observe what their callbacks queued.
+  void
+  update_maybe(const std::unique_lock<std::mutex> &guard) {
+    if (driving(guard)) update(guard);
   }
 
   std::optional<js_task_handle_t>
@@ -561,6 +905,8 @@ private:
 
   void
   on_completion(bool is_disposable = false) {
+    int err;
+
     std::unique_lock guard(lock);
 
     if (is_disposable) disposable--;
@@ -568,10 +914,15 @@ private:
     if (--outstanding <= disposable) {
       drained.notify_all();
 
-      // Wake any thread parked in `wait_for_idle()` so that it observes the
-      // drain and stops waiting.
-      available.notify_all();
+      // A worker thread must not touch the loop's handles, so wake the loop
+      // and leave it to observe that nothing is outstanding any more.
+      if (!closed && !driving(guard)) {
+        err = uv_async_send(&async);
+        assert(err == 0);
+      }
     }
+
+    update_maybe(guard);
   }
 
   static void
@@ -579,10 +930,21 @@ private:
     auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
 
     tasks->move_expired_tasks();
+
+    tasks->settle();
   }
 
+  // Nothing is run here. The handle is started only to tell the loop not to
+  // block, and the work itself is run before it next would.
   static void
-  on_async(uv_async_t *handle) {}
+  on_ready(uv_idle_t *handle) {}
+
+  static void
+  on_async(uv_async_t *handle) {
+    auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
+
+    tasks->settle();
+  }
 
   static void
   on_handle_close(uv_handle_t *handle) {
@@ -1195,7 +1557,7 @@ struct js_platform_s : public Platform {
         active_handles(2),
         environments(),
         foreground(),
-        background(new js_task_runner_t(loop)),
+        background(new js_task_runner_t(loop, false)),
         workers(),
         trace(new js_tracing_controller_t()),
         lock() {
@@ -1221,6 +1583,12 @@ struct js_platform_s : public Platform {
 
     prepare.data = this;
 
+    // Neither handle should keep the loop alive; that's for the task runner,
+    // which holds it open for as long as it has work. These are just where
+    // that work is run, before the loop blocks, and where the runner is handed
+    // the loop once it has polled.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
     err = uv_check_init(loop, &check);
     assert(err == 0);
 
@@ -1229,9 +1597,6 @@ struct js_platform_s : public Platform {
 
     check.data = this;
 
-    // The check handle should not on its own keep the loop alive; it's simply
-    // used for running any outstanding tasks that might cause additional work
-    // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     workers.reserve(std::max<size_t>(uv_available_parallelism() - 1 /* main thread */, 1));
@@ -1262,14 +1627,6 @@ struct js_platform_s : public Platform {
   uint64_t
   now() {
     return uv_hrtime();
-  }
-
-  void
-  idle() {
-    // Park the loop thread until the background runner either drains completely
-    // or has a task that can be run, rather than busy-looping or blocking until
-    // every outstanding task has finished.
-    background->wait_for_idle();
   }
 
   void
@@ -1311,44 +1668,20 @@ private:
     }
   }
 
-  void
-  check_liveness() {
-    int err;
-
-    if (background->inactive()) {
-      err = uv_prepare_stop(&prepare);
-    } else {
-      err = uv_prepare_start(&prepare, on_prepare);
-    }
-
-    assert(err == 0);
-  }
-
   static void
   on_prepare(uv_prepare_t *handle) {
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
     platform->run_tasks();
 
-    platform->check_liveness();
+    platform->background->settle();
   }
 
   static void
   on_check(uv_check_t *handle) {
-    int err;
-
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
-    if (uv_loop_alive(platform->loop)) {
-      err = uv_prepare_start(&platform->prepare, on_prepare);
-      assert(err == 0);
-
-      return;
-    }
-
-    platform->idle();
-
-    platform->check_liveness();
+    platform->background->settle();
   }
 
   static void
@@ -1449,9 +1782,6 @@ struct js_binding_state_s {
   js_function_callbacks_t functions;
 
   js_finalizer_callbacks_t finalizers;
-
-  void
-  destroy_function_callbacks();
 };
 
 struct js_snapshot_state_s {
@@ -1465,6 +1795,30 @@ struct js_snapshot_state_s {
         function_code_handling(SnapshotCreator::FunctionCodeHandling::kClear),
         external_references(std::move(references)) {}
 };
+
+// Allocations this library hands back to a caller live in one of these arrays,
+// which the environment owns and empties when it is torn down. Such memory
+// therefore never outlives the isolate, not even for the constructs that would
+// otherwise only be released by garbage collection. The few allocations that
+// the environment cannot own are allocated on their own instead, each saying
+// why where it is declared.
+struct js_allocations_s;
+
+namespace {
+
+static js_allocations_t *
+js__create_allocations();
+
+static void
+js__shrink_allocations(js_allocations_t *allocations);
+
+static void
+js__release_allocations(js_allocations_t *allocations);
+
+static void
+js__destroy_allocations(js_allocations_t *allocations);
+
+} // namespace
 
 struct js_env_s {
   uv_loop_t *loop;
@@ -1506,6 +1860,8 @@ struct js_env_s {
 
   js_teardown_queue_t teardown_queue;
 
+  js_allocations_t *allocations;
+
   std::shared_ptr<js_inspector_client_t> inspector;
 
   struct {
@@ -1544,6 +1900,7 @@ struct js_env_s {
         default_module_id(),
         unhandled_promises(),
         teardown_queue(),
+        allocations(js__create_allocations()),
         inspector(),
         callbacks(),
         bindings(),
@@ -1568,6 +1925,12 @@ struct js_env_s {
 
     prepare.data = this;
 
+    // Neither handle should keep the loop alive; that's for the task runner,
+    // which holds it open for as long as it has work. These are just where
+    // that work is run, before the loop blocks, and where the runner is handed
+    // the loop once it has polled.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
     err = uv_check_init(loop, &check);
     assert(err == 0);
 
@@ -1576,9 +1939,6 @@ struct js_env_s {
 
     check.data = this;
 
-    // The check handle should not on its own keep the loop alive; it's simply
-    // used for running any outstanding tasks that might cause additional work
-    // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     err = uv_async_init(loop, &teardown, on_teardown);
@@ -1589,6 +1949,8 @@ struct js_env_s {
     uv_unref(reinterpret_cast<uv_handle_t *>(&teardown));
 
     isolate->SetData(0, this);
+
+    isolate->AddGCEpilogueCallback(on_garbage_collection, this, GCType::kGCTypeMarkSweepCompact);
 
     auto isolate_scope = Isolate::Scope(isolate);
     auto scope = HandleScope(isolate);
@@ -1615,32 +1977,39 @@ struct js_env_s {
   }
 
   ~js_env_s() {
+    isolate->RemoveGCEpilogueCallback(on_garbage_collection, this);
+
     if (inspector) inspector.reset();
 
-    bindings.destroy_function_callbacks();
-
     // The finalizer table does not own its entries, so just drop the lookup
-    // mappings; any finalizer destructor firing during disposal then sees an
-    // empty table and skips its slot removal.
+    // mappings; any finalizer destroyed during teardown then sees an empty
+    // table and skips its slot removal.
     bindings.finalizers.entries.clear();
     bindings.finalizers.free.clear();
 
-    if (snapshot.creator) delete snapshot.creator;
-    else {
+    {
       auto isolate_scope = Isolate::Scope(isolate);
       auto scope = HandleScope(isolate);
 
-      wrapper.Reset();
-      delegate.Reset();
-      tag.Reset();
-      exception.Reset();
-      default_module_id.Reset();
+      if (snapshot.creator == nullptr) {
+        wrapper.Reset();
+        delegate.Reset();
+        tag.Reset();
+        exception.Reset();
+        default_module_id.Reset();
 
-      context.Get(isolate)->Exit();
-      context.Reset();
+        context.Get(isolate)->Exit();
+        context.Reset();
+      }
+
+      js__release_allocations(allocations);
     }
 
+    if (snapshot.creator) delete snapshot.creator;
+
     isolate->Dispose();
+
+    js__destroy_allocations(allocations);
 
     std::unique_lock guard(platform->lock);
 
@@ -1709,7 +2078,7 @@ struct js_env_s {
   }
 
   void
-  idle() {
+  run_idle_tasks() {
     // Now that the loop would otherwise be idle, run any pending idle tasks for
     // this isolate, giving them a deadline based on the next delayed task.
     tasks->set_idling(true);
@@ -1717,10 +2086,6 @@ struct js_env_s {
     run_macrotasks();
 
     tasks->set_idling(false);
-
-    // Then park until the platform either drains completely or a task is made
-    // available, at which point the loop is pumped again.
-    platform->idle();
   }
 
   void
@@ -1968,19 +2333,11 @@ private:
     if (active_handles == 0) dispose();
   }
 
-  void
-  check_liveness() {
-    int err;
+  static void
+  on_garbage_collection(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
+    auto env = reinterpret_cast<js_env_t *>(data);
 
-    tasks->move_expired_tasks();
-
-    if (tasks->inactive()) {
-      err = uv_prepare_stop(&prepare);
-    } else {
-      err = uv_prepare_start(&prepare, on_prepare);
-    }
-
-    assert(err == 0);
+    js__shrink_allocations(env->allocations);
   }
 
   static void
@@ -1989,25 +2346,26 @@ private:
 
     env->run_macrotasks();
 
-    env->check_liveness();
+    env->tasks->settle();
   }
 
   static void
   on_check(uv_check_t *handle) {
-    int err;
-
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
-    if (uv_loop_alive(env->loop)) {
-      err = uv_prepare_start(&env->prepare, on_prepare);
-      assert(err == 0);
+    env->tasks->settle();
 
-      return;
-    }
+    // Liveness is settled as work is queued, so the loop having nothing left
+    // means it really is about to go idle rather than merely looking like it.
+    if (uv_loop_alive(env->loop)) return;
 
-    env->idle();
+    env->run_idle_tasks();
 
-    env->check_liveness();
+    // With nothing left to run, hand back whatever the allocations have
+    // outgrown rather than hold it while idle.
+    js__shrink_allocations(env->allocations);
+
+    env->tasks->settle();
   }
 
   static void
@@ -2065,6 +2423,10 @@ struct js_context_s {
   operator=(const js_context_s &) = delete;
 };
 
+// Handle scopes are not owned by the environment. They must be destroyed in
+// the exact reverse of the order they were opened, interleaved with the scopes
+// held on the native stack, and no sweep can reconstruct that order. Leaving
+// one open therefore leaks it.
 struct js_handle_scope_s {
   HandleScope scope;
 
@@ -2403,21 +2765,21 @@ struct js_deferred_s {
 };
 
 struct js_callback_s {
-  Global<Value> function;
+  Global<Value> instance;
   uint32_t index;
   js_env_t *env;
   js_function_cb cb;
   void *data;
 
   js_callback_s(js_env_t *env, js_function_cb cb, void *data)
-      : function(),
+      : instance(),
         index(env->bindings.functions.add(this)),
         env(env),
         cb(cb),
         data(data) {}
 
   js_callback_s(js_env_t *env, js_function_cb cb, void *data, uint32_t index)
-      : function(),
+      : instance(),
         index(index),
         env(env),
         cb(cb),
@@ -2428,6 +2790,9 @@ struct js_callback_s {
   virtual ~js_callback_s() {
     env->bindings.functions.remove(index, this);
   }
+
+  virtual void
+  destroy();
 
   js_callback_s &
   operator=(const js_callback_s &) = delete;
@@ -2465,9 +2830,9 @@ struct js_callback_s {
 
   void
   hold_weakly(Isolate *isolate, Local<Value> function) {
-    this->function.Reset(isolate, function);
+    instance.Reset(isolate, function);
 
-    this->function.SetWeak(static_cast<js_callback_t *>(this), on_finalize, WeakCallbackType::kParameter);
+    instance.SetWeak(static_cast<js_callback_t *>(this), on_finalize, WeakCallbackType::kParameter);
   }
 
   static void
@@ -2494,22 +2859,9 @@ protected:
   on_finalize(const WeakCallbackInfo<js_callback_t> &info) {
     auto callback = info.GetParameter();
 
-    delete callback;
+    callback->destroy();
   }
 };
-
-void
-js_binding_state_s::destroy_function_callbacks() {
-  std::vector<js_callback_t *> callbacks;
-
-  std::swap(callbacks, functions.entries);
-
-  functions.free.clear();
-
-  for (auto callback : callbacks) {
-    delete callback;
-  }
-}
 
 struct js_typed_callback_s : js_callback_t {
   CTypeInfo result;
@@ -2529,6 +2881,9 @@ struct js_typed_callback_s : js_callback_t {
   js_typed_callback_s &
   operator=(const js_typed_callback_s &) = delete;
 
+  void
+  destroy() override;
+
   Local<FunctionTemplate>
   to_function_template(Isolate *isolate, Local<Signature> signature = Local<Signature>()) {
     return FunctionTemplate::New(
@@ -2542,6 +2897,27 @@ struct js_typed_callback_s : js_callback_t {
       &function
     );
   }
+};
+
+// The engine owns these outright and releases them along with the backing
+// store they were handed to, which for a shared backing store may be long
+// after the environment that created it is gone. They are therefore allocated
+// on their own rather than from the environment.
+struct js_deleter_s {
+  void *data;
+
+  js_finalize_cb finalize_cb;
+  void *finalize_hint;
+
+  js_deleter_s(void *data, js_finalize_cb finalize_cb, void *finalize_hint)
+      : data(data),
+        finalize_cb(finalize_cb),
+        finalize_hint(finalize_hint) {}
+
+  js_deleter_s(const js_deleter_s &) = delete;
+
+  js_deleter_s &
+  operator=(const js_deleter_s &) = delete;
 };
 
 struct js_finalizer_s {
@@ -2573,6 +2949,9 @@ struct js_finalizer_s {
   js_finalizer_s &
   operator=(const js_finalizer_s &) = delete;
 
+  virtual void
+  destroy();
+
   void
   attach_to(Isolate *isolate, Local<Value> local) {
     value.Reset(isolate, local);
@@ -2595,7 +2974,7 @@ private:
     if (finalizer->finalize_cb) {
       info.SetSecondPassCallback(on_second_pass_finalize);
     } else {
-      delete finalizer;
+      finalizer->destroy();
     }
   }
 
@@ -2605,7 +2984,7 @@ private:
 
     finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
 
-    delete finalizer;
+    finalizer->destroy();
   }
 };
 
@@ -2622,6 +3001,9 @@ struct js_delegate_s : js_finalizer_t {
 
   js_delegate_s &
   operator=(const js_delegate_s &) = delete;
+
+  void
+  destroy() override;
 
   Local<ObjectTemplate>
   to_object_template(Isolate *isolate) {
@@ -2886,6 +3268,9 @@ struct js_string_view_s {
   operator=(const js_string_view_s &) = delete;
 };
 
+// A backing store is how memory is shared between environments, so it is taken
+// in one and released in another, possibly on another thread and after the
+// first is gone. It is therefore allocated on its own rather than from either.
 struct js_arraybuffer_backing_store_s {
   std::shared_ptr<BackingStore> backing_store;
 
@@ -3036,6 +3421,9 @@ static const uint8_t js_threadsafe_function_pending = 0x2;
 
 } // namespace
 
+// The lifetime of a threadsafe function is owned by the loop rather than the
+// environment; it is released only once its async handle has finished closing.
+// It is allocated on its own for that reason.
 struct js_threadsafe_function_s {
   Global<Value> function;
   js_env_t *env;
@@ -3439,15 +3827,143 @@ js_inspector_client_s::on_pause(js_inspector_t *session) {
   return session->cb(session->env, session, session->data);
 }
 
+namespace {
+
+static void
+js_garbage_collection_tracking_prologue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data);
+
+static void
+js_garbage_collection_tracking_epilogue(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data);
+
+} // namespace
+
 struct js_garbage_collection_tracking_s {
+  js_env_t *env;
+
   js_garbage_collection_tracking_options_t options;
 
   void *data;
 
-  js_garbage_collection_tracking_s(js_garbage_collection_tracking_options_t options, void *data)
-      : options(options),
-        data(data) {}
+  js_garbage_collection_tracking_s(js_env_t *env, js_garbage_collection_tracking_options_t options, void *data)
+      : env(env),
+        options(options),
+        data(data) {
+    auto filter = static_cast<GCType>(GCType::kGCTypeScavenge | GCType::kGCTypeMarkSweepCompact);
+
+    env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, this, filter);
+    env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, this, filter);
+  }
+
+  js_garbage_collection_tracking_s(const js_garbage_collection_tracking_s &) = delete;
+
+  ~js_garbage_collection_tracking_s() {
+    env->isolate->RemoveGCPrologueCallback(js_garbage_collection_tracking_prologue, this);
+    env->isolate->RemoveGCEpilogueCallback(js_garbage_collection_tracking_epilogue, this);
+  }
+
+  js_garbage_collection_tracking_s &
+  operator=(const js_garbage_collection_tracking_s &) = delete;
 };
+
+struct js_allocations_s {
+  js_segment_array_t<js_context_t> contexts;
+  js_segment_array_t<js_script_t> scripts;
+  js_segment_array_t<js_module_t> modules;
+  js_segment_array_t<js_ref_t> references;
+  js_segment_array_t<js_deferred_t> deferreds;
+  js_segment_array_t<js_string_view_t> string_views;
+  js_segment_array_t<js_garbage_collection_tracking_t> garbage_collection_tracking;
+  js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
+  js_segment_array_t<js_inspector_t> inspectors;
+
+  js_segment_array_t<js_callback_t> callbacks;
+  js_segment_array_t<js_typed_callback_t> typed_callbacks;
+  js_segment_array_t<js_finalizer_t> finalizers;
+  js_segment_array_t<js_delegate_t> delegates;
+};
+
+namespace {
+
+static js_allocations_t *
+js__create_allocations() {
+  return new js_allocations_t();
+}
+
+static void
+js__shrink_allocations(js_allocations_t *allocations) {
+  allocations->contexts.shrink();
+  allocations->scripts.shrink();
+  allocations->modules.shrink();
+  allocations->references.shrink();
+  allocations->deferreds.shrink();
+  allocations->string_views.shrink();
+  allocations->garbage_collection_tracking.shrink();
+  allocations->deferred_teardowns.shrink();
+  allocations->inspectors.shrink();
+  allocations->callbacks.shrink();
+  allocations->typed_callbacks.shrink();
+  allocations->finalizers.shrink();
+  allocations->delegates.shrink();
+}
+
+static void
+js__release_allocations(js_allocations_t *allocations) {
+  allocations->callbacks.clear();
+  allocations->inspectors.clear();
+  allocations->deferred_teardowns.clear();
+  allocations->garbage_collection_tracking.clear();
+  allocations->string_views.clear();
+  allocations->deferreds.clear();
+  allocations->references.clear();
+  allocations->modules.clear();
+  allocations->scripts.clear();
+  allocations->contexts.clear();
+
+  // The engine may still reach these until the isolate is disposed: typed
+  // callbacks through the signatures its compiler threads read, and finalizers
+  // through second pass callbacks that are still pending, which any collection
+  // runs first. They therefore only let go of their handles here and are freed
+  // along with the allocations.
+
+  allocations->typed_callbacks.each([](js_typed_callback_t *callback) {
+    callback->instance.Reset();
+  });
+
+  allocations->finalizers.each([](js_finalizer_t *finalizer) {
+    finalizer->value.Reset();
+  });
+
+  allocations->delegates.each([](js_delegate_t *delegate) {
+    delegate->value.Reset();
+  });
+}
+
+static void
+js__destroy_allocations(js_allocations_t *allocations) {
+  delete allocations;
+}
+
+} // namespace
+
+void
+js_callback_s::destroy() {
+  env->allocations->callbacks.free(this);
+}
+
+void
+js_typed_callback_s::destroy() {
+  env->allocations->typed_callbacks.free(this);
+}
+
+void
+js_finalizer_s::destroy() {
+  env->allocations->finalizers.free(this);
+}
+
+void
+js_delegate_s::destroy() {
+  env->allocations->delegates.free(this);
+}
 
 struct js_microtask_s {
   js_env_t *env;
@@ -3934,7 +4450,7 @@ js_deserialize_internal_field(Local<Object> holder, int index, StartupData paylo
 
   auto rebound = js_rebind(handlers, env, info);
 
-  auto delegate = new js_delegate_t(env, callbacks, rebound.data, finalize_cb, rebound.finalize_hint);
+  auto delegate = env->allocations->delegates.alloc(env, callbacks, rebound.data, finalize_cb, rebound.finalize_hint);
 
   holder->SetAlignedPointerInInternalField(index, delegate, js_delegate_type_tag);
 
@@ -4022,7 +4538,7 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
       env->bindings.functions.entries.resize(slot + 1, nullptr);
     }
 
-    env->bindings.functions.entries[slot] = new js_callback_t(env, cb, data, slot);
+    env->bindings.functions.entries[slot] = env->allocations->callbacks.alloc(env, cb, data, slot);
   }
 
   for (uint32_t i = 0; i + 2 < wraps->Length(); i += 3) {
@@ -4040,7 +4556,7 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
 
     auto payload = js_rebind(handlers, env, info);
 
-    auto finalizer = new js_finalizer_t(env, payload.data, finalize_cb, payload.finalize_hint);
+    auto finalizer = env->allocations->finalizers.alloc(env, payload.data, finalize_cb, payload.finalize_hint);
 
     finalizer->index = slot;
 
@@ -4079,7 +4595,7 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
       string->WriteUtf8V2(isolate, name.data(), length, String::WriteFlags::kReplaceInvalidUtf8);
     }
 
-    auto record = new js_module_t(isolate, module, id, options, std::move(name));
+    auto record = env->allocations->modules.alloc(isolate, module, id, options, std::move(name));
 
     env->modules.emplace(module->GetIdentityHash(), record);
   }
@@ -4114,7 +4630,7 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
       string->WriteUtf8V2(isolate, name.data(), length, String::WriteFlags::kReplaceInvalidUtf8);
     }
 
-    auto record = new js_script_t(isolate, script, id, options, std::move(name));
+    auto record = env->allocations->scripts.alloc(isolate, script, id, options, std::move(name));
 
     env->scripts.push_back(record);
   }
@@ -4174,7 +4690,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   auto isolate = Isolate::Allocate();
 
-  auto tasks = new js_task_runner_t(loop);
+  auto tasks = new js_task_runner_t(loop, true);
 
   std::unique_lock guard(platform->lock);
 
@@ -4255,7 +4771,7 @@ js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_o
   // creator and dispose the isolate ourselves at teardown.
   auto isolate = Isolate::Allocate();
 
-  auto tasks = new js_task_runner_t(loop);
+  auto tasks = new js_task_runner_t(loop, true);
 
   std::unique_lock guard(platform->lock);
 
@@ -4452,7 +4968,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
   env->context.Reset();
 
   for (auto callback : env->bindings.functions.entries) {
-    if (callback) callback->function.Reset();
+    if (callback) callback->instance.Reset();
   }
 
   for (auto finalizer : env->bindings.finalizers.entries) {
@@ -4645,7 +5161,7 @@ js_create_context(js_env_t *env, js_context_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_context_t(env);
+  *result = env->allocations->contexts.alloc(env);
 
   return 0;
 }
@@ -4656,7 +5172,7 @@ js_destroy_context(js_env_t *env, js_context_t *context) {
 
   js_env_scope_t env_scope(env);
 
-  delete context;
+  env->allocations->contexts.free(context);
 
   return 0;
 }
@@ -4833,7 +5349,7 @@ js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, i
     script_name = std::string(file, len);
   }
 
-  auto script = new js_script_t(env->isolate, compiled.ToLocalChecked(), id, host_defined_options, std::move(script_name));
+  auto script = env->allocations->scripts.alloc(env->isolate, compiled.ToLocalChecked(), id, host_defined_options, std::move(script_name));
 
   // Track the script so the snapshot producer can serialize its compiled record
   // and reset its global handles before `CreateBlob()`.
@@ -4911,7 +5427,7 @@ js_delete_script(js_env_t *env, js_script_t *script) {
 
   env->scripts.remove(script);
 
-  delete script;
+  env->allocations->scripts.free(script);
 
   return 0;
 }
@@ -5055,7 +5571,7 @@ js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, in
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, id, host_defined_options, std::move(module_name));
+  auto module = env->allocations->modules.alloc(env->isolate, local, id, host_defined_options, std::move(module_name));
 
   module->callbacks.meta = cb;
   module->callbacks.meta_data = data;
@@ -5156,7 +5672,7 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
     module_name = std::string(name, len);
   }
 
-  auto module = new js_module_t(env->isolate, local, id, Local<PrimitiveArray>(), std::move(module_name));
+  auto module = env->allocations->modules.alloc(env->isolate, local, id, Local<PrimitiveArray>(), std::move(module_name));
 
   module->callbacks.evaluate = cb;
   module->callbacks.evaluate_data = data;
@@ -5185,7 +5701,7 @@ js_delete_module(js_env_t *env, js_module_t *module) {
     }
   }
 
-  delete module;
+  env->allocations->modules.free(module);
 
   return 0;
 }
@@ -5382,7 +5898,7 @@ js_create_reference(js_env_t *env, js_value_t *value, uint32_t count, js_ref_t *
 
   js_env_scope_t env_scope(env);
 
-  auto reference = new js_ref_t(env->isolate, js_to_local(value), count);
+  auto reference = env->allocations->references.alloc(env->isolate, js_to_local(value), count);
 
   if (reference->count == 0) reference->set_weak();
 
@@ -5397,7 +5913,7 @@ js_delete_reference(js_env_t *env, js_ref_t *reference) {
 
   js_env_scope_t env_scope(env);
 
-  delete reference;
+  env->allocations->references.free(reference);
 
   return 0;
 }
@@ -5457,7 +5973,7 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
 
   auto context = env->current_context();
 
-  auto callback = new js_callback_t(env, constructor, data);
+  auto callback = env->allocations->callbacks.alloc(env, constructor, data);
 
   auto tpl = callback->to_function_template(env->isolate);
 
@@ -5465,7 +5981,7 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
     auto string = js_to_string_utf8(env, name, len, true);
 
     if (string.IsEmpty()) {
-      delete callback;
+      callback->destroy();
 
       return js__error(env);
     }
@@ -5504,20 +6020,20 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
       Local<FunctionTemplate> setter;
 
       if (property->getter) {
-        auto callback = new js_callback_t(env, property->getter, property->data);
+        auto callback = env->allocations->callbacks.alloc(env, property->getter, property->data);
 
         getter = callback->to_function_template(env->isolate);
       }
 
       if (property->setter) {
-        auto callback = new js_callback_t(env, property->setter, property->data);
+        auto callback = env->allocations->callbacks.alloc(env, property->setter, property->data);
 
         setter = callback->to_function_template(env->isolate);
       }
 
       tpl->PrototypeTemplate()->SetAccessorProperty(name, getter, setter, attributes);
     } else if (property->method) {
-      auto callback = new js_callback_t(env, property->method, property->data);
+      auto callback = env->allocations->callbacks.alloc(env, property->method, property->data);
 
       auto method = callback->to_function_template(env->isolate, Signature::New(env->isolate, tpl));
 
@@ -5566,13 +6082,13 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       Local<Function> setter;
 
       if (property->getter) {
-        auto callback = new js_callback_t(env, property->getter, property->data);
+        auto callback = env->allocations->callbacks.alloc(env, property->getter, property->data);
 
         getter = callback->to_function(env->isolate, context).ToLocalChecked();
       }
 
       if (property->setter) {
-        auto callback = new js_callback_t(env, property->setter, property->data);
+        auto callback = env->allocations->callbacks.alloc(env, property->setter, property->data);
 
         setter = callback->to_function(env->isolate, context).ToLocalChecked();
       }
@@ -5588,7 +6104,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         }
       );
     } else if (property->method) {
-      auto callback = new js_callback_t(env, property->method, property->data);
+      auto callback = env->allocations->callbacks.alloc(env, property->method, property->data);
 
       auto method = callback->to_function(env->isolate, context).ToLocalChecked();
 
@@ -5664,7 +6180,7 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
     return js__error(env);
   }
 
-  auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+  auto finalizer = env->allocations->finalizers.alloc(env, data, finalize_cb, finalize_hint);
 
   finalizer->index = env->bindings.finalizers.add(finalizer);
 
@@ -5677,7 +6193,7 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
   );
 
   if (success.IsNothing()) {
-    delete finalizer;
+    finalizer->destroy();
 
     return js__error(env);
   }
@@ -5789,7 +6305,7 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result) {
 
   if (result) *result = finalizer->data;
 
-  delete finalizer;
+  finalizer->destroy();
 
   return 0;
 }
@@ -5802,7 +6318,7 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
 
   auto context = env->current_context();
 
-  auto delegate = new js_delegate_t(env, *callbacks, data, finalize_cb, finalize_hint);
+  auto delegate = env->allocations->delegates.alloc(env, *callbacks, data, finalize_cb, finalize_hint);
 
   delegate->index = env->bindings.finalizers.add(delegate);
 
@@ -5831,7 +6347,7 @@ js_add_finalizer(js_env_t *env, js_value_t *object, void *data, js_finalize_cb f
 
   auto local = js_to_local<Object>(object);
 
-  auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+  auto finalizer = env->allocations->finalizers.alloc(env, data, finalize_cb, finalize_hint);
 
   finalizer->attach_to(env->isolate, local);
 
@@ -6277,7 +6793,7 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
 
   auto context = env->current_context();
 
-  auto callback = new js_callback_t(env, cb, data);
+  auto callback = env->allocations->callbacks.alloc(env, cb, data);
 
   auto function = env->try_catch<Function>(
     [&] {
@@ -6286,7 +6802,7 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
   );
 
   if (function.IsEmpty()) {
-    delete callback;
+    callback->destroy();
 
     return js__error(env);
   }
@@ -6576,7 +7092,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
 
   args_info.emplace_back(CTypeInfo::kCallbackOptionsType);
 
-  auto callback = new js_typed_callback_t(
+  auto callback = env->allocations->typed_callbacks.alloc(
     env,
     cb,
     data,
@@ -6593,7 +7109,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
   );
 
   if (function.IsEmpty()) {
-    delete callback;
+    callback->destroy();
 
     return js__error(env);
   }
@@ -6604,7 +7120,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
     auto string = js_to_string_utf8(env, name, len, true);
 
     if (string.IsEmpty()) {
-      delete callback;
+      callback->destroy();
 
       return js__error(env);
     }
@@ -6740,7 +7256,7 @@ js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *
   auto external = External::New(env->isolate, data, js_external_type_tag);
 
   if (finalize_cb) {
-    auto finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+    auto finalizer = env->allocations->finalizers.alloc(env, data, finalize_cb, finalize_hint);
 
     finalizer->attach_to(env->isolate, external);
   }
@@ -6849,7 +7365,7 @@ js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise)
 
   auto resolver = Promise::Resolver::New(context).ToLocalChecked();
 
-  *deferred = new js_deferred_t(env->isolate, resolver);
+  *deferred = env->allocations->deferreds.alloc(env->isolate, resolver);
 
   *promise = js_from_local(resolver->GetPromise());
 
@@ -6872,7 +7388,7 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
 
-  delete deferred;
+  env->allocations->deferreds.free(deferred);
 
   if (env->depth == 0) env->run_microtasks();
 
@@ -7008,11 +7524,11 @@ static void
 js_finalize_external_arraybuffer(void *data, size_t len, void *deleter_data) {
   if (deleter_data == nullptr) return;
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+  auto deleter = reinterpret_cast<js_deleter_t *>(deleter_data);
 
-  finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
+  deleter->finalize_cb(nullptr, deleter->data, deleter->finalize_hint);
 
-  delete finalizer;
+  delete deleter;
 }
 
 } // namespace
@@ -7023,17 +7539,17 @@ js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finaliz
 
   js_env_scope_t env_scope(env);
 
-  js_finalizer_t *finalizer = nullptr;
+  js_deleter_t *deleter = nullptr;
 
   if (finalize_cb) {
-    finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
   }
 
   auto store = ArrayBuffer::NewBackingStore(
     data,
     len,
     js_finalize_external_arraybuffer,
-    finalizer
+    deleter
   );
 
   auto arraybuffer = ArrayBuffer::New(env->isolate, std::move(store));
@@ -7124,11 +7640,11 @@ static void
 js_finalize_external_sharedarraybuffer(void *data, size_t len, void *deleter_data) {
   if (deleter_data == nullptr) return;
 
-  auto finalizer = reinterpret_cast<js_finalizer_t *>(deleter_data);
+  auto deleter = reinterpret_cast<js_deleter_t *>(deleter_data);
 
-  finalizer->finalize_cb(nullptr, finalizer->data, finalizer->finalize_hint);
+  deleter->finalize_cb(nullptr, deleter->data, deleter->finalize_hint);
 
-  delete finalizer;
+  delete deleter;
 }
 
 } // namespace
@@ -7139,17 +7655,17 @@ js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_f
 
   js_env_scope_t env_scope(env);
 
-  js_finalizer_t *finalizer = nullptr;
+  js_deleter_t *deleter = nullptr;
 
   if (finalize_cb) {
-    finalizer = new js_finalizer_t(env, data, finalize_cb, finalize_hint);
+    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
   }
 
   auto store = SharedArrayBuffer::NewBackingStore(
     data,
     len,
     js_finalize_external_sharedarraybuffer,
-    finalizer
+    deleter
   );
 
   auto sharedarraybuffer = SharedArrayBuffer::New(env->isolate, std::move(store));
@@ -8981,7 +9497,7 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
   // V8 might flatten the string, which requires a handle scope.
   js_env_scope_t env_scope(env, {.handle_scope = true});
 
-  auto view = new js_string_view_t(env->isolate, js_to_local<String>(string));
+  auto view = env->allocations->string_views.alloc(env->isolate, js_to_local<String>(string));
 
   if (encoding) *encoding = view->encoding;
 
@@ -8998,7 +9514,7 @@ extern "C" int
 js_release_string_view(js_env_t *env, js_string_view_t *view) {
   // Allow continuing even with a pending exception
 
-  delete view;
+  env->allocations->string_views.free(view);
 
   return 0;
 }
@@ -9474,13 +9990,13 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
 
   int err;
 
-  auto handle = new js_deferred_teardown_t(env, callback, data);
+  auto handle = env->allocations->deferred_teardowns.alloc(env, callback, data);
 
   auto status = env->add_teardown_callback(js_call_deferred_teardown, handle);
 
   switch (status) {
   case js_teardown_queue_t::status::already_registered:
-    delete handle;
+    env->allocations->deferred_teardowns.free(handle);
 
     err = js_throw_error(env, NULL, "Teardown callback has already been registered");
     assert(err == 0);
@@ -9488,7 +10004,7 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
     return js__error(env);
 
   case js_teardown_queue_t::status::drained:
-    delete handle;
+    env->allocations->deferred_teardowns.free(handle);
 
     err = js_throw_error(env, NULL, "Teardown queue has already drained");
     assert(err == 0);
@@ -9512,7 +10028,7 @@ js_finish_deferred_teardown_callback(js_deferred_teardown_t *handle) {
 
   assert(status == js_teardown_queue_s::status::success);
 
-  delete handle;
+  handle->env->allocations->deferred_teardowns.free(handle);
 
   return 0;
 }
@@ -9834,14 +10350,7 @@ js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection
 
   js_env_scope_t env_scope(env);
 
-  auto tracking = new js_garbage_collection_tracking_t(*options, data);
-
-  auto filter = static_cast<GCType>(GCType::kGCTypeScavenge | GCType::kGCTypeMarkSweepCompact);
-
-  env->isolate->AddGCPrologueCallback(js_garbage_collection_tracking_prologue, tracking, filter);
-  env->isolate->AddGCEpilogueCallback(js_garbage_collection_tracking_epilogue, tracking, filter);
-
-  *result = tracking;
+  *result = env->allocations->garbage_collection_tracking.alloc(env, *options, data);
 
   return 0;
 }
@@ -9852,10 +10361,7 @@ js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_trac
 
   js_env_scope_t env_scope(env);
 
-  env->isolate->RemoveGCPrologueCallback(js_garbage_collection_tracking_prologue, tracking);
-  env->isolate->RemoveGCEpilogueCallback(js_garbage_collection_tracking_epilogue, tracking);
-
-  delete tracking;
+  env->allocations->garbage_collection_tracking.free(tracking);
 
   return 0;
 }
@@ -9918,7 +10424,7 @@ extern "C" int
 js_create_inspector(js_env_t *env, js_inspector_t **result) {
   js_env_scope_t env_scope(env);
 
-  *result = new js_inspector_t(env);
+  *result = env->allocations->inspectors.alloc(env);
 
   return 0;
 }
@@ -9927,7 +10433,7 @@ extern "C" int
 js_destroy_inspector(js_env_t *env, js_inspector_t *inspector) {
   js_env_scope_t env_scope(env);
 
-  delete inspector;
+  env->allocations->inspectors.free(inspector);
 
   return 0;
 }
