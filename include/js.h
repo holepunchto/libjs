@@ -348,10 +348,10 @@ typedef js_value_t *(*js_function_cb)(js_env_t *, js_callback_info_t *);
  * when the data is otherwise released, and is passed the data and the hint it
  * was attached with.
  *
- * As collection is at the discretion of the engine, a finalize callback is not
- * guaranteed to run at all. It is also called at a point where the engine is
- * not necessarily able to run JavaScript, so it should do no more than release
- * the data it is given, and must not assume that the environment it is passed,
+ * As collection is at the discretion of the engine, so is when a finalize
+ * callback runs. It is also called at a point where the engine is not
+ * necessarily able to run JavaScript, so it should do no more than release the
+ * data it is given, and must not assume that the environment it is passed,
  * which may be `NULL`, is usable.
  */
 typedef void (*js_finalize_cb)(js_env_t *, void *data, void *finalize_hint);
@@ -1100,7 +1100,9 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
 /**
  * Destroy an environment, running any teardown callbacks registered with
- * `js_add_teardown_callback()` in the reverse order of their registration. The
+ * `js_add_teardown_callback()` in the reverse order of their registration,
+ * followed by the finalize callbacks of any wrapped objects, delegates,
+ * externals, and objects with finalizers that have yet to be collected. The
  * environment must not be used after this function is called, and the behavior
  * is undefined if it is, with the exception of the deferred teardown callbacks
  * registered with `js_add_deferred_teardown_callback()`.
@@ -1651,10 +1653,9 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
  * is already wrapped throws.
  *
  * The `finalize_cb` is invoked with the `data` and the `finalize_hint` once
- * the object has been collected and may be `NULL`. As collection is at the
- * discretion of the engine, the callback may never be invoked at all, in
- * particular for an object that is still alive when the environment is
- * destroyed; use a teardown callback for cleanup that must happen.
+ * the object has been collected and may be `NULL`. For an object that is still
+ * alive when the environment is destroyed, the callback is instead invoked as
+ * part of destroying it, after any teardown callbacks have run.
  *
  * If `result` is not `NULL` it is set to a weak reference to the object, which
  * the caller must eventually delete with `js_delete_reference()`.
@@ -1699,10 +1700,9 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
  * pointer is associated with the object and any number of callbacks may be
  * added to it.
  *
- * As collection is at the discretion of the engine, the callback may never be
- * invoked at all, in particular for an object that is still alive when the
- * environment is destroyed; use a teardown callback for cleanup that must
- * happen.
+ * For an object that is still alive when the environment is destroyed, the
+ * callback is instead invoked as part of destroying it, after any teardown
+ * callbacks have run.
  *
  * If `result` is not `NULL` it is set to a weak reference to the object, which
  * the caller must eventually delete with `js_delete_reference()`.
@@ -2092,8 +2092,10 @@ js_create_array_with_elements(js_env_t *env, js_value_t *const elements[], size_
 
 /**
  * Create an external value from a pointer. The pointer must remain valid until
- * the finalize callback is invoked. The finalize callback may be omitted if the
- * pointer is guaranteed to outlive the JavaScript environment.
+ * the finalize callback is invoked, which happens once the value has been
+ * collected or, at the latest, as part of destroying the environment. The
+ * finalize callback may be omitted if the pointer is guaranteed to outlive the
+ * JavaScript environment.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */

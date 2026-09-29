@@ -13,6 +13,7 @@
 #include <queue>
 #include <set>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <assert.h>
@@ -1813,6 +1814,9 @@ static void
 js__shrink_allocations(js_allocations_t *allocations);
 
 static void
+js__finalize_allocations(js_allocations_t *allocations);
+
+static void
 js__release_allocations(js_allocations_t *allocations);
 
 static void
@@ -1990,6 +1994,8 @@ struct js_env_s {
     {
       auto isolate_scope = Isolate::Scope(isolate);
       auto scope = HandleScope(isolate);
+
+      js__finalize_allocations(allocations);
 
       if (snapshot.creator == nullptr) {
         wrapper.Reset();
@@ -2964,6 +2970,19 @@ struct js_finalizer_s {
     value.ClearWeak<js_finalizer_t>();
   }
 
+  // Invokes the finalize callback of a value that is still alive, or whose
+  // second pass callback is still pending, as the environment is destroyed.
+  // The callback is cleared first so that a pending second pass callback does
+  // not invoke it again.
+  void
+  finalize() {
+    value.Reset();
+
+    auto cb = std::exchange(finalize_cb, nullptr);
+
+    if (cb) cb(env, data, finalize_hint);
+  }
+
 private:
   static void
   on_finalize(const WeakCallbackInfo<js_finalizer_t> &info) {
@@ -2982,7 +3001,9 @@ private:
   on_second_pass_finalize(const WeakCallbackInfo<js_finalizer_t> &info) {
     auto finalizer = info.GetParameter();
 
-    finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+    if (finalizer->finalize_cb) {
+      finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+    }
 
     finalizer->destroy();
   }
@@ -3904,6 +3925,17 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
+}
+
+static void
+js__finalize_allocations(js_allocations_t *allocations) {
+  allocations->finalizers.each([](js_finalizer_t *finalizer) {
+    finalizer->finalize();
+  });
+
+  allocations->delegates.each([](js_delegate_t *delegate) {
+    delegate->finalize();
+  });
 }
 
 static void
