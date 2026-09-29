@@ -202,6 +202,8 @@ struct js_segment_array_s {
 
     auto i = index_of(slot);
 
+    assert(is_live(i));
+
     value->~T();
 
     set_live(i, false);
@@ -213,19 +215,29 @@ struct js_segment_array_s {
 
   // Destroys every element still live, in reverse order of allocation so that
   // elements whose destruction must observe a stack discipline are destroyed
-  // in the order they would have been by hand. Elements allocated by a
-  // destructor are picked up by the same sweep.
+  // in the order they would have been by hand. An element stays live until its
+  // destructor returns, as it would when freed, so that a destructor may itself
+  // allocate or free elements. Those it allocates are picked up by another
+  // sweep.
   void
   clear() {
-    while (len > 0) {
-      auto i = --len;
+    bool swept;
 
-      if (is_live(i)) {
-        set_live(i, false);
+    do {
+      swept = false;
+
+      for (auto i = len; i-- > 0;) {
+        if (!is_live(i)) continue;
 
         std::launder(reinterpret_cast<T *>(at(i)->value))->~T();
+
+        set_live(i, false);
+
+        swept = true;
       }
-    }
+    } while (swept);
+
+    len = 0;
 
     available = nullptr;
   }
@@ -3763,8 +3775,6 @@ js__shrink_allocations(js_allocations_t *allocations) {
 
 static void
 js__release_allocations(js_allocations_t *allocations) {
-  allocations->delegates.clear();
-  allocations->finalizers.clear();
   allocations->callbacks.clear();
   allocations->inspectors.clear();
   allocations->deferred_teardowns.clear();
@@ -3776,8 +3786,22 @@ js__release_allocations(js_allocations_t *allocations) {
   allocations->scripts.clear();
   allocations->contexts.clear();
 
+  // The engine may still reach these until the isolate is disposed: typed
+  // callbacks through the signatures its compiler threads read, and finalizers
+  // through second pass callbacks that are still pending, which any collection
+  // runs first. They therefore only let go of their handles here and are freed
+  // along with the allocations.
+
   allocations->typed_callbacks.each([](js_typed_callback_t *callback) {
     callback->external.Reset();
+  });
+
+  allocations->finalizers.each([](js_finalizer_t *finalizer) {
+    finalizer->value.Reset();
+  });
+
+  allocations->delegates.each([](js_delegate_t *delegate) {
+    delegate->value.Reset();
   });
 }
 
