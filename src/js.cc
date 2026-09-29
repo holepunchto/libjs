@@ -483,8 +483,19 @@ struct js_task_runner_s : public TaskRunner {
   uv_loop_t *loop;
   uv_timer_t timer;
   uv_async_t async;
+  uv_idle_t ready;
 
   int active_handles;
+
+  // Whether the tasks of this runner may only be run by the thread that drives
+  // the loop, in which case that thread has to be kept awake for them rather
+  // than merely kept from exiting.
+  bool exclusive;
+
+  // The thread that last drove the loop. Liveness is held by loop handles,
+  // which only that thread may touch, so work queued from anywhere else wakes
+  // the loop and leaves it to settle liveness itself.
+  uv_thread_t thread;
 
   // Keep a cyclic reference to the task runner itself that we'll only reset
   // once its handles have fully closed.
@@ -505,11 +516,14 @@ struct js_task_runner_s : public TaskRunner {
   std::condition_variable available;
   std::condition_variable drained;
 
-  js_task_runner_s(uv_loop_t *loop)
+  js_task_runner_s(uv_loop_t *loop, bool exclusive)
       : loop(loop),
         timer(),
         async(),
-        active_handles(2),
+        ready(),
+        active_handles(3),
+        exclusive(exclusive),
+        thread(uv_thread_self()),
         self(),
         tasks(),
         delayed_tasks(),
@@ -529,12 +543,24 @@ struct js_task_runner_s : public TaskRunner {
 
     timer.data = this;
 
+    // The async handle is what holds the loop open while there is work
+    // outstanding, as well as what wakes it when that work comes from another
+    // thread. It starts out holding the loop open so that work queued before
+    // the loop is ever run isn't lost, and is settled from then on by whichever
+    // thread drives it.
     err = uv_async_init(loop, &async, on_async);
     assert(err == 0);
 
     async.data = this;
 
-    uv_unref(reinterpret_cast<uv_handle_t *>(&async));
+    err = uv_idle_init(loop, &ready);
+    assert(err == 0);
+
+    ready.data = this;
+
+    // The ready handle is started only to keep the loop from blocking, and so
+    // must never hold it open on its own.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&ready));
   }
 
   js_task_runner_s(const js_task_runner_s &) = delete;
@@ -568,6 +594,8 @@ struct js_task_runner_s : public TaskRunner {
     uv_close(reinterpret_cast<uv_handle_t *>(&timer), on_handle_close);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&async), on_handle_close);
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&ready), on_handle_close);
   }
 
   uint64_t
@@ -575,11 +603,16 @@ struct js_task_runner_s : public TaskRunner {
     return uv_hrtime();
   }
 
-  bool
-  inactive() {
+  // Settle liveness on behalf of the thread that drives the loop, taking
+  // ownership of the handles in the process. Only ever called from the loop's
+  // own callbacks.
+  void
+  settle() {
     std::unique_lock guard(lock);
 
-    return inactive(guard);
+    thread = uv_thread_self();
+
+    update(guard);
   }
 
   void
@@ -600,10 +633,14 @@ struct js_task_runner_s : public TaskRunner {
 
     err = uv_async_send(&async);
     assert(err == 0);
+
+    update_maybe(guard);
   }
 
   void
   push_task(js_delayed_task_handle_t &&task) {
+    int err;
+
     std::unique_lock guard(lock);
 
     if (closed) return;
@@ -619,6 +656,13 @@ struct js_task_runner_s : public TaskRunner {
     task.on_completion = [this, is_disposable] { on_completion(is_disposable); };
 
     delayed_tasks.push(std::move(task));
+
+    if (driving(guard)) return update(guard);
+
+    // The timer that delayed tasks expire on may only be armed by the loop
+    // thread, so wake the loop and leave it to arm the timer itself.
+    err = uv_async_send(&async);
+    assert(err == 0);
   }
 
   void
@@ -637,6 +681,8 @@ struct js_task_runner_s : public TaskRunner {
     task.on_completion = [this] { on_completion(true); };
 
     idle_tasks.push(std::move(task));
+
+    update_maybe(guard);
   }
 
   std::optional<js_task_handle_t>
@@ -685,6 +731,8 @@ struct js_task_runner_s : public TaskRunner {
     }
 
     adjust_timer(guard);
+
+    update_maybe(guard);
   }
 
   void
@@ -693,18 +741,6 @@ struct js_task_runner_s : public TaskRunner {
 
     while (!closed && outstanding > disposable) {
       drained.wait(guard);
-    }
-  }
-
-  // Block until either a task becomes available to run or the runner drains
-  // completely, whichever comes first. Used to park the event loop thread
-  // while background work is still outstanding instead of busy-looping.
-  void
-  wait_for_idle() {
-    std::unique_lock guard(lock);
-
-    while (!closed && !can_pop_task(guard) && outstanding > disposable) {
-      available.wait(guard);
     }
   }
 
@@ -717,13 +753,41 @@ struct js_task_runner_s : public TaskRunner {
 
 private:
   bool
-  empty(const std::unique_lock<std::mutex> &) {
-    return tasks.empty() && delayed_tasks.empty() && idle_tasks.empty();
+  driving(const std::unique_lock<std::mutex> &) {
+    auto self = uv_thread_self();
+
+    return uv_thread_equal(&thread, &self);
   }
 
-  bool
-  inactive(const std::unique_lock<std::mutex> &guard) {
-    return empty(guard) || outstanding == disposable;
+  // Hold the loop open for as long as there is work outstanding, including
+  // work that a worker thread has already claimed, and keep it from blocking
+  // while there is work that only the loop thread can run. Both are handle
+  // operations, so this may only be called from the thread driving the loop.
+  void
+  update(const std::unique_lock<std::mutex> &guard) {
+    int err;
+
+    if (closed) return;
+
+    auto handle = reinterpret_cast<uv_handle_t *>(&async);
+
+    if (outstanding > disposable) uv_ref(handle);
+    else uv_unref(handle);
+
+    if (!exclusive) return;
+
+    if (can_pop_task(guard)) err = uv_idle_start(&ready, on_ready);
+    else err = uv_idle_stop(&ready);
+
+    assert(err == 0);
+  }
+
+  // Liveness has to be settled as work is queued rather than once the loop
+  // comes back around, as the loop runs timers after everything else and so
+  // offers nowhere to observe what their callbacks queued.
+  void
+  update_maybe(const std::unique_lock<std::mutex> &guard) {
+    if (driving(guard)) update(guard);
   }
 
   std::optional<js_task_handle_t>
@@ -818,6 +882,8 @@ private:
 
   void
   on_completion(bool is_disposable = false) {
+    int err;
+
     std::unique_lock guard(lock);
 
     if (is_disposable) disposable--;
@@ -825,10 +891,15 @@ private:
     if (--outstanding <= disposable) {
       drained.notify_all();
 
-      // Wake any thread parked in `wait_for_idle()` so that it observes the
-      // drain and stops waiting.
-      available.notify_all();
+      // A worker thread must not touch the loop's handles, so wake the loop
+      // and leave it to observe that nothing is outstanding any more.
+      if (!closed && !driving(guard)) {
+        err = uv_async_send(&async);
+        assert(err == 0);
+      }
     }
+
+    update_maybe(guard);
   }
 
   static void
@@ -836,10 +907,21 @@ private:
     auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
 
     tasks->move_expired_tasks();
+
+    tasks->settle();
   }
 
+  // Nothing is run here. The handle is started only to tell the loop not to
+  // block, and the work itself is run before it next would.
   static void
-  on_async(uv_async_t *handle) {}
+  on_ready(uv_idle_t *handle) {}
+
+  static void
+  on_async(uv_async_t *handle) {
+    auto tasks = reinterpret_cast<js_task_runner_t *>(handle->data);
+
+    tasks->settle();
+  }
 
   static void
   on_handle_close(uv_handle_t *handle) {
@@ -1452,7 +1534,7 @@ struct js_platform_s : public Platform {
         active_handles(2),
         environments(),
         foreground(),
-        background(new js_task_runner_t(loop)),
+        background(new js_task_runner_t(loop, false)),
         workers(),
         trace(new js_tracing_controller_t()),
         lock() {
@@ -1478,6 +1560,12 @@ struct js_platform_s : public Platform {
 
     prepare.data = this;
 
+    // Neither handle should keep the loop alive; that's for the task runner,
+    // which holds it open for as long as it has work. These are just where
+    // that work is run, before the loop blocks, and where the runner is handed
+    // the loop once it has polled.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
     err = uv_check_init(loop, &check);
     assert(err == 0);
 
@@ -1486,9 +1574,6 @@ struct js_platform_s : public Platform {
 
     check.data = this;
 
-    // The check handle should not on its own keep the loop alive; it's simply
-    // used for running any outstanding tasks that might cause additional work
-    // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     workers.reserve(std::max<size_t>(uv_available_parallelism() - 1 /* main thread */, 1));
@@ -1519,14 +1604,6 @@ struct js_platform_s : public Platform {
   uint64_t
   now() {
     return uv_hrtime();
-  }
-
-  void
-  idle() {
-    // Park the loop thread until the background runner either drains completely
-    // or has a task that can be run, rather than busy-looping or blocking until
-    // every outstanding task has finished.
-    background->wait_for_idle();
   }
 
   void
@@ -1568,44 +1645,20 @@ private:
     }
   }
 
-  void
-  check_liveness() {
-    int err;
-
-    if (background->inactive()) {
-      err = uv_prepare_stop(&prepare);
-    } else {
-      err = uv_prepare_start(&prepare, on_prepare);
-    }
-
-    assert(err == 0);
-  }
-
   static void
   on_prepare(uv_prepare_t *handle) {
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
     platform->run_tasks();
 
-    platform->check_liveness();
+    platform->background->settle();
   }
 
   static void
   on_check(uv_check_t *handle) {
-    int err;
-
     auto platform = reinterpret_cast<js_platform_t *>(handle->data);
 
-    if (uv_loop_alive(platform->loop)) {
-      err = uv_prepare_start(&platform->prepare, on_prepare);
-      assert(err == 0);
-
-      return;
-    }
-
-    platform->idle();
-
-    platform->check_liveness();
+    platform->background->settle();
   }
 
   static void
@@ -1788,6 +1841,12 @@ struct js_env_s {
 
     prepare.data = this;
 
+    // Neither handle should keep the loop alive; that's for the task runner,
+    // which holds it open for as long as it has work. These are just where
+    // that work is run, before the loop blocks, and where the runner is handed
+    // the loop once it has polled.
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
     err = uv_check_init(loop, &check);
     assert(err == 0);
 
@@ -1796,9 +1855,6 @@ struct js_env_s {
 
     check.data = this;
 
-    // The check handle should not on its own keep the loop alive; it's simply
-    // used for running any outstanding tasks that might cause additional work
-    // to be queued.
     uv_unref(reinterpret_cast<uv_handle_t *>(&check));
 
     err = uv_async_init(loop, &teardown, on_teardown);
@@ -1915,7 +1971,7 @@ struct js_env_s {
   }
 
   void
-  idle() {
+  run_idle_tasks() {
     // Now that the loop would otherwise be idle, run any pending idle tasks for
     // this isolate, giving them a deadline based on the next delayed task.
     tasks->set_idling(true);
@@ -1923,14 +1979,6 @@ struct js_env_s {
     run_macrotasks();
 
     tasks->set_idling(false);
-
-    // With nothing left to run, hand back whatever the allocations have
-    // outgrown rather than hold it while parked.
-    js__shrink_allocations(allocations);
-
-    // Then park until the platform either drains completely or a task is made
-    // available, at which point the loop is pumped again.
-    platform->idle();
   }
 
   void
@@ -2001,6 +2049,17 @@ struct js_env_s {
     isolate->ThrowException(error);
 
     return true;
+  }
+
+  MaybeLocal<Value>
+  take_exception() {
+    if (exception.IsEmpty()) return MaybeLocal<Value>();
+
+    auto error = exception.Get(isolate);
+
+    exception.Reset();
+
+    return error;
   }
 
   void
@@ -2167,21 +2226,6 @@ private:
     if (active_handles == 0) dispose();
   }
 
-  void
-  check_liveness() {
-    int err;
-
-    tasks->move_expired_tasks();
-
-    if (tasks->inactive()) {
-      err = uv_prepare_stop(&prepare);
-    } else {
-      err = uv_prepare_start(&prepare, on_prepare);
-    }
-
-    assert(err == 0);
-  }
-
   static void
   on_garbage_collection(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
     auto env = reinterpret_cast<js_env_t *>(data);
@@ -2195,25 +2239,26 @@ private:
 
     env->run_macrotasks();
 
-    env->check_liveness();
+    env->tasks->settle();
   }
 
   static void
   on_check(uv_check_t *handle) {
-    int err;
-
     auto env = reinterpret_cast<js_env_t *>(handle->data);
 
-    if (uv_loop_alive(env->loop)) {
-      err = uv_prepare_start(&env->prepare, on_prepare);
-      assert(err == 0);
+    env->tasks->settle();
 
-      return;
-    }
+    // Liveness is settled as work is queued, so the loop having nothing left
+    // means it really is about to go idle rather than merely looking like it.
+    if (uv_loop_alive(env->loop)) return;
 
-    env->idle();
+    env->run_idle_tasks();
 
-    env->check_liveness();
+    // With nothing left to run, hand back whatever the allocations have
+    // outgrown rather than hold it while idle.
+    js__shrink_allocations(env->allocations);
+
+    env->tasks->settle();
   }
 
   static void
@@ -2421,8 +2466,6 @@ struct js_module_s {
 
   static MaybeLocal<Promise>
   on_dynamic_import(Local<Context> context, Local<Data> data, Local<Value> referrer, Local<String> specifier, Local<FixedArray> raw_assertions) {
-    int err;
-
     auto env = js_env_t::from(Isolate::GetCurrent());
 
     auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
@@ -2475,10 +2518,9 @@ struct js_module_s {
     // none, which is the point of registering one.
 
     if (cb == nullptr) {
-      err = js_throw_error(env, nullptr, "Dynamic import() is not supported");
-      assert(err == 0);
+      auto message = String::NewFromUtf8Literal(env->isolate, "Dynamic import() is not supported");
 
-      return MaybeLocal<Promise>();
+      return reject_dynamic_import(context, Exception::Error(message));
     }
 
     js_value_t *result = env->call_into_native<js_value_t *>(
@@ -2494,7 +2536,11 @@ struct js_module_s {
       }
     );
 
-    if (env->propagate_exception()) return MaybeLocal<Promise>();
+    Local<Value> error;
+
+    if (env->take_exception().ToLocal(&error)) return reject_dynamic_import(context, error);
+
+    if (result == nullptr) return MaybeLocal<Promise>();
 
     auto local = js_to_local(result);
 
@@ -2529,6 +2575,18 @@ struct js_module_s {
     );
 
     env->propagate_exception();
+  }
+
+private:
+  static MaybeLocal<Promise>
+  reject_dynamic_import(Local<Context> context, Local<Value> error) {
+    auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+
+    auto success = resolver->Reject(context, error);
+
+    success.Check();
+
+    return resolver->GetPromise();
   }
 };
 
@@ -4009,7 +4067,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   auto isolate = Isolate::Allocate();
 
-  auto tasks = new js_task_runner_t(loop);
+  auto tasks = new js_task_runner_t(loop, true);
 
   std::unique_lock guard(platform->lock);
 

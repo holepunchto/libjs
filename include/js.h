@@ -432,7 +432,8 @@ typedef void (*js_unhandled_rejection_cb)(js_env_t *, js_value_t *reason, js_val
  * The value returned is the result of the import: either the namespace of the
  * imported module, or a promise that is fulfilled with it once the module has
  * been loaded. To fail the import instead, return `NULL` after making an
- * exception pending on the environment.
+ * exception pending on the environment; the promise the `import()` evaluates
+ * to is then rejected with it, as `import()` never throws at the call site.
  */
 typedef js_value_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, js_value_t *assertions, js_value_t *referrer, js_value_t *id, void *data);
 
@@ -997,8 +998,8 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
 
 /**
  * Add a callback for dynamic `import()` statements with deferred resolution.
- * By default, a dynamic import will result in either an uncaught exception or
- * an unhandled promise rejection during script or module evaluation.
+ * By default, a dynamic import is rejected, which will surface as an unhandled
+ * promise rejection unless the importing code handles it.
  */
 int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data);
