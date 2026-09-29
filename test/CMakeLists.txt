@@ -70,6 +70,7 @@ list(APPEND tests
   create-function
   create-function-args-extra
   create-function-args-fewer
+  create-function-churn-with-collection
   create-function-return-double
   create-function-throw
   create-function-throw-indirect
@@ -87,6 +88,8 @@ list(APPEND tests
   create-reference-array
   create-reference-bigint
   create-reference-boolean
+  create-reference-churn
+  create-reference-churn-with-collection
   create-reference-function
   create-reference-null
   create-reference-number
@@ -98,6 +101,7 @@ list(APPEND tests
   create-reference-undefined
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
+  create-sharedarraybuffer-with-backing-store-across-envs
   create-string-latin1
   create-string-too-long
   create-string-utf8
@@ -110,6 +114,7 @@ list(APPEND tests
   create-threadsafe-function-with-finalizer
   create-typed-errors
   create-typed-function
+  create-typed-function-multiple
   create-typed-function-no-jit
   create-typed-function-with-arraybuffer
   create-typed-function-with-bigint64
