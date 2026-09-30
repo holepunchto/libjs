@@ -37,6 +37,8 @@ list(APPEND tests
   create-arraybuffer
   create-arraybuffer-too-large
   create-arraybuffer-with-backing-store
+  create-arraybuffer-with-backing-store-across-envs
+  create-arraybuffer-with-backing-store-across-envs-script
   create-bigint-int64
   create-bigint-words
   create-dataview
