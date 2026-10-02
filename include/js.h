@@ -10,7 +10,8 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 #include <utf.h>
-#include <uv.h>
+
+typedef struct uv_loop_s uv_loop_t;
 
 /**
  * An ABI stable interface to an embedded JavaScript engine. The interface is

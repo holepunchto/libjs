@@ -9,7 +9,7 @@ endif()
 
 project(js C CXX)
 
-fetch_package("github:libuv/libuv@1.51.0")
+fetch_package("github:libuv/libuv@1.53.0")
 
 fetch_package("github:holepunchto/libutf")
 
@@ -18,7 +18,6 @@ if(TARGET js)
     js
     INTERFACE
       include
-      $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
       $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   )
 
