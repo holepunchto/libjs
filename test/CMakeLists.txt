@@ -107,6 +107,7 @@ list(APPEND tests
   create-sharedarraybuffer
   create-sharedarraybuffer-with-backing-store
   create-sharedarraybuffer-with-backing-store-across-envs
+  create-snapshot
   create-string-latin1
   create-string-too-long
   create-string-utf8
@@ -163,6 +164,7 @@ list(APPEND tests
   dynamic-import-with-referrer-script
   dynamic-import-without-handler
   escapable-handle-scope
+  external-references
   fatal-exception
   freeze
   garbage-collection-tracking
@@ -296,6 +298,15 @@ list(APPEND tests
   queue-microtask
   queue-microtask-with-callback
   reference-unref
+  run-from-snapshot
+  run-from-snapshot-delegate
+  run-from-snapshot-dynamic-import
+  run-from-snapshot-function
+  run-from-snapshot-import-meta
+  run-from-snapshot-module
+  run-from-snapshot-script
+  run-from-snapshot-script-dynamic-import
+  run-from-snapshot-wrap
   run-module
   run-module-async
   run-module-cyclic-import
