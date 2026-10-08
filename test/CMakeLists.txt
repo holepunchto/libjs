@@ -63,7 +63,9 @@ list(APPEND tests
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
   create-external-arraybuffer-with-finalizer-detach
+  create-external-arraybuffer-with-finalizer-null
   create-external-sharedarraybuffer
+  create-external-sharedarraybuffer-with-finalizer-null
   create-external-string-latin1
   create-external-string-latin1-with-finalizer
   create-external-string-utf8
