@@ -6625,12 +6625,17 @@ extern "C" int
 js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  assert(data != nullptr || len == 0);
+
   js_env_scope_t env_scope(env);
 
   js_deleter_t *deleter = nullptr;
 
+  // V8 ignores the backing store deleter when the data is null, so finalize
+  // immediately as there is nothing for the ArrayBuffer to keep alive.
   if (finalize_cb) {
-    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    if (data) deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    else finalize_cb(nullptr, data, finalize_hint);
   }
 
   auto store = ArrayBuffer::NewBackingStore(
@@ -6741,12 +6746,17 @@ extern "C" int
 js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  assert(data != nullptr || len == 0);
+
   js_env_scope_t env_scope(env);
 
   js_deleter_t *deleter = nullptr;
 
+  // V8 ignores the backing store deleter when the data is null, so finalize
+  // immediately as there is nothing for the SharedArrayBuffer to keep alive.
   if (finalize_cb) {
-    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    if (data) deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    else finalize_cb(nullptr, data, finalize_hint);
   }
 
   auto store = SharedArrayBuffer::NewBackingStore(
