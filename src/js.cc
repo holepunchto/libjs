@@ -8078,7 +8078,7 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto local = js_to_local<Object>(object);
 
-  *result = js_from_local(local->GetPrototypeV2());
+  *result = js_from_local(local->GetPrototype());
 
   return 0;
 }
@@ -8095,7 +8095,7 @@ js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype) {
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->SetPrototypeV2(context, js_to_local(prototype));
+      return local->SetPrototype(context, js_to_local(prototype));
     }
   );
 
