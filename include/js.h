@@ -2676,6 +2676,16 @@ int
 js_get_global(js_env_t *env, js_value_t **result);
 
 /**
+ * Get the global object of the context that an object was created in, or the
+ * `null` value if the engine cannot tell. The behavior is undefined if the
+ * value is not an object.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_object_global(js_env_t *env, js_value_t *object, js_value_t **result);
+
+/**
  * Get the `undefined` value.
  *
  * This function can be called even if there is a pending JavaScript exception.

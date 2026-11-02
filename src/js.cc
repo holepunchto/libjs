@@ -7722,6 +7722,25 @@ js_get_global(js_env_t *env, js_value_t **result) {
 }
 
 extern "C" int
+js_get_object_global(js_env_t *env, js_value_t *object, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local<Object>(object);
+
+  Local<Context> context;
+
+  if (local->GetCreationContext(env->isolate).ToLocal(&context)) {
+    *result = js_from_local(context->Global());
+  } else {
+    *result = js_from_local(Null(env->isolate));
+  }
+
+  return 0;
+}
+
+extern "C" int
 js_get_undefined(js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 

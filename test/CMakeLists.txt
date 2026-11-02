@@ -182,6 +182,7 @@ list(APPEND tests
   get-module-name
   get-module-namespace-uninstantiated
   get-new-target
+  get-object-global
   get-object-type
   get-object-type-arguments
   get-object-type-array
