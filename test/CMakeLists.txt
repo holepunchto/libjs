@@ -235,6 +235,8 @@ list(APPEND tests
   import-meta
   import-meta-throw
   instantiate-module-evaluating
+  instantiate-module-throw-then-instantiate-other
+  instantiate-module-throw-then-retry
   inspector
   inspector-attach-context
   inspector-multiple-debugger-enable
@@ -307,6 +309,7 @@ list(APPEND tests
   run-module-in-context
   run-module-nested-import
   run-module-relative-import
+  run-module-synthetic-after-delete-other
   run-module-throw
   run-module-throw-then-clear
   run-module-uninstantiated
