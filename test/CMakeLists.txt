@@ -157,6 +157,7 @@ list(APPEND tests
   dynamic-import-module-handler
   dynamic-import-script-handler
   dynamic-import-throw
+  dynamic-import-with-attributes
   dynamic-import-with-promise
   dynamic-import-with-referrer
   dynamic-import-with-referrer-function

@@ -2490,7 +2490,9 @@ struct js_module_s {
 
     auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
 
-    for (int i = 0; i < raw_assertions->Length(); i += 3) {
+    // Unlike those passed to `on_resolve()`, the attributes of a dynamic import
+    // carry no source locations, so each entry is a key and a value only.
+    for (int i = 0; i < raw_assertions->Length(); i += 2) {
       assertions
         ->Set(
           context,
