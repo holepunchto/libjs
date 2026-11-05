@@ -104,6 +104,8 @@ list(APPEND tests
   create-reference-object
   create-reference-object-multiple
   create-reference-object-weak
+  create-reference-object-weak-frozen
+  create-reference-proxy-weak
   create-reference-string
   create-reference-symbol
   create-reference-undefined
@@ -303,7 +305,9 @@ list(APPEND tests
   promise-rejection-unhandled-reentrant-deferred
   queue-microtask
   queue-microtask-with-callback
+  reference-ref-unref-leaves-object-unchanged
   reference-unref
+  reference-unref-with-finalizer
   run-module
   run-module-async
   run-module-cyclic-import
