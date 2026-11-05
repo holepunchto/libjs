@@ -134,6 +134,7 @@ list(APPEND tests
   create-typed-function-with-int64
   create-typed-function-with-number
   create-typed-function-with-pointer
+  create-typed-function-with-pointer-return
   create-typed-function-with-receiver
   create-typed-function-with-string-latin1
   create-typed-function-with-string-utf16le
