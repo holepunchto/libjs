@@ -2098,8 +2098,6 @@ struct js_env_s {
 
   MaybeLocal<Value>
   take_exception() {
-    discard_caught_exception();
-
     auto &taken = exception.IsEmpty() ? uncaught : exception;
 
     if (taken.IsEmpty()) return MaybeLocal<Value>();
@@ -2336,7 +2334,12 @@ private:
           try_catch(env->isolate),
           previous(std::exchange(env->callback_try_catch, &try_catch)) {}
 
+    // The TryCatch is destroyed after the body has run, and with it whatever
+    // V8 holds of an exception the callback threw, so a stale record can only
+    // be told apart here.
     ~js_callback_scope_s() {
+      env->discard_caught_exception();
+
       env->callback_try_catch = previous;
     }
 
@@ -9418,6 +9421,8 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
+
+  env->discard_caught_exception();
 
   Local<Value> error;
 
