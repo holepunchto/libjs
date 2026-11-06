@@ -1863,9 +1863,9 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
  * `js_create_function()`. The `cb` must therefore always be provided and must
  * be indistinguishable in behavior from the entry point.
  *
- * An exception thrown from the entry point, with `js_throw()` or one of its
- * variants, is thrown into JavaScript once the entry point returns. Unlike in
- * `cb`, it cannot be taken back with `js_get_and_clear_last_exception()`.
+ * An exception left pending by the entry point is thrown into JavaScript once
+ * the entry point returns. Unlike in `cb`, it cannot be taken back with
+ * `js_get_and_clear_last_exception()`.
  */
 int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result);

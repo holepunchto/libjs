@@ -18,6 +18,7 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  call-function-throw-in-task
   call-function-with-checkpoint
   call-threadsafe-function-after-release
   call-threadsafe-function-with-data
@@ -83,6 +84,7 @@ list(APPEND tests
   create-function-throw
   create-function-throw-indirect
   create-function-throw-then-clear
+  create-function-throw-then-clear-then-call
   create-function-with-finalizer
   create-int64
   create-module-import-missing

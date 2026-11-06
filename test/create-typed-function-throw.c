@@ -6,37 +6,45 @@
 
 #include "../include/js.h"
 
-static int typed_calls = 0;
 static bool typed_throw = false;
+static int typed_calls_after_throw = 0;
+static bool untyped_throw = false;
 
 uint32_t
-on_typed_call(js_value_t *receiver, int32_t i, js_typed_callback_info_t *info) {
+on_typed_call(js_value_t *receiver, js_typed_callback_info_t *info) {
   int e;
 
-  typed_calls++;
+  js_env_t *env;
+  e = js_get_typed_callback_info(info, &env, NULL);
+  assert(e == 0);
 
-  if (i == 199999) {
-    typed_throw = true;
+  bool has_exception;
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
 
-    js_env_t *env;
-    e = js_get_typed_callback_info(info, &env, NULL);
-    assert(e == 0);
+  // A fast call made after JavaScript caught the error thrown by an earlier
+  // one must not see that error as pending.
 
-    e = js_throw_error(env, NULL, "err");
-    assert(e == 0);
+  assert(!has_exception);
 
-    // Inside the fast call the exception is pending until the entry point
-    // returns, as in an ordinary callback.
+  if (typed_throw) {
+    typed_calls_after_throw++;
 
-    bool has_exception;
-    e = js_is_exception_pending(env, &has_exception);
-    assert(e == 0);
-
-    assert(has_exception);
-
-    e = js_throw_error(env, NULL, "again");
-    assert(e == js_pending_exception);
+    return 42;
   }
+
+  typed_throw = true;
+
+  e = js_throw_error(env, NULL, "err");
+  assert(e == 0);
+
+  e = js_is_exception_pending(env, &has_exception);
+  assert(e == 0);
+
+  assert(has_exception);
+
+  e = js_throw_error(env, NULL, "again");
+  assert(e == js_pending_exception);
 
   return 42;
 }
@@ -45,16 +53,9 @@ js_value_t *
 on_untyped_call(js_env_t *env, js_callback_info_t *info) {
   int e;
 
-  size_t argc = 1;
-  js_value_t *argv[1];
-  e = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
-  assert(e == 0);
+  if (!untyped_throw) {
+    untyped_throw = true;
 
-  int32_t i;
-  e = js_get_value_int32(env, argv[0], &i);
-  assert(e == 0);
-
-  if (i == 199999) {
     e = js_throw_error(env, NULL, "err");
     assert(e == 0);
 
@@ -92,10 +93,9 @@ main() {
 
   js_callback_signature_t signature = {
     .result = js_uint32,
-    .args_len = 2,
+    .args_len = 1,
     .args = (int[]){
       js_object,
-      js_int32,
     },
   };
 
@@ -111,21 +111,21 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "(() => { let i = 0, caught = false; while (i < 200000) { try { hello(i++) } catch (err) { caught = err.message === 'err' } } return caught })()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "(() => { let i = 0, caught = 0; while (i++ < 200000) { try { hello() } catch (err) { if (err.message === 'err') caught++ } } return caught })()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
   e = js_run_script(env, NULL, 0, 0, script, &result);
   assert(e == 0);
 
-  bool caught;
-  e = js_get_value_bool(env, result, &caught);
+  uint32_t caught;
+  e = js_get_value_uint32(env, result, &caught);
   assert(e == 0);
 
-  assert(caught);
+  assert(caught == 2);
 
-  assert(typed_calls > 0);
   assert(typed_throw);
+  assert(typed_calls_after_throw > 0);
 
   // The error was thrown in a fast call and caught in JavaScript: nothing may
   // be left pending once the script is done.

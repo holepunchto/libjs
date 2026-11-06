@@ -1779,11 +1779,7 @@ struct js_env_s {
 
   uint32_t depth;
 
-  // Whether the innermost frame is native code entered through libjs, which
-  // takes back the exceptions it records. Native code running while this is
-  // false was called by V8 directly, like a fast call, and V8 alone carries its
-  // exceptions.
-  bool native;
+  TryCatch *callback_try_catch;
 
   Isolate *isolate;
 
@@ -1793,7 +1789,12 @@ struct js_env_s {
   Global<Private> delegate;
   Global<Private> tag;
 
+  // An exception recorded while V8 also holds it as pending.
   Global<Value> exception;
+
+  // An exception reported as uncaught with no handler to receive it, which V8
+  // no longer holds.
+  Global<Value> uncaught;
 
   ExternalMemoryAccounter memory;
 
@@ -1832,13 +1833,14 @@ struct js_env_s {
         platform(platform),
         tasks(),
         depth(0),
-        native(true),
+        callback_try_catch(nullptr),
         isolate(isolate),
         context(),
         wrapper(),
         delegate(),
         tag(),
         exception(),
+        uncaught(),
         modules(),
         default_module_id(),
         unhandled_promises(),
@@ -1919,6 +1921,7 @@ struct js_env_s {
       delegate.Reset();
       tag.Reset();
       exception.Reset();
+      uncaught.Reset();
       default_module_id.Reset();
 
       context.Get(isolate)->Exit();
@@ -2014,11 +2017,7 @@ struct js_env_s {
 
     depth++;
 
-    {
-      auto native_scope = native_scope_t(this, false);
-
-      isolate->PerformMicrotaskCheckpoint();
-    }
+    isolate->PerformMicrotaskCheckpoint();
 
     if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
     else {
@@ -2031,24 +2030,16 @@ struct js_env_s {
 
         auto local = promise.Get(isolate);
 
-        {
-          auto native_scope = native_scope_t(this, true);
-
-          callbacks.unhandled_rejection(
-            this,
-            js_from_local(local->Result()),
-            js_from_local(local),
-            callbacks.unhandled_rejection_data
-          );
-        }
+        callbacks.unhandled_rejection(
+          this,
+          js_from_local(local->Result()),
+          js_from_local(local),
+          callbacks.unhandled_rejection_data
+        );
 
         if (isolate->IsExecutionTerminating()) break;
 
-        {
-          auto native_scope = native_scope_t(this, false);
-
-          isolate->PerformMicrotaskCheckpoint();
-        }
+        isolate->PerformMicrotaskCheckpoint();
       }
     }
 
@@ -2064,11 +2055,14 @@ struct js_env_s {
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
 
-      {
-        auto native_scope = native_scope_t(this, false);
+      // JavaScript run by a task, such as a finalization registry callback,
+      // must receive the exceptions thrown into it rather than have them
+      // reported as uncaught.
+      depth++;
 
-        task->run();
-      }
+      task->run();
+
+      depth--;
 
       run_microtasks();
 
@@ -2076,38 +2070,26 @@ struct js_env_s {
     }
   }
 
-  struct native_scope_t {
-    js_env_t *env;
-    bool previous;
-
-    native_scope_t(js_env_t *env, bool native)
-        : env(env),
-          previous(env->native) {
-      env->native = native;
-    }
-
-    ~native_scope_t() {
-      env->native = previous;
-    }
-
-    native_scope_t(const native_scope_t &) = delete;
-
-    native_scope_t &
-    operator=(const native_scope_t &) = delete;
-  };
+  // A fast call is invoked by V8 directly, so no frame of ours takes back an
+  // exception it records. If V8 no longer holds the exception, JavaScript has
+  // caught it and the record is stale.
+  void
+  discard_caught_exception() {
+    if (!exception.IsEmpty() && !isolate->HasPendingException()) exception.Reset();
+  }
 
   bool
   is_exception_pending() {
-    return !exception.IsEmpty() || (!native && isolate->HasPendingException());
+    discard_caught_exception();
+
+    return !exception.IsEmpty() || !uncaught.IsEmpty();
   }
 
   bool
   propagate_exception() {
-    if (exception.IsEmpty()) return false;
+    Local<Value> error;
 
-    auto error = exception.Get(isolate);
-
-    exception.Reset();
+    if (!take_exception().ToLocal(&error)) return false;
 
     isolate->ThrowException(error);
 
@@ -2116,11 +2098,15 @@ struct js_env_s {
 
   MaybeLocal<Value>
   take_exception() {
-    if (exception.IsEmpty()) return MaybeLocal<Value>();
+    discard_caught_exception();
 
-    auto error = exception.Get(isolate);
+    auto &taken = exception.IsEmpty() ? uncaught : exception;
 
-    exception.Reset();
+    if (taken.IsEmpty()) return MaybeLocal<Value>();
+
+    auto error = taken.Get(isolate);
+
+    taken.Reset();
 
     return error;
   }
@@ -2128,11 +2114,9 @@ struct js_env_s {
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
-      auto native_scope = native_scope_t(this, true);
-
       callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
     } else {
-      exception.Reset(isolate, error);
+      uncaught.Reset(isolate, error);
     }
   }
 
@@ -2146,18 +2130,14 @@ struct js_env_s {
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
-    auto result = [&] {
-      auto native_scope = native_scope_t(this, false);
-
-      return fn();
-    }();
+    auto result = fn();
 
     if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
       else {
-        if (native) exception.Reset(isolate, error);
+        exception.Reset(isolate, error);
 
         try_catch.ReThrow();
       }
@@ -2211,9 +2191,7 @@ struct js_env_s {
   template <typename T>
   T
   call_into_native(const std::function<T()> &fn) {
-    auto native_scope = native_scope_t(this, true);
-
-    auto try_catch = TryCatch(isolate);
+    js_callback_scope_s callback_scope(this);
 
     return fn();
   }
@@ -2347,6 +2325,26 @@ private:
 
     env->dispose_maybe();
   }
+
+  struct js_callback_scope_s {
+    js_env_t *env;
+    TryCatch try_catch;
+    TryCatch *previous;
+
+    js_callback_scope_s(js_env_t *env)
+        : env(env),
+          try_catch(env->isolate),
+          previous(std::exchange(env->callback_try_catch, &try_catch)) {}
+
+    ~js_callback_scope_s() {
+      env->callback_try_catch = previous;
+    }
+
+    js_callback_scope_s(const js_callback_scope_s &) = delete;
+
+    js_callback_scope_s &
+    operator=(const js_callback_scope_s &) = delete;
+  };
 };
 
 struct js_env_scope_options_s {
@@ -2930,8 +2928,6 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
-      auto native_scope = js_env_t::native_scope_t(finalizer->env, true);
-
       finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
     }
 
@@ -3625,8 +3621,6 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    auto native_scope = js_env_t::native_scope_t(env, true);
-
     cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
   }
 
@@ -3763,8 +3757,6 @@ struct js_inspector_s {
 
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
-    auto native_scope = js_env_t::native_scope_t(env, false);
-
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
 };
@@ -3772,8 +3764,6 @@ struct js_inspector_s {
 bool
 js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
-
-  auto native_scope = js_env_t::native_scope_t(session->env, true);
 
   return session->cb(session->env, session, session->data);
 }
@@ -3941,11 +3931,7 @@ struct js_microtask_s {
   on_run(void *data) {
     auto task = static_cast<js_microtask_t *>(data);
 
-    {
-      auto native_scope = js_env_t::native_scope_t(task->env, true);
-
-      task->cb(task->env, task->data);
-    }
+    task->cb(task->env, task->data);
 
     delete task;
   }
@@ -9221,7 +9207,7 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  if (env->native) env->exception.Reset(env->isolate, local);
+  env->exception.Reset(env->isolate, local);
 
   env->isolate->ThrowException(local);
 
@@ -9433,11 +9419,17 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  if (env->exception.IsEmpty()) return js_get_undefined(env, result);
+  Local<Value> error;
 
-  *result = js_from_local(env->exception.Get(env->isolate));
+  if (!env->take_exception().ToLocal(&error)) return js_get_undefined(env, result);
 
-  env->exception.Reset();
+  // The callback's TryCatch also holds the exception, which would otherwise
+  // leave V8 with an exception pending for the rest of the callback.
+  auto try_catch = env->callback_try_catch;
+
+  if (try_catch && try_catch->HasCaught()) try_catch->Reset();
+
+  *result = js_from_local(error);
 
   return 0;
 }
