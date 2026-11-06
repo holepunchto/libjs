@@ -1923,6 +1923,8 @@ struct js_env_s {
       exception.Reset();
       default_module_id.Reset();
 
+      unhandled_promises.clear();
+
       context.Get(isolate)->Exit();
       context.Reset();
 

@@ -312,6 +312,7 @@ list(APPEND tests
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   promise-rejection-unhandled-throw
+  promise-rejection-unhandled-throw-destroy-env
   promise-rejection-unhandled-throw-nested
   queue-microtask
   queue-microtask-with-callback
