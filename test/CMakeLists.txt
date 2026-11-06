@@ -18,6 +18,7 @@ list(APPEND tests
   call-function-microtask
   call-function-microtask-nested
   call-function-throw
+  call-function-throw-in-task
   call-function-with-checkpoint
   call-threadsafe-function-after-release
   call-threadsafe-function-with-data
@@ -25,6 +26,8 @@ list(APPEND tests
   check-type-tag-not-tagged
   coerce-number-to-string
   coerce-object-to-string
+  coerce-object-to-string-call-function-throw
+  coerce-object-to-string-microtask
   coerce-string-to-number
   coerce-symbol-to-string
   coerce-to-boolean
@@ -124,8 +127,11 @@ list(APPEND tests
   create-threadsafe-function-with-finalizer
   create-typed-errors
   create-typed-function
+  create-typed-function-call-throw
   create-typed-function-multiple
   create-typed-function-no-jit
+  create-typed-function-throw
+  create-typed-function-throw-nested
   create-typed-function-with-arraybuffer
   create-typed-function-with-bigint64
   create-typed-function-with-biguint64
@@ -244,8 +250,10 @@ list(APPEND tests
   instantiate-module-throw-then-retry
   inspector
   inspector-attach-context
+  inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
+  inspector-response-throw
   is-arguments
   is-array
   is-arraybuffer
@@ -303,11 +311,15 @@ list(APPEND tests
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  promise-rejection-unhandled-throw
+  promise-rejection-unhandled-throw-destroy-env
+  promise-rejection-unhandled-throw-nested
   queue-microtask
   queue-microtask-with-callback
   reference-ref-unref-leaves-object-unchanged
   reference-unref
   reference-unref-with-finalizer
+  resolve-deferred-thenable-call-function-throw
   run-module
   run-module-async
   run-module-cyclic-import
@@ -336,7 +348,9 @@ list(APPEND tests
   threads
   threads-platform-loop
   throw-error
+  throw-error-code-setter
   throw-error-formatted
+  throw-error-then-resolve-deferred
   throw-range-error
   throw-reference-error
   throw-syntax-error

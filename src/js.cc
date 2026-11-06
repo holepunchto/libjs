@@ -1779,6 +1779,8 @@ struct js_env_s {
 
   uint32_t depth;
 
+  TryCatch *callback_try_catch;
+
   Isolate *isolate;
 
   Global<Context> context;
@@ -1788,6 +1790,11 @@ struct js_env_s {
   Global<Private> tag;
 
   Global<Value> exception;
+
+  // Whether V8 also holds the exception as pending, which is how a stale one
+  // is told apart. An exception with no JavaScript there to receive it, like
+  // one thrown at the top level, is not held as V8 discards it on its own.
+  bool exception_held;
 
   ExternalMemoryAccounter memory;
 
@@ -1826,12 +1833,14 @@ struct js_env_s {
         platform(platform),
         tasks(),
         depth(0),
+        callback_try_catch(nullptr),
         isolate(isolate),
         context(),
         wrapper(),
         delegate(),
         tag(),
         exception(),
+        exception_held(false),
         modules(),
         default_module_id(),
         unhandled_promises(),
@@ -1913,6 +1922,8 @@ struct js_env_s {
       tag.Reset();
       exception.Reset();
       default_module_id.Reset();
+
+      unhandled_promises.clear();
 
       context.Get(isolate)->Exit();
       context.Reset();
@@ -2020,12 +2031,28 @@ struct js_env_s {
 
         auto local = promise.Get(isolate);
 
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
+        call_into_native<void>(
+          [&] {
+            callbacks.unhandled_rejection(
+              this,
+              js_from_local(local->Result()),
+              js_from_local(local),
+              callbacks.unhandled_rejection_data
+            );
+          },
+          depth == 1 /* detached */
         );
+
+        // Within a call into JavaScript, an exception thrown by the handler is
+        // rethrown for that call to catch. Otherwise, nothing is there to
+        // receive it. Either way, the remaining rejections are left for the
+        // next checkpoint rather than handlers that could do nothing with an
+        // exception pending.
+        if (!exception.IsEmpty()) {
+          if (depth > 1) propagate_exception();
+
+          break;
+        }
 
         if (isolate->IsExecutionTerminating()) break;
 
@@ -2045,7 +2072,14 @@ struct js_env_s {
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
 
+      // JavaScript run by a task, such as a finalization registry callback,
+      // must receive the exceptions thrown into it rather than have them
+      // reported as uncaught.
+      depth++;
+
       task->run();
+
+      depth--;
 
       run_microtasks();
 
@@ -2053,8 +2087,25 @@ struct js_env_s {
     }
   }
 
+  // A fast call is invoked by V8 directly, so no frame of ours takes back an
+  // exception it records. If V8 no longer holds the exception, JavaScript has
+  // caught it and the record is stale.
+  void
+  discard_caught_exception() {
+    if (!exception.IsEmpty() && exception_held && !isolate->HasPendingException()) exception.Reset();
+  }
+
+  void
+  record_exception(Local<Value> error, bool held) {
+    exception.Reset(isolate, error);
+
+    exception_held = held;
+  }
+
   bool
   is_exception_pending() {
+    discard_caught_exception();
+
     return !exception.IsEmpty();
   }
 
@@ -2085,9 +2136,14 @@ struct js_env_s {
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
-      callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+      call_into_native<void>(
+        [&] {
+          callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+        },
+        true /* detached */
+      );
     } else {
-      exception.Reset(isolate, error);
+      record_exception(error, false);
     }
   }
 
@@ -2101,16 +2157,24 @@ struct js_env_s {
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
+    depth++;
+
     auto result = fn();
+
+    depth--;
 
     if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
       else {
-        exception.Reset(isolate, error);
+        record_exception(error, true);
 
         try_catch.ReThrow();
+
+        // The call itself may have succeeded with the exception thrown at a
+        // microtask checkpoint after it, but the caller must still see it.
+        return T();
       }
     }
 
@@ -2134,13 +2198,9 @@ struct js_env_s {
   call_into_javascript(const std::function<T()> &fn, bool always_checkpoint = false) {
     return try_catch<T>(
       [&] {
-        depth++;
-
         auto result = fn();
 
         if (depth == 1 || always_checkpoint) run_microtasks();
-
-        depth--;
 
         return result;
       }
@@ -2159,10 +2219,12 @@ struct js_env_s {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
+  // A detached callback has no JavaScript there to receive the exceptions it
+  // throws, so they are left pending for the embedder instead.
   template <typename T>
   T
-  call_into_native(const std::function<T()> &fn) {
-    auto try_catch = TryCatch(isolate);
+  call_into_native(const std::function<T()> &fn, bool detached = false) {
+    js_callback_scope_s callback_scope(this, detached);
 
     return fn();
   }
@@ -2296,6 +2358,35 @@ private:
 
     env->dispose_maybe();
   }
+
+  struct js_callback_scope_s {
+    js_env_t *env;
+    bool detached;
+    TryCatch try_catch;
+    TryCatch *previous;
+
+    js_callback_scope_s(js_env_t *env, bool detached)
+        : env(env),
+          detached(detached),
+          try_catch(env->isolate),
+          previous(std::exchange(env->callback_try_catch, &try_catch)) {}
+
+    // The TryCatch is destroyed after the body has run, and with it whatever
+    // V8 holds of an exception the callback threw, so a stale record can only
+    // be told apart here.
+    ~js_callback_scope_s() {
+      env->discard_caught_exception();
+
+      if (detached) env->exception_held = false;
+
+      env->callback_try_catch = previous;
+    }
+
+    js_callback_scope_s(const js_callback_scope_s &) = delete;
+
+    js_callback_scope_s &
+    operator=(const js_callback_scope_s &) = delete;
+  };
 };
 
 struct js_env_scope_options_s {
@@ -2879,7 +2970,12 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
-      finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+      finalizer->env->call_into_native<void>(
+        [&] {
+          finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+        },
+        true /* detached */
+      );
     }
 
     finalizer->destroy();
@@ -3572,7 +3668,12 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+    env->call_into_native<void>(
+      [&] {
+        cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+      },
+      true /* detached */
+    );
   }
 
   void
@@ -3708,7 +3809,13 @@ struct js_inspector_s {
 
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
+    // JavaScript evaluated by the inspector must receive the exceptions thrown
+    // into it rather than have them reported as uncaught.
+    env->depth++;
+
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
+
+    env->depth--;
   }
 };
 
@@ -3716,7 +3823,12 @@ bool
 js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
 
-  return session->cb(session->env, session, session->data);
+  return session->env->call_into_native<bool>(
+    [&] {
+      return session->cb(session->env, session, session->data);
+    },
+    true /* detached */
+  );
 }
 
 namespace {
@@ -5207,7 +5319,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -5222,7 +5334,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -5235,7 +5347,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         (property->attributes & js_enumerable) &&
         (property->attributes & js_configurable)
       ) {
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->CreateDataProperty(context, name, value);
           }
@@ -5246,7 +5358,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
         descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->DefineProperty(context, name, descriptor);
           }
@@ -6383,7 +6495,8 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
   auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
   }
 
   *result = js_from_local(error);
@@ -6475,8 +6588,14 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
   auto local = js_to_local(resolution);
 
+  // Resolving with a thenable reads its `then` property, which may run
+  // JavaScript.
+  env->depth++;
+
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
+
+  env->depth--;
 
   env->allocations->deferreds.free(deferred);
 
@@ -6909,7 +7028,7 @@ js_coerce_to_number(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto number = env->try_catch<Number>(
+  auto number = env->call_into_javascript<Number>(
     [&] {
       return local->ToNumber(context);
     }
@@ -6932,7 +7051,7 @@ js_coerce_to_string(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto string = env->try_catch<String>(
+  auto string = env->call_into_javascript<String>(
     [&] {
       return local->ToString(context);
     }
@@ -7011,7 +7130,7 @@ js_instanceof(js_env_t *env, js_value_t *object, js_value_t *constructor, bool *
 
   auto context = env->current_context();
 
-  auto success = env->try_catch<bool>(
+  auto success = env->call_into_javascript<bool>(
     [&] {
       return js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor));
     }
@@ -9158,7 +9277,7 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->exception.Reset(env->isolate, local);
+  env->record_exception(local, env->depth > 0);
 
   env->isolate->ThrowException(local);
 
@@ -9187,7 +9306,8 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
     if (string.IsEmpty()) return js__error(env);
 
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
   }
 
   return js_throw(env, js_from_local(error));
@@ -9370,11 +9490,19 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 
   js_env_scope_t env_scope(env);
 
+  env->discard_caught_exception();
+
   if (env->exception.IsEmpty()) return js_get_undefined(env, result);
 
   *result = js_from_local(env->exception.Get(env->isolate));
 
   env->exception.Reset();
+
+  // The callback's TryCatch also holds the exception, which would otherwise
+  // leave V8 with an exception pending for the rest of the callback.
+  auto try_catch = env->callback_try_catch;
+
+  if (try_catch && try_catch->HasCaught()) try_catch->Reset();
 
   return 0;
 }
