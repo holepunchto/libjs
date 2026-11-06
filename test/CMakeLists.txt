@@ -26,6 +26,7 @@ list(APPEND tests
   check-type-tag-not-tagged
   coerce-number-to-string
   coerce-object-to-string
+  coerce-object-to-string-call-function-throw
   coerce-string-to-number
   coerce-symbol-to-string
   coerce-to-boolean
@@ -248,6 +249,7 @@ list(APPEND tests
   instantiate-module-throw-then-retry
   inspector
   inspector-attach-context
+  inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
   is-arguments
@@ -307,11 +309,13 @@ list(APPEND tests
   promise-rejection-unhandled
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
+  promise-rejection-unhandled-throw
   queue-microtask
   queue-microtask-with-callback
   reference-ref-unref-leaves-object-unchanged
   reference-unref
   reference-unref-with-finalizer
+  resolve-deferred-thenable-call-function-throw
   run-module
   run-module-async
   run-module-cyclic-import
@@ -341,6 +345,7 @@ list(APPEND tests
   threads-platform-loop
   throw-error
   throw-error-formatted
+  throw-error-then-resolve-deferred
   throw-range-error
   throw-reference-error
   throw-syntax-error

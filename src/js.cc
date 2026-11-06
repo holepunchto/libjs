@@ -1789,12 +1789,12 @@ struct js_env_s {
   Global<Private> delegate;
   Global<Private> tag;
 
-  // An exception recorded while V8 also holds it as pending.
   Global<Value> exception;
 
-  // An exception reported as uncaught with no handler to receive it, which V8
-  // no longer holds.
-  Global<Value> uncaught;
+  // Whether V8 also holds the exception as pending, which is how a stale one
+  // is told apart. An exception with no JavaScript there to receive it, like
+  // one thrown at the top level, is not held as V8 discards it on its own.
+  bool exception_held;
 
   ExternalMemoryAccounter memory;
 
@@ -1840,7 +1840,7 @@ struct js_env_s {
         delegate(),
         tag(),
         exception(),
-        uncaught(),
+        exception_held(false),
         modules(),
         default_module_id(),
         unhandled_promises(),
@@ -1921,7 +1921,6 @@ struct js_env_s {
       delegate.Reset();
       tag.Reset();
       exception.Reset();
-      uncaught.Reset();
       default_module_id.Reset();
 
       context.Get(isolate)->Exit();
@@ -2030,12 +2029,22 @@ struct js_env_s {
 
         auto local = promise.Get(isolate);
 
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
-        );
+        {
+          js_callback_scope_s callback_scope(this);
+
+          callbacks.unhandled_rejection(
+            this,
+            js_from_local(local->Result()),
+            js_from_local(local),
+            callbacks.unhandled_rejection_data
+          );
+        }
+
+        // Within a call into JavaScript, an exception thrown by the handler is
+        // rethrown for that call to catch. Otherwise, nothing is there to
+        // receive it.
+        if (depth > 1) propagate_exception();
+        else exception_held = false;
 
         if (isolate->IsExecutionTerminating()) break;
 
@@ -2075,21 +2084,30 @@ struct js_env_s {
   // caught it and the record is stale.
   void
   discard_caught_exception() {
-    if (!exception.IsEmpty() && !isolate->HasPendingException()) exception.Reset();
+    if (!exception.IsEmpty() && exception_held && !isolate->HasPendingException()) exception.Reset();
+  }
+
+  void
+  record_exception(Local<Value> error, bool held) {
+    exception.Reset(isolate, error);
+
+    exception_held = held;
   }
 
   bool
   is_exception_pending() {
     discard_caught_exception();
 
-    return !exception.IsEmpty() || !uncaught.IsEmpty();
+    return !exception.IsEmpty();
   }
 
   bool
   propagate_exception() {
-    Local<Value> error;
+    if (exception.IsEmpty()) return false;
 
-    if (!take_exception().ToLocal(&error)) return false;
+    auto error = exception.Get(isolate);
+
+    exception.Reset();
 
     isolate->ThrowException(error);
 
@@ -2098,13 +2116,11 @@ struct js_env_s {
 
   MaybeLocal<Value>
   take_exception() {
-    auto &taken = exception.IsEmpty() ? uncaught : exception;
+    if (exception.IsEmpty()) return MaybeLocal<Value>();
 
-    if (taken.IsEmpty()) return MaybeLocal<Value>();
+    auto error = exception.Get(isolate);
 
-    auto error = taken.Get(isolate);
-
-    taken.Reset();
+    exception.Reset();
 
     return error;
   }
@@ -2114,7 +2130,7 @@ struct js_env_s {
     if (callbacks.uncaught_exception) {
       callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
     } else {
-      uncaught.Reset(isolate, error);
+      record_exception(error, false);
     }
   }
 
@@ -2128,14 +2144,18 @@ struct js_env_s {
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
+    depth++;
+
     auto result = fn();
+
+    depth--;
 
     if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
       else {
-        exception.Reset(isolate, error);
+        record_exception(error, true);
 
         try_catch.ReThrow();
       }
@@ -2161,13 +2181,9 @@ struct js_env_s {
   call_into_javascript(const std::function<T()> &fn, bool always_checkpoint = false) {
     return try_catch<T>(
       [&] {
-        depth++;
-
         auto result = fn();
 
         if (depth == 1 || always_checkpoint) run_microtasks();
-
-        depth--;
 
         return result;
       }
@@ -3760,7 +3776,13 @@ struct js_inspector_s {
 
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
+    // JavaScript evaluated by the inspector must receive the exceptions thrown
+    // into it rather than have them reported as uncaught.
+    env->depth++;
+
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
+
+    env->depth--;
   }
 };
 
@@ -6527,8 +6549,14 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
   auto local = js_to_local(resolution);
 
+  // Resolving with a thenable reads its `then` property, which may run
+  // JavaScript.
+  env->depth++;
+
   if (resolved) resolver->Resolve(context, local).Check();
   else resolver->Reject(context, local).Check();
+
+  env->depth--;
 
   env->allocations->deferreds.free(deferred);
 
@@ -9210,7 +9238,7 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->exception.Reset(env->isolate, local);
+  env->record_exception(local, env->depth > 0);
 
   env->isolate->ThrowException(local);
 
@@ -9424,17 +9452,17 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 
   env->discard_caught_exception();
 
-  Local<Value> error;
+  if (env->exception.IsEmpty()) return js_get_undefined(env, result);
 
-  if (!env->take_exception().ToLocal(&error)) return js_get_undefined(env, result);
+  *result = js_from_local(env->exception.Get(env->isolate));
+
+  env->exception.Reset();
 
   // The callback's TryCatch also holds the exception, which would otherwise
   // leave V8 with an exception pending for the rest of the callback.
   auto try_catch = env->callback_try_catch;
 
   if (try_catch && try_catch->HasCaught()) try_catch->Reset();
-
-  *result = js_from_local(error);
 
   return 0;
 }
