@@ -35,6 +35,10 @@ on_typed_call(js_value_t *receiver, js_typed_callback_info_t *info) {
 
   typed_throw = true;
 
+  js_handle_scope_t *scope;
+  e = js_open_handle_scope(env, &scope);
+  assert(e == 0);
+
   e = js_throw_error(env, NULL, "err");
   assert(e == 0);
 
@@ -45,6 +49,9 @@ on_typed_call(js_value_t *receiver, js_typed_callback_info_t *info) {
 
   e = js_throw_error(env, NULL, "again");
   assert(e == js_pending_exception);
+
+  e = js_close_handle_scope(env, scope);
+  assert(e == 0);
 
   return 42;
 }

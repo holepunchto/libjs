@@ -22,7 +22,14 @@ on_typed_call(js_value_t *receiver, int32_t i, js_typed_callback_info_t *info) {
     e = js_get_typed_callback_info(info, &env, NULL);
     assert(e == 0);
 
+    js_handle_scope_t *scope;
+    e = js_open_handle_scope(env, &scope);
+    assert(e == 0);
+
     e = js_throw_error(env, NULL, "err");
+    assert(e == 0);
+
+    e = js_close_handle_scope(env, scope);
     assert(e == 0);
   }
 
@@ -63,6 +70,16 @@ on_call(js_env_t *env, js_callback_info_t *info) {
   size_t argc = 1;
   js_value_t *argv[1];
   e = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(e == 0);
+
+  // An error cleared by the callback must not keep the error thrown in a fast
+  // call below from being recognized as caught.
+
+  e = js_throw_error(env, NULL, "cleared");
+  assert(e == 0);
+
+  js_value_t *error;
+  e = js_get_and_clear_last_exception(env, &error);
   assert(e == 0);
 
   js_value_t *global;

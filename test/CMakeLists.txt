@@ -84,7 +84,6 @@ list(APPEND tests
   create-function-throw
   create-function-throw-indirect
   create-function-throw-then-clear
-  create-function-throw-then-clear-then-call
   create-function-with-finalizer
   create-int64
   create-module-import-missing

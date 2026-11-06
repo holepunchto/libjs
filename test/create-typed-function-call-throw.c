@@ -22,6 +22,10 @@ on_typed_call(js_value_t *receiver, int32_t i, js_typed_callback_info_t *info) {
     e = js_get_typed_callback_info(info, &env, NULL);
     assert(e == 0);
 
+    js_handle_scope_t *scope;
+    e = js_open_handle_scope(env, &scope);
+    assert(e == 0);
+
     js_value_t *global;
     e = js_get_global(env, &global);
     assert(e == 0);
@@ -32,6 +36,9 @@ on_typed_call(js_value_t *receiver, int32_t i, js_typed_callback_info_t *info) {
 
     e = js_call_function(env, global, fail, 0, NULL, NULL);
     assert(e == js_pending_exception);
+
+    e = js_close_handle_scope(env, scope);
+    assert(e == 0);
   }
 
   return 42;
