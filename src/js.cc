@@ -9277,9 +9277,11 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->record_exception(local, env->depth > 0);
-
+  // A garbage collection while throwing may run finalizers, which would take a
+  // record made before V8 holds the exception for a stale one.
   env->isolate->ThrowException(local);
+
+  env->record_exception(local, env->depth > 0);
 
   return 0;
 }

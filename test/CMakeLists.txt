@@ -351,6 +351,7 @@ list(APPEND tests
   throw-error-code-setter
   throw-error-formatted
   throw-error-then-resolve-deferred
+  throw-error-with-pending-finalizers
   throw-range-error
   throw-reference-error
   throw-syntax-error
