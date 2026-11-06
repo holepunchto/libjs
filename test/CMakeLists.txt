@@ -27,6 +27,7 @@ list(APPEND tests
   coerce-number-to-string
   coerce-object-to-string
   coerce-object-to-string-call-function-throw
+  coerce-object-to-string-microtask
   coerce-string-to-number
   coerce-symbol-to-string
   coerce-to-boolean
@@ -252,6 +253,7 @@ list(APPEND tests
   inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
+  inspector-response-throw
   is-arguments
   is-array
   is-arraybuffer
@@ -310,6 +312,7 @@ list(APPEND tests
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   promise-rejection-unhandled-throw
+  promise-rejection-unhandled-throw-nested
   queue-microtask
   queue-microtask-with-callback
   reference-ref-unref-leaves-object-unchanged
@@ -344,6 +347,7 @@ list(APPEND tests
   threads
   threads-platform-loop
   throw-error
+  throw-error-code-setter
   throw-error-formatted
   throw-error-then-resolve-deferred
   throw-range-error

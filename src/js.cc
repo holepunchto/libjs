@@ -2029,22 +2029,28 @@ struct js_env_s {
 
         auto local = promise.Get(isolate);
 
-        {
-          js_callback_scope_s callback_scope(this);
-
-          callbacks.unhandled_rejection(
-            this,
-            js_from_local(local->Result()),
-            js_from_local(local),
-            callbacks.unhandled_rejection_data
-          );
-        }
+        call_into_native<void>(
+          [&] {
+            callbacks.unhandled_rejection(
+              this,
+              js_from_local(local->Result()),
+              js_from_local(local),
+              callbacks.unhandled_rejection_data
+            );
+          },
+          depth == 1 /* detached */
+        );
 
         // Within a call into JavaScript, an exception thrown by the handler is
         // rethrown for that call to catch. Otherwise, nothing is there to
-        // receive it.
-        if (depth > 1) propagate_exception();
-        else exception_held = false;
+        // receive it. Either way, the remaining rejections are left for the
+        // next checkpoint rather than handlers that could do nothing with an
+        // exception pending.
+        if (!exception.IsEmpty()) {
+          if (depth > 1) propagate_exception();
+
+          break;
+        }
 
         if (isolate->IsExecutionTerminating()) break;
 
@@ -2128,7 +2134,12 @@ struct js_env_s {
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
-      callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+      call_into_native<void>(
+        [&] {
+          callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+        },
+        true /* detached */
+      );
     } else {
       record_exception(error, false);
     }
@@ -2158,6 +2169,10 @@ struct js_env_s {
         record_exception(error, true);
 
         try_catch.ReThrow();
+
+        // The call itself may have succeeded with the exception thrown at a
+        // microtask checkpoint after it, but the caller must still see it.
+        return T();
       }
     }
 
@@ -2202,10 +2217,12 @@ struct js_env_s {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
+  // A detached callback has no JavaScript there to receive the exceptions it
+  // throws, so they are left pending for the embedder instead.
   template <typename T>
   T
-  call_into_native(const std::function<T()> &fn) {
-    js_callback_scope_s callback_scope(this);
+  call_into_native(const std::function<T()> &fn, bool detached = false) {
+    js_callback_scope_s callback_scope(this, detached);
 
     return fn();
   }
@@ -2342,11 +2359,13 @@ private:
 
   struct js_callback_scope_s {
     js_env_t *env;
+    bool detached;
     TryCatch try_catch;
     TryCatch *previous;
 
-    js_callback_scope_s(js_env_t *env)
+    js_callback_scope_s(js_env_t *env, bool detached)
         : env(env),
+          detached(detached),
           try_catch(env->isolate),
           previous(std::exchange(env->callback_try_catch, &try_catch)) {}
 
@@ -2355,6 +2374,8 @@ private:
     // be told apart here.
     ~js_callback_scope_s() {
       env->discard_caught_exception();
+
+      if (detached) env->exception_held = false;
 
       env->callback_try_catch = previous;
     }
@@ -2947,7 +2968,12 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
-      finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+      finalizer->env->call_into_native<void>(
+        [&] {
+          finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+        },
+        true /* detached */
+      );
     }
 
     finalizer->destroy();
@@ -3640,7 +3666,12 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+    env->call_into_native<void>(
+      [&] {
+        cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+      },
+      true /* detached */
+    );
   }
 
   void
@@ -3790,7 +3821,12 @@ bool
 js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
 
-  return session->cb(session->env, session, session->data);
+  return session->env->call_into_native<bool>(
+    [&] {
+      return session->cb(session->env, session, session->data);
+    },
+    true /* detached */
+  );
 }
 
 namespace {
@@ -5281,7 +5317,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -5296,7 +5332,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -5309,7 +5345,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         (property->attributes & js_enumerable) &&
         (property->attributes & js_configurable)
       ) {
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->CreateDataProperty(context, name, value);
           }
@@ -5320,7 +5356,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
         descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->DefineProperty(context, name, descriptor);
           }
@@ -6457,7 +6493,8 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
   auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
   }
 
   *result = js_from_local(error);
@@ -6989,7 +7026,7 @@ js_coerce_to_number(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto number = env->try_catch<Number>(
+  auto number = env->call_into_javascript<Number>(
     [&] {
       return local->ToNumber(context);
     }
@@ -7012,7 +7049,7 @@ js_coerce_to_string(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto string = env->try_catch<String>(
+  auto string = env->call_into_javascript<String>(
     [&] {
       return local->ToString(context);
     }
@@ -7091,7 +7128,7 @@ js_instanceof(js_env_t *env, js_value_t *object, js_value_t *constructor, bool *
 
   auto context = env->current_context();
 
-  auto success = env->try_catch<bool>(
+  auto success = env->call_into_javascript<bool>(
     [&] {
       return js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor));
     }
@@ -9267,7 +9304,8 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
     if (string.IsEmpty()) return js__error(env);
 
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
   }
 
   return js_throw(env, js_from_local(error));
