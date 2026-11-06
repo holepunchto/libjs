@@ -1779,6 +1779,12 @@ struct js_env_s {
 
   uint32_t depth;
 
+  // Whether the innermost frame is native code entered through libjs, which
+  // takes back the exceptions it records. Native code running while this is
+  // false was called by V8 directly, like a fast call, and V8 alone carries its
+  // exceptions.
+  bool native;
+
   Isolate *isolate;
 
   Global<Context> context;
@@ -1826,6 +1832,7 @@ struct js_env_s {
         platform(platform),
         tasks(),
         depth(0),
+        native(true),
         isolate(isolate),
         context(),
         wrapper(),
@@ -2007,7 +2014,11 @@ struct js_env_s {
 
     depth++;
 
-    isolate->PerformMicrotaskCheckpoint();
+    {
+      auto native_scope = native_scope_t(this, false);
+
+      isolate->PerformMicrotaskCheckpoint();
+    }
 
     if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
     else {
@@ -2020,16 +2031,24 @@ struct js_env_s {
 
         auto local = promise.Get(isolate);
 
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
-        );
+        {
+          auto native_scope = native_scope_t(this, true);
+
+          callbacks.unhandled_rejection(
+            this,
+            js_from_local(local->Result()),
+            js_from_local(local),
+            callbacks.unhandled_rejection_data
+          );
+        }
 
         if (isolate->IsExecutionTerminating()) break;
 
-        isolate->PerformMicrotaskCheckpoint();
+        {
+          auto native_scope = native_scope_t(this, false);
+
+          isolate->PerformMicrotaskCheckpoint();
+        }
       }
     }
 
@@ -2045,7 +2064,11 @@ struct js_env_s {
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
 
-      task->run();
+      {
+        auto native_scope = native_scope_t(this, false);
+
+        task->run();
+      }
 
       run_microtasks();
 
@@ -2053,9 +2076,29 @@ struct js_env_s {
     }
   }
 
+  struct native_scope_t {
+    js_env_t *env;
+    bool previous;
+
+    native_scope_t(js_env_t *env, bool native)
+        : env(env),
+          previous(env->native) {
+      env->native = native;
+    }
+
+    ~native_scope_t() {
+      env->native = previous;
+    }
+
+    native_scope_t(const native_scope_t &) = delete;
+
+    native_scope_t &
+    operator=(const native_scope_t &) = delete;
+  };
+
   bool
   is_exception_pending() {
-    return !exception.IsEmpty();
+    return !exception.IsEmpty() || (!native && isolate->HasPendingException());
   }
 
   bool
@@ -2085,6 +2128,8 @@ struct js_env_s {
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
+      auto native_scope = native_scope_t(this, true);
+
       callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
     } else {
       exception.Reset(isolate, error);
@@ -2101,14 +2146,18 @@ struct js_env_s {
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
-    auto result = fn();
+    auto result = [&] {
+      auto native_scope = native_scope_t(this, false);
+
+      return fn();
+    }();
 
     if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
       else {
-        exception.Reset(isolate, error);
+        if (native) exception.Reset(isolate, error);
 
         try_catch.ReThrow();
       }
@@ -2162,6 +2211,8 @@ struct js_env_s {
   template <typename T>
   T
   call_into_native(const std::function<T()> &fn) {
+    auto native_scope = native_scope_t(this, true);
+
     auto try_catch = TryCatch(isolate);
 
     return fn();
@@ -2879,6 +2930,8 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
+      auto native_scope = js_env_t::native_scope_t(finalizer->env, true);
+
       finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
     }
 
@@ -3572,6 +3625,8 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
+    auto native_scope = js_env_t::native_scope_t(env, true);
+
     cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
   }
 
@@ -3708,6 +3763,8 @@ struct js_inspector_s {
 
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
+    auto native_scope = js_env_t::native_scope_t(env, false);
+
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
   }
 };
@@ -3715,6 +3772,8 @@ struct js_inspector_s {
 bool
 js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
+
+  auto native_scope = js_env_t::native_scope_t(session->env, true);
 
   return session->cb(session->env, session, session->data);
 }
@@ -3882,7 +3941,11 @@ struct js_microtask_s {
   on_run(void *data) {
     auto task = static_cast<js_microtask_t *>(data);
 
-    task->cb(task->env, task->data);
+    {
+      auto native_scope = js_env_t::native_scope_t(task->env, true);
+
+      task->cb(task->env, task->data);
+    }
 
     delete task;
   }
@@ -9158,7 +9221,7 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->exception.Reset(env->isolate, local);
+  if (env->native) env->exception.Reset(env->isolate, local);
 
   env->isolate->ThrowException(local);
 

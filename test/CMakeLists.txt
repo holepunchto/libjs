@@ -124,8 +124,11 @@ list(APPEND tests
   create-threadsafe-function-with-finalizer
   create-typed-errors
   create-typed-function
+  create-typed-function-call-throw
   create-typed-function-multiple
   create-typed-function-no-jit
+  create-typed-function-throw
+  create-typed-function-throw-nested
   create-typed-function-with-arraybuffer
   create-typed-function-with-bigint64
   create-typed-function-with-biguint64
