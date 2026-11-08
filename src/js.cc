@@ -1791,10 +1791,11 @@ js__destroy_allocations(js_allocations_t *allocations);
 
 } // namespace
 
-// Handle scopes are not owned by the environment. They must be destroyed in
-// the exact reverse of the order they were opened, interleaved with the scopes
-// held on the native stack, and no sweep can reconstruct that order. Leaving
-// one open therefore leaks it.
+// The environment owns the storage for handle scopes, but does not destroy any
+// left open when it is torn down: they must be destroyed in the exact reverse
+// of the order they were opened, interleaved with the scopes held on the native
+// stack, and no sweep can reconstruct that order. Only their storage is
+// released, after the isolate is disposed.
 struct js_handle_scope_s {
   HandleScope scope;
 
