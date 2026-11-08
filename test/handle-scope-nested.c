@@ -4,9 +4,9 @@
 
 #include "../include/js.h"
 
-// Nests more handle scopes than an environment keeps inline, alternating
-// plain and escapable ones, and checks that every scope keeps its values until
-// it closes and that escaped values survive their scope.
+// Nests handle scopes across several segments of the environment's storage,
+// alternating plain and escapable ones, and checks that every scope keeps its
+// values until it closes and that escaped values survive their scope.
 
 static uint32_t
 nest(js_env_t *env, uint32_t depth, uint32_t max) {
@@ -80,11 +80,11 @@ main() {
   e = js_open_handle_scope(env, &outer);
   assert(e == 0);
 
-  // 0 + 1 + ... + 39
-  assert(nest(env, 0, 40) == 780);
+  // 0 + 1 + ... + 99
+  assert(nest(env, 0, 100) == 4950);
 
-  // Once all of them have closed, the inline scopes are free again.
-  assert(nest(env, 0, 40) == 780);
+  // Once all of them have closed, the storage is reused.
+  assert(nest(env, 0, 100) == 4950);
 
   e = js_close_handle_scope(env, outer);
   assert(e == 0);

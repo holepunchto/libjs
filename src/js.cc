@@ -59,6 +59,7 @@ typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
+typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -249,6 +250,33 @@ struct js_segment_array_s {
     for (uint32_t i = 0; i < len; i++) {
       if (is_live(i)) fn(std::launder(reinterpret_cast<T *>(at(i)->value)));
     }
+  }
+
+  // The array may instead be used as a stack, adding and removing elements at its
+  // end without marking them live. This must not be mixed with alloc() and free(),
+  // and a stack must never be shrunk, as none of its elements appear live.
+  template <typename... Args>
+  T *
+  push(Args &&...args) {
+    auto slot = reserve(len++);
+
+    return new (slot->value) T(std::forward<Args>(args)...);
+  }
+
+  T *
+  top() {
+    if (len == 0) return nullptr;
+
+    return std::launder(reinterpret_cast<T *>(at(len - 1)->value));
+  }
+
+  void
+  pop() {
+    assert(len > 0);
+
+    top()->~T();
+
+    len--;
   }
 
   // Releases the segments at the end of the array that hold no live element.
@@ -1791,14 +1819,9 @@ struct js_escapable_handle_scope_s {
   operator=(const js_escapable_handle_scope_s &) = delete;
 };
 
-// Handle scopes are opened and closed often: libjstl opens one around every
-// call to a scoped function that takes the environment. The first ones of an
-// environment are placed in a fixed array inside it instead of on the heap,
-// saving an allocation and a free per scope. Scopes close in the
-// reverse order they were opened, so the array is used as a stack; deeper
-// nesting falls back to the heap.
-static const uint32_t js_handle_scope_slab_len = 16;
-
+// Handle scopes are opened and closed often, and must close in the reverse order
+// they were opened. Their storage is therefore kept as a stack on the
+// environment and reused as scopes are opened again.
 struct js_handle_scope_slot_s {
   alignas(std::max(alignof(js_handle_scope_s), alignof(js_escapable_handle_scope_s)))
   uint8_t storage[std::max(sizeof(js_handle_scope_s), sizeof(js_escapable_handle_scope_s))];
@@ -1864,9 +1887,7 @@ struct js_env_s {
     void *dynamic_import_data;
   } callbacks;
 
-  uint32_t handle_scope_depth;
-  js_handle_scope_slot_s handle_scope_slab[js_handle_scope_slab_len];
-  std::vector<void *> handle_scope_overflow;
+  js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
 
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
@@ -1893,9 +1914,7 @@ struct js_env_s {
         allocations(js__create_allocations()),
         inspector(),
         callbacks(),
-        handle_scope_depth(0),
-        handle_scope_slab(),
-        handle_scope_overflow() {
+        handle_scopes() {
     int err;
 
     std::unique_lock guard(platform->lock);
@@ -4392,17 +4411,9 @@ js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options,
 template <typename T>
 static inline T *
 js__open_handle_scope(js_env_t *env) {
-  auto depth = env->handle_scope_depth++;
+  auto slot = env->handle_scopes.push();
 
-  if (depth < js_handle_scope_slab_len) {
-    return new (env->handle_scope_slab[depth].storage) T(env->isolate);
-  }
-
-  auto scope = new T(env->isolate);
-
-  env->handle_scope_overflow.push_back(scope);
-
-  return scope;
+  return new (slot->storage) T(env->isolate);
 }
 
 template <typename T>
@@ -4410,21 +4421,11 @@ static inline void
 js__close_handle_scope(js_env_t *env, T *scope) {
   // The scope being closed must be the most recent one open: closing another
   // would corrupt the handles of the scopes opened after it.
-  if (env->handle_scope_depth == 0) abort();
+  if (static_cast<void *>(scope) != static_cast<void *>(env->handle_scopes.top())) abort();
 
-  auto depth = --env->handle_scope_depth;
+  scope->~T();
 
-  if (depth < js_handle_scope_slab_len) {
-    if (static_cast<void *>(scope) != static_cast<void *>(env->handle_scope_slab[depth].storage)) abort();
-
-    scope->~T();
-  } else {
-    if (env->handle_scope_overflow.back() != scope) abort();
-
-    env->handle_scope_overflow.pop_back();
-
-    delete scope;
-  }
+  env->handle_scopes.pop();
 }
 
 } // namespace
