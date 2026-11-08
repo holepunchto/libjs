@@ -2221,9 +2221,9 @@ struct js_env_s {
 
   // A detached callback has no JavaScript there to receive the exceptions it
   // throws, so they are left pending for the embedder instead.
-  template <typename T>
+  template <typename T, typename F>
   T
-  call_into_native(const std::function<T()> &fn, bool detached = false) {
+  call_into_native(F &&fn, bool detached = false) {
     js_callback_scope_s callback_scope(this, detached);
 
     return fn();
