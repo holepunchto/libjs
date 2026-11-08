@@ -59,6 +59,7 @@ typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
+typedef struct js_isolate_scope_s js_isolate_scope_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -1776,7 +1777,7 @@ struct js_isolate_scope_s {
   Isolate *entered_isolate;
   Isolate *previous_isolate;
 
-  inline explicit js_isolate_scope_s(Isolate *isolate) noexcept
+  explicit js_isolate_scope_s(Isolate *isolate) noexcept
       : entered_isolate(nullptr),
         previous_isolate(nullptr) {
     if (V8_UNLIKELY(js__tls_entered_isolate != isolate)) {
@@ -1787,7 +1788,7 @@ struct js_isolate_scope_s {
     }
   }
 
-  inline ~js_isolate_scope_s() noexcept {
+  ~js_isolate_scope_s() noexcept {
     if (V8_UNLIKELY(entered_isolate != nullptr)) {
       entered_isolate->Exit();
       js__tls_entered_isolate = previous_isolate;
@@ -1932,7 +1933,7 @@ struct js_env_s {
 
     isolate->AddGCEpilogueCallback(on_garbage_collection, this, GCType::kGCTypeMarkSweepCompact);
 
-    js_isolate_scope_s isolate_scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
     auto scope = HandleScope(isolate);
 
     context.Reset(isolate, Context::New(isolate));
@@ -1949,7 +1950,7 @@ struct js_env_s {
     if (inspector) inspector.reset();
 
     {
-      js_isolate_scope_s isolate_scope(isolate);
+      js_isolate_scope_t isolate_scope(isolate);
       auto scope = HandleScope(isolate);
 
       js__finalize_allocations(allocations);
@@ -2106,7 +2107,7 @@ struct js_env_s {
   run_macrotasks() {
     tasks->move_expired_tasks();
 
-    js_isolate_scope_s isolate_scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
 
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
@@ -2433,7 +2434,7 @@ struct js_env_scope_options_s {
 };
 
 struct js_env_scope_s {
-  js_isolate_scope_s isolate_scope;
+  js_isolate_scope_t isolate_scope;
   std::optional<HandleScope> handle_scope;
 
   js_env_scope_s(js_env_t *env, js_env_scope_options_t options = {})
@@ -4288,7 +4289,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   Isolate::Initialize(isolate, params);
 
-  js_isolate_scope_s isolate_scope(isolate);
+  js_isolate_scope_t isolate_scope(isolate);
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
