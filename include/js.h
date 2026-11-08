@@ -2690,6 +2690,25 @@ int
 js_get_global(js_env_t *env, js_value_t **result);
 
 /**
+ * Get the value of the continuation-preserved embedder data slot: a value that
+ * V8 copies into every promise reaction when it is created and restores while the
+ * reaction runs. Yields `undefined` if nothing has been set.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
+
+/**
+ * Set the value of the continuation-preserved embedder data slot. Promise reactions
+ * created from now on capture this value.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value);
+
+/**
  * Get the global object of the context that an object was created in, or the
  * `null` value if the engine cannot tell. The behavior is undefined if the
  * value is not an object.

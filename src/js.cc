@@ -8195,6 +8195,84 @@ js_get_global(js_env_t *env, js_value_t **result) {
 }
 
 extern "C" int
+js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto key = js_to_local(symbol);
+
+  if (!key->IsSymbol()) {
+    err = js_throw_error(env, NULL, "Continuation data must be keyed by a symbol");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  Local<Value> value = Undefined(env->isolate);
+
+  auto data = env->isolate->GetContinuationPreservedEmbedderData();
+
+  if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
+    value = data.As<Map>()->Get(env->current_context(), key).ToLocalChecked();
+  }
+
+  *result = js_from_local(value);
+
+  return 0;
+}
+
+extern "C" int
+js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  int err;
+
+  js_env_scope_t env_scope(env);
+
+  auto key = js_to_local(symbol);
+
+  if (!key->IsSymbol()) {
+    err = js_throw_error(env, NULL, "Continuation data must be keyed by a symbol");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  auto context = env->current_context();
+
+  // Never change the map that is already in the slot, as prior continuations
+  // hold a reference to it. Build a new one instead
+  auto next = Map::New(env->isolate);
+
+  auto data = env->isolate->GetContinuationPreservedEmbedderData();
+
+  if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
+    auto entries = data.As<Map>()->AsArray();
+
+    for (uint32_t i = 0, n = entries->Length(); i < n; i += 2) {
+      auto k = entries->Get(context, i).ToLocalChecked();
+
+      if (k->StrictEquals(key)) continue;
+
+      auto v = entries->Get(context, i + 1).ToLocalChecked();
+
+      next->Set(context, k, v).ToLocalChecked();
+    }
+  }
+
+  auto local = js_to_local(value);
+
+  if (!local->IsUndefined()) next->Set(context, key, local).ToLocalChecked();
+
+  env->isolate->SetContinuationPreservedEmbedderData(next);
+
+  return 0;
+}
+
+extern "C" int
 js_get_object_global(js_env_t *env, js_value_t *object, js_value_t **result) {
   // Allow continuing even with a pending exception
 
