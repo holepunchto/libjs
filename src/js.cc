@@ -1763,6 +1763,47 @@ js__destroy_allocations(js_allocations_t *allocations);
 
 } // namespace
 
+// Handle scopes are not owned by the environment. They must be destroyed in
+// the exact reverse of the order they were opened, interleaved with the scopes
+// held on the native stack, and no sweep can reconstruct that order. Leaving
+// one open therefore leaks it.
+struct js_handle_scope_s {
+  HandleScope scope;
+
+  js_handle_scope_s(Isolate *isolate)
+      : scope(isolate) {}
+
+  js_handle_scope_s(const js_handle_scope_s &) = delete;
+
+  js_handle_scope_s &
+  operator=(const js_handle_scope_s &) = delete;
+};
+
+struct js_escapable_handle_scope_s {
+  EscapableHandleScope scope;
+
+  js_escapable_handle_scope_s(Isolate *isolate)
+      : scope(isolate) {}
+
+  js_escapable_handle_scope_s(const js_escapable_handle_scope_s &) = delete;
+
+  js_escapable_handle_scope_s &
+  operator=(const js_escapable_handle_scope_s &) = delete;
+};
+
+// Handle scopes are opened and closed often: libjstl opens one around every
+// call to a scoped function that takes the environment. The first ones of an
+// environment are placed in a fixed array inside it instead of on the heap,
+// saving an allocation and a free per scope. Scopes close in the
+// reverse order they were opened, so the array is used as a stack; deeper
+// nesting falls back to the heap.
+static const uint32_t js_handle_scope_slab_len = 16;
+
+struct js_handle_scope_slot_s {
+  alignas(std::max(alignof(js_handle_scope_s), alignof(js_escapable_handle_scope_s)))
+  uint8_t storage[std::max(sizeof(js_handle_scope_s), sizeof(js_escapable_handle_scope_s))];
+};
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1823,6 +1864,10 @@ struct js_env_s {
     void *dynamic_import_data;
   } callbacks;
 
+  uint32_t handle_scope_depth;
+  js_handle_scope_slot_s handle_scope_slab[js_handle_scope_slab_len];
+  std::vector<void *> handle_scope_overflow;
+
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
         prepare(),
@@ -1847,7 +1892,10 @@ struct js_env_s {
         teardown_queue(),
         allocations(js__create_allocations()),
         inspector(),
-        callbacks() {
+        callbacks(),
+        handle_scope_depth(0),
+        handle_scope_slab(),
+        handle_scope_overflow() {
     int err;
 
     std::unique_lock guard(platform->lock);
@@ -2425,34 +2473,6 @@ struct js_context_s {
 
   js_context_s &
   operator=(const js_context_s &) = delete;
-};
-
-// Handle scopes are not owned by the environment. They must be destroyed in
-// the exact reverse of the order they were opened, interleaved with the scopes
-// held on the native stack, and no sweep can reconstruct that order. Leaving
-// one open therefore leaks it.
-struct js_handle_scope_s {
-  HandleScope scope;
-
-  js_handle_scope_s(Isolate *isolate)
-      : scope(isolate) {}
-
-  js_handle_scope_s(const js_handle_scope_s &) = delete;
-
-  js_handle_scope_s &
-  operator=(const js_handle_scope_s &) = delete;
-};
-
-struct js_escapable_handle_scope_s {
-  EscapableHandleScope scope;
-
-  js_escapable_handle_scope_s(Isolate *isolate)
-      : scope(isolate) {}
-
-  js_escapable_handle_scope_s(const js_escapable_handle_scope_s &) = delete;
-
-  js_escapable_handle_scope_s &
-  operator=(const js_escapable_handle_scope_s &) = delete;
 };
 
 // Every unit compiled by this library carries host-defined options of its own,
@@ -4369,6 +4389,44 @@ js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options,
   return 0;
 }
 
+template <typename T>
+static inline T *
+js__open_handle_scope(js_env_t *env) {
+  auto depth = env->handle_scope_depth++;
+
+  if (depth < js_handle_scope_slab_len) {
+    return new (env->handle_scope_slab[depth].storage) T(env->isolate);
+  }
+
+  auto scope = new T(env->isolate);
+
+  env->handle_scope_overflow.push_back(scope);
+
+  return scope;
+}
+
+template <typename T>
+static inline void
+js__close_handle_scope(js_env_t *env, T *scope) {
+  // The scope being closed must be the most recent one open: closing another
+  // would corrupt the handles of the scopes opened after it.
+  if (env->handle_scope_depth == 0) abort();
+
+  auto depth = --env->handle_scope_depth;
+
+  if (depth < js_handle_scope_slab_len) {
+    if (static_cast<void *>(scope) != static_cast<void *>(env->handle_scope_slab[depth].storage)) abort();
+
+    scope->~T();
+  } else {
+    if (env->handle_scope_overflow.back() != scope) abort();
+
+    env->handle_scope_overflow.pop_back();
+
+    delete scope;
+  }
+}
+
 } // namespace
 
 extern "C" int
@@ -4377,7 +4435,7 @@ js_open_handle_scope(js_env_t *env, js_handle_scope_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_handle_scope_t>(env);
 
   return 0;
 }
@@ -4388,7 +4446,7 @@ js_close_handle_scope(js_env_t *env, js_handle_scope_t *scope) {
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }
@@ -4399,7 +4457,7 @@ js_open_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t **resu
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_escapable_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_escapable_handle_scope_t>(env);
 
   return 0;
 }
@@ -4410,7 +4468,7 @@ js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scop
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }
