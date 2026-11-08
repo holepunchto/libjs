@@ -63,6 +63,7 @@ list(APPEND tests
   create-env-multiple-concurrent
   create-env-multiple-isolated
   create-env-multiple-microtask
+  create-env-multiple-nested
   create-external
   create-external-arraybuffer
   create-external-arraybuffer-with-finalizer
