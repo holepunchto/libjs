@@ -60,6 +60,7 @@ typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
+typedef struct js_isolate_scope_s js_isolate_scope_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -1794,6 +1795,43 @@ js__destroy_allocations(js_allocations_t *allocations);
 
 } // namespace
 
+// Entering a V8 isolate is reference counted and costs a few nanoseconds per
+// call. libjs enters the isolate around every call into V8; when the calling
+// thread is already inside it, because the call comes from a native callback
+// or from code that libjs itself entered, entering again is redundant. The
+// thread-local pointer records the isolate libjs has entered on this thread,
+// and the scope only enters and exits when it differs. Scopes nest strictly:
+// each one restores the previous isolate when it leaves.
+static thread_local Isolate *js__entered_isolate = nullptr;
+
+struct js_isolate_scope_s {
+  Isolate *current;
+  Isolate *previous;
+
+  explicit js_isolate_scope_s(Isolate *isolate)
+      : current(nullptr),
+        previous(nullptr) {
+    if (js__entered_isolate != isolate) [[unlikely]] {
+      previous = js__entered_isolate;
+      js__entered_isolate = isolate;
+      current = isolate;
+      isolate->Enter();
+    }
+  }
+
+  ~js_isolate_scope_s() {
+    if (current != nullptr) [[unlikely]] {
+      current->Exit();
+      js__entered_isolate = previous;
+    }
+  }
+
+  js_isolate_scope_s(const js_isolate_scope_s &) = delete;
+
+  js_isolate_scope_s &
+  operator=(const js_isolate_scope_s &) = delete;
+};
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1926,7 +1964,7 @@ struct js_env_s {
 
     isolate->AddGCEpilogueCallback(on_garbage_collection, this, GCType::kGCTypeMarkSweepCompact);
 
-    auto isolate_scope = Isolate::Scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
     auto scope = HandleScope(isolate);
 
     context.Reset(isolate, Context::New(isolate));
@@ -1943,7 +1981,7 @@ struct js_env_s {
     if (inspector) inspector.reset();
 
     {
-      auto isolate_scope = Isolate::Scope(isolate);
+      js_isolate_scope_t isolate_scope(isolate);
       auto scope = HandleScope(isolate);
 
       js__finalize_allocations(allocations);
@@ -1961,6 +1999,8 @@ struct js_env_s {
 
       js__release_allocations(allocations);
     }
+
+    if (js__entered_isolate == isolate) js__entered_isolate = nullptr;
 
     isolate->Dispose();
 
@@ -2098,7 +2138,7 @@ struct js_env_s {
   run_macrotasks() {
     tasks->move_expired_tasks();
 
-    auto isolate_scope = Isolate::Scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
 
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
@@ -2252,9 +2292,9 @@ struct js_env_s {
 
   // A detached callback has no JavaScript there to receive the exceptions it
   // throws, so they are left pending for the embedder instead.
-  template <typename T>
+  template <typename T, typename F>
   T
-  call_into_native(const std::function<T()> &fn, bool detached = false) {
+  call_into_native(F &&fn, bool detached = false) {
     js_callback_scope_s callback_scope(this, detached);
 
     return fn();
@@ -2425,7 +2465,7 @@ struct js_env_scope_options_s {
 };
 
 struct js_env_scope_s {
-  Isolate::Scope isolate_scope;
+  js_isolate_scope_t isolate_scope;
   std::optional<HandleScope> handle_scope;
 
   js_env_scope_s(js_env_t *env, js_env_scope_options_t options = {})
@@ -4303,7 +4343,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   Isolate::Initialize(isolate, params);
 
-  auto isolate_scope = Isolate::Scope(isolate);
+  js_isolate_scope_t isolate_scope(isolate);
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 

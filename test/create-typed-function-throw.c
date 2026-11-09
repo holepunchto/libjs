@@ -118,7 +118,7 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "(() => { let i = 0, caught = 0; while (i++ < 200000) { try { hello() } catch (err) { if (err.message === 'err') caught++ } } return caught })()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "(() => { let i = 0, caught = 0; while (i++ < 1000000) { try { hello() } catch (err) { if (err.message === 'err') caught++ } } return caught })()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
