@@ -1791,43 +1791,6 @@ js__destroy_allocations(js_allocations_t *allocations);
 
 } // namespace
 
-// The environment owns the storage for handle scopes, but does not destroy any
-// left open when it is torn down: they must be destroyed in the exact reverse
-// of the order they were opened, interleaved with the scopes held on the native
-// stack, and no sweep can reconstruct that order. Only their storage is
-// released, after the isolate is disposed.
-struct js_handle_scope_s {
-  HandleScope scope;
-
-  js_handle_scope_s(Isolate *isolate)
-      : scope(isolate) {}
-
-  js_handle_scope_s(const js_handle_scope_s &) = delete;
-
-  js_handle_scope_s &
-  operator=(const js_handle_scope_s &) = delete;
-};
-
-struct js_escapable_handle_scope_s {
-  EscapableHandleScope scope;
-
-  js_escapable_handle_scope_s(Isolate *isolate)
-      : scope(isolate) {}
-
-  js_escapable_handle_scope_s(const js_escapable_handle_scope_s &) = delete;
-
-  js_escapable_handle_scope_s &
-  operator=(const js_escapable_handle_scope_s &) = delete;
-};
-
-// Handle scopes are opened and closed often, and must close in the reverse order
-// they were opened. Their storage is therefore kept as a stack on the
-// environment and reused as scopes are opened again.
-struct js_handle_scope_slot_s {
-  alignas(std::max(alignof(js_handle_scope_s), alignof(js_escapable_handle_scope_s)))
-  uint8_t storage[std::max(sizeof(js_handle_scope_s), sizeof(js_escapable_handle_scope_s))];
-};
-
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1888,8 +1851,6 @@ struct js_env_s {
     void *dynamic_import_data;
   } callbacks;
 
-  js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
-
   js_env_s(uv_loop_t *loop, js_platform_t *platform, Isolate *isolate)
       : loop(loop),
         prepare(),
@@ -1914,8 +1875,7 @@ struct js_env_s {
         teardown_queue(),
         allocations(js__create_allocations()),
         inspector(),
-        callbacks(),
-        handle_scopes() {
+        callbacks() {
     int err;
 
     std::unique_lock guard(platform->lock);
@@ -2493,6 +2453,43 @@ struct js_context_s {
 
   js_context_s &
   operator=(const js_context_s &) = delete;
+};
+
+// The environment owns the storage for handle scopes, but does not destroy any
+// left open when it is torn down: they must be destroyed in the exact reverse
+// of the order they were opened, interleaved with the scopes held on the native
+// stack, and no sweep can reconstruct that order. Only their storage is
+// released, after the isolate is disposed.
+struct js_handle_scope_s {
+  HandleScope scope;
+
+  js_handle_scope_s(Isolate *isolate)
+      : scope(isolate) {}
+
+  js_handle_scope_s(const js_handle_scope_s &) = delete;
+
+  js_handle_scope_s &
+  operator=(const js_handle_scope_s &) = delete;
+};
+
+struct js_escapable_handle_scope_s {
+  EscapableHandleScope scope;
+
+  js_escapable_handle_scope_s(Isolate *isolate)
+      : scope(isolate) {}
+
+  js_escapable_handle_scope_s(const js_escapable_handle_scope_s &) = delete;
+
+  js_escapable_handle_scope_s &
+  operator=(const js_escapable_handle_scope_s &) = delete;
+};
+
+// Handle scopes are opened and closed often, and must close in the reverse order
+// they were opened. Their storage is therefore kept as a stack on the
+// environment and reused as scopes are opened again.
+struct js_handle_scope_slot_s {
+  alignas(std::max(alignof(js_handle_scope_s), alignof(js_escapable_handle_scope_s)))
+  uint8_t storage[std::max(sizeof(js_handle_scope_s), sizeof(js_escapable_handle_scope_s))];
 };
 
 // Every unit compiled by this library carries host-defined options of its own,
@@ -3924,6 +3921,8 @@ struct js_allocations_s {
   js_segment_array_t<js_typed_callback_t> typed_callbacks;
   js_segment_array_t<js_finalizer_t> finalizers;
   js_segment_array_t<js_delegate_t> delegates;
+
+  js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
 };
 
 namespace {
@@ -4412,7 +4411,7 @@ js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options,
 template <typename T>
 static inline T *
 js__open_handle_scope(js_env_t *env) {
-  auto slot = env->handle_scopes.push();
+  auto slot = env->allocations->handle_scopes.push();
 
   return new (slot->storage) T(env->isolate);
 }
@@ -4422,11 +4421,11 @@ static inline void
 js__close_handle_scope(js_env_t *env, T *scope) {
   // The scope being closed must be the most recent one open: closing another
   // would corrupt the handles of the scopes opened after it.
-  if (static_cast<void *>(scope) != static_cast<void *>(env->handle_scopes.top())) abort();
+  if (static_cast<void *>(scope) != static_cast<void *>(env->allocations->handle_scopes.top())) abort();
 
   scope->~T();
 
-  env->handle_scopes.pop();
+  env->allocations->handle_scopes.pop();
 }
 
 } // namespace
