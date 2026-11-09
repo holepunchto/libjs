@@ -40,8 +40,6 @@ typedef struct js_typed_callback_s js_typed_callback_t;
 typedef struct js_deleter_s js_deleter_t;
 typedef struct js_finalizer_s js_finalizer_t;
 typedef struct js_delegate_s js_delegate_t;
-typedef struct js_external_string_utf16le_s js_external_string_utf16le_t;
-typedef struct js_external_string_latin1_s js_external_string_latin1_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
@@ -1793,6 +1791,9 @@ js__release_allocations(js_allocations_t *allocations);
 static void
 js__destroy_allocations(js_allocations_t *allocations);
 
+static void
+js__finalize_external_strings(js_env_t *env);
+
 } // namespace
 
 // Entering a V8 isolate is reference counted and costs a few nanoseconds per
@@ -2382,6 +2383,8 @@ private:
   static void
   on_garbage_collection(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
     auto env = reinterpret_cast<js_env_t *>(data);
+
+    js__finalize_external_strings(env);
 
     js__shrink_allocations(env->allocations);
   }
@@ -3255,35 +3258,49 @@ private:
   }
 };
 
-struct js_external_string_utf16le_s : String::ExternalStringResource {
+// The engine may dispose of these on a worker thread in the middle of a
+// collection, or while garbage collection is held off, and neither allows
+// calling into the environment. Disposing of one therefore only defers its
+// finalizer to the end of the next full collection.
+template <typename R, typename C>
+struct js_external_string_s : R {
   js_env_t *env;
 
-  utf16_t *str;
+  C *str;
   size_t len;
 
   js_finalize_cb finalize_cb;
   void *finalize_hint;
 
-  js_external_string_utf16le_s(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
+  js_external_string_s *next;
+
+  js_external_string_s(js_env_t *env, void *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
       : env(env),
-        str(str),
+        str(static_cast<C *>(str)),
         len(len),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
+        finalize_hint(finalize_hint),
+        next(nullptr) {}
 
-  js_external_string_utf16le_s(const js_external_string_utf16le_s &) = delete;
+  js_external_string_s(const js_external_string_s &) = delete;
 
-  ~js_external_string_utf16le_s() {
-    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+  js_external_string_s &
+  operator=(const js_external_string_s &) = delete;
+
+  void
+  finalize() {
+    auto cb = std::exchange(finalize_cb, nullptr);
+
+    if (cb) cb(env, str, finalize_hint);
   }
 
-  js_external_string_utf16le_s &
-  operator=(const js_external_string_utf16le_s &) = delete;
+  void
+  Dispose() override;
 
-  const uint16_t *
+  const C *
   data() const override {
     return str;
-  };
+  }
 
   size_t
   length() const override {
@@ -3291,40 +3308,21 @@ struct js_external_string_utf16le_s : String::ExternalStringResource {
   }
 };
 
-struct js_external_string_latin1_s : String::ExternalOneByteStringResource {
-  js_env_t *env;
+using js_external_string_utf16le_t = js_external_string_s<String::ExternalStringResource, uint16_t>;
+using js_external_string_latin1_t = js_external_string_s<String::ExternalOneByteStringResource, char>;
 
-  latin1_t *str;
-  size_t len;
+template <>
+void
+js_external_string_utf16le_t::Dispose();
 
-  js_finalize_cb finalize_cb;
-  void *finalize_hint;
+template <>
+void
+js_external_string_latin1_t::Dispose();
 
-  js_external_string_latin1_s(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
-      : env(env),
-        str(str),
-        len(len),
-        finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
-
-  js_external_string_latin1_s(const js_external_string_latin1_s &) = delete;
-
-  ~js_external_string_latin1_s() {
-    if (finalize_cb) finalize_cb(env, str, finalize_hint);
-  }
-
-  js_external_string_latin1_s &
-  operator=(const js_external_string_latin1_s &) = delete;
-
-  const char *
-  data() const override {
-    return reinterpret_cast<char *>(str);
-  };
-
-  size_t
-  length() const override {
-    return len;
-  }
+template <typename T>
+struct js_external_strings_s {
+  js_segment_array_t<T> resources;
+  std::atomic<T *> disposed;
 };
 
 struct js_string_view_s {
@@ -3960,6 +3958,25 @@ struct js_garbage_collection_tracking_s {
   operator=(const js_garbage_collection_tracking_s &) = delete;
 };
 
+struct js_microtask_s {
+  js_env_t *env;
+  js_task_cb cb;
+  void *data;
+
+  js_microtask_s(js_env_t *env, js_task_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
+
+  js_microtask_s(const js_microtask_s &) = delete;
+
+  js_microtask_s &
+  operator=(const js_microtask_s &) = delete;
+
+  static void
+  on_run(void *data);
+};
+
 struct js_allocations_s {
   js_segment_array_t<js_context_t> contexts;
   js_segment_array_t<js_script_t> scripts;
@@ -3970,6 +3987,9 @@ struct js_allocations_s {
   js_segment_array_t<js_garbage_collection_tracking_t> garbage_collection_tracking;
   js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
   js_segment_array_t<js_inspector_t> inspectors;
+  js_segment_array_t<js_microtask_t> microtasks;
+  js_external_strings_s<js_external_string_utf16le_t> external_strings_utf16le;
+  js_external_strings_s<js_external_string_latin1_t> external_strings_latin1;
 
   js_segment_array_t<js_callback_t> callbacks;
   js_segment_array_t<js_typed_callback_t> typed_callbacks;
@@ -3997,6 +4017,9 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->garbage_collection_tracking.shrink();
   allocations->deferred_teardowns.shrink();
   allocations->inspectors.shrink();
+  allocations->microtasks.shrink();
+  allocations->external_strings_utf16le.resources.shrink();
+  allocations->external_strings_latin1.resources.shrink();
   allocations->callbacks.shrink();
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
@@ -4013,11 +4036,20 @@ js__finalize_allocations(js_allocations_t *allocations) {
   allocations->delegates.each([](js_delegate_t *delegate) {
     delegate->finalize();
   });
+
+  allocations->external_strings_utf16le.resources.each([](js_external_string_utf16le_t *string) {
+    string->finalize();
+  });
+
+  allocations->external_strings_latin1.resources.each([](js_external_string_latin1_t *string) {
+    string->finalize();
+  });
 }
 
 static void
 js__release_allocations(js_allocations_t *allocations) {
   allocations->callbacks.clear();
+  allocations->microtasks.clear();
   allocations->inspectors.clear();
   allocations->deferred_teardowns.clear();
   allocations->garbage_collection_tracking.clear();
@@ -4032,7 +4064,8 @@ js__release_allocations(js_allocations_t *allocations) {
   // callbacks through the signatures its compiler threads read, and finalizers
   // through second pass callbacks that are still pending, which any collection
   // runs first. They therefore only let go of their handles here and are freed
-  // along with the allocations.
+  // along with the allocations. External strings are left alone entirely, as
+  // the engine still disposes of them when the isolate is disposed.
 
   allocations->typed_callbacks.each([](js_typed_callback_t *callback) {
     callback->external.Reset();
@@ -4050,6 +4083,39 @@ js__release_allocations(js_allocations_t *allocations) {
 static void
 js__destroy_allocations(js_allocations_t *allocations) {
   delete allocations;
+}
+
+template <typename T, typename F>
+static inline void
+js__drain_external_strings(js_external_strings_s<T> &strings, F finalize) {
+  auto string = strings.disposed.exchange(nullptr, std::memory_order_acquire);
+
+  while (string) {
+    auto next = string->next;
+
+    finalize(string);
+
+    strings.resources.free(string);
+
+    string = next;
+  }
+}
+
+static void
+js__finalize_external_strings(js_env_t *env) {
+  auto finalize = [env](auto string) {
+    if (string->finalize_cb == nullptr) return;
+
+    env->call_into_native<void>(
+      [&] {
+        string->finalize();
+      },
+      true /* detached */
+    );
+  };
+
+  js__drain_external_strings(env->allocations->external_strings_utf16le, finalize);
+  js__drain_external_strings(env->allocations->external_strings_latin1, finalize);
 }
 
 } // namespace
@@ -4074,25 +4140,36 @@ js_delegate_s::destroy() {
   env->allocations->delegates.free(this);
 }
 
-struct js_microtask_s {
-  js_env_t *env;
-  js_task_cb cb;
-  void *data;
+template <typename T>
+static inline void
+js__defer_external_string(js_external_strings_s<T> &strings, T *string) {
+  auto next = strings.disposed.load(std::memory_order_relaxed);
 
-  js_microtask_s(js_env_t *env, js_task_cb cb, void *data)
-      : env(env),
-        cb(cb),
-        data(data) {}
+  do {
+    string->next = next;
+  } while (!strings.disposed.compare_exchange_weak(next, string, std::memory_order_release, std::memory_order_relaxed));
+}
 
-  static void
-  on_run(void *data) {
-    auto task = static_cast<js_microtask_t *>(data);
+template <>
+void
+js_external_string_utf16le_t::Dispose() {
+  js__defer_external_string(env->allocations->external_strings_utf16le, this);
+}
 
-    task->cb(task->env, task->data);
+template <>
+void
+js_external_string_latin1_t::Dispose() {
+  js__defer_external_string(env->allocations->external_strings_latin1, this);
+}
 
-    delete task;
-  }
-};
+void
+js_microtask_s::on_run(void *data) {
+  auto task = static_cast<js_microtask_t *>(data);
+
+  task->cb(task->env, task->data);
+
+  task->env->allocations->microtasks.free(task);
+}
 
 namespace {
 
@@ -5930,18 +6007,30 @@ js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finali
   return 0;
 }
 
-extern "C" int
-js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
-  if (env->is_exception_pending()) return js__error(env);
+namespace {
 
-  js_env_scope_t env_scope(env);
+template <typename T, typename F>
+static inline int
+js__create_external_string(js_env_t *env, js_external_strings_s<T> &strings, void *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied, F create) {
+  // The engine would dispose of the resource of an empty string right away.
+  if (len == 0) {
+    if (copied) *copied = false;
 
-  auto resource = new js_external_string_utf16le_t(env, str, len, finalize_cb, finalize_hint);
+    *result = js_from_local(String::Empty(env->isolate));
 
-  auto string = String::NewExternalTwoByte(env->isolate, resource);
+    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+
+    return 0;
+  }
+
+  auto resource = strings.resources.alloc(env, str, len, finalize_cb, finalize_hint);
+
+  auto string = create(resource);
 
   if (string.IsEmpty()) {
-    delete resource;
+    resource->finalize();
+
+    strings.resources.free(resource);
 
     return js__error(env);
   }
@@ -5953,27 +6042,28 @@ js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_fi
   return 0;
 }
 
+} // namespace
+
+extern "C" int
+js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  js_env_scope_t env_scope(env);
+
+  return js__create_external_string(env, env->allocations->external_strings_utf16le, str, len, finalize_cb, finalize_hint, result, copied, [env](js_external_string_utf16le_t *resource) {
+    return String::NewExternalTwoByte(env->isolate, resource);
+  });
+}
+
 extern "C" int
 js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
   if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
-  auto resource = new js_external_string_latin1_t(env, str, len, finalize_cb, finalize_hint);
-
-  auto string = String::NewExternalOneByte(env->isolate, resource);
-
-  if (string.IsEmpty()) {
-    delete resource;
-
-    return js__error(env);
-  }
-
-  if (copied) *copied = false;
-
-  *result = js_from_local(string.ToLocalChecked());
-
-  return 0;
+  return js__create_external_string(env, env->allocations->external_strings_latin1, str, len, finalize_cb, finalize_hint, result, copied, [env](js_external_string_latin1_t *resource) {
+    return String::NewExternalOneByte(env->isolate, resource);
+  });
 }
 
 extern "C" int
@@ -9142,7 +9232,7 @@ js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
 
   js_env_scope_t env_scope(env);
 
-  auto task = new js_microtask_t(env, cb, data);
+  auto task = env->allocations->microtasks.alloc(env, cb, data);
 
   env->isolate->EnqueueMicrotask(js_microtask_t::on_run, task);
 

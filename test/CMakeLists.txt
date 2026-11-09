@@ -77,6 +77,8 @@ list(APPEND tests
   create-external-string-utf8-with-finalizer
   create-external-string-utf16le
   create-external-string-utf16le-with-finalizer
+  create-external-string-with-finalizer-collected
+  create-external-string-with-finalizer-internalized
   create-external-with-finalizer
   create-external-with-finalizer-destroy-env
   create-function
@@ -318,6 +320,7 @@ list(APPEND tests
   promise-rejection-unhandled-throw-nested
   queue-microtask
   queue-microtask-with-callback
+  queue-microtask-with-callback-terminate
   reference-ref-unref-leaves-object-unchanged
   reference-unref
   reference-unref-with-finalizer
