@@ -1878,6 +1878,8 @@ struct js_env_s {
 
   js_teardown_queue_t teardown_queue;
 
+  std::set<std::pair<js_deferred_teardown_cb, void *>> deferred_teardowns;
+
   js_allocations_t *allocations;
 
   std::shared_ptr<js_inspector_client_t> inspector;
@@ -1915,6 +1917,7 @@ struct js_env_s {
         default_module_id(),
         unhandled_promises(),
         teardown_queue(),
+        deferred_teardowns(),
         allocations(js__create_allocations()),
         inspector(),
         callbacks() {
@@ -9439,19 +9442,18 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
 
   int err;
 
+  if (env->deferred_teardowns.contains({callback, data})) {
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
   auto handle = env->allocations->deferred_teardowns.alloc(env, callback, data);
 
   auto status = env->add_teardown_callback(js_call_deferred_teardown, handle);
 
   switch (status) {
-  case js_teardown_queue_t::status::already_registered:
-    env->allocations->deferred_teardowns.free(handle);
-
-    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
-    assert(err == 0);
-
-    return js__error(env);
-
   case js_teardown_queue_t::status::drained:
     env->allocations->deferred_teardowns.free(handle);
 
@@ -9462,6 +9464,8 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
 
   default:
     assert(status == js_teardown_queue_s::status::success);
+
+    env->deferred_teardowns.emplace(callback, data);
 
     if (result) *result = handle;
 
@@ -9476,6 +9480,8 @@ js_finish_deferred_teardown_callback(js_deferred_teardown_t *handle) {
   auto status = handle->env->remove_teardown_callback(js_call_deferred_teardown, handle);
 
   assert(status == js_teardown_queue_s::status::success);
+
+  handle->env->deferred_teardowns.erase({handle->cb, handle->data});
 
   handle->env->allocations->deferred_teardowns.free(handle);
 
