@@ -6,13 +6,20 @@
 
 // Nests handle scopes across several segments of the environment's storage,
 // alternating plain and escapable ones, and checks that every scope keeps its
-// values until it closes and that escaped values survive their scope.
+// values until it closes and that escaped values survive their scope. The
+// innermost scope collects garbage, which shrinks the storage while every scope
+// is still open.
 
 static uint32_t
 nest(js_env_t *env, uint32_t depth, uint32_t max) {
   int e;
 
-  if (depth == max) return 0;
+  if (depth == max) {
+    e = js_request_garbage_collection(env);
+    assert(e == 0);
+
+    return 0;
+  }
 
   js_value_t *value;
   js_value_t *escaped = NULL;
@@ -68,8 +75,12 @@ main() {
 
   uv_loop_t *loop = uv_default_loop();
 
+  js_platform_options_t options = {
+    .expose_garbage_collection = true,
+  };
+
   js_platform_t *platform;
-  e = js_create_platform(loop, NULL, &platform);
+  e = js_create_platform(loop, &options, &platform);
   assert(e == 0);
 
   js_env_t *env;

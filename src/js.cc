@@ -253,12 +253,15 @@ struct js_segment_array_s {
   }
 
   // The array may instead be used as a stack, adding and removing elements at its
-  // end without marking them live. This must not be mixed with alloc() and free(),
-  // and a stack must never be shrunk, as none of its elements appear live.
+  // end. This must not be mixed with alloc() and free().
   template <typename... Args>
   T *
   push(Args &&...args) {
-    auto slot = reserve(len++);
+    auto i = len++;
+
+    auto slot = reserve(i);
+
+    set_live(i, true);
 
     return new (slot->value) T(std::forward<Args>(args)...);
   }
@@ -276,7 +279,7 @@ struct js_segment_array_s {
 
     top()->~T();
 
-    len--;
+    set_live(--len, false);
   }
 
   // Releases the segments at the end of the array that hold no live element.
@@ -3947,6 +3950,7 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
+  allocations->handle_scopes.shrink();
 }
 
 static void
