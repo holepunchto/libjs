@@ -59,6 +59,7 @@ typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
+typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
 typedef struct js_isolate_scope_s js_isolate_scope_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
@@ -250,6 +251,36 @@ struct js_segment_array_s {
     for (uint32_t i = 0; i < len; i++) {
       if (is_live(i)) fn(std::launder(reinterpret_cast<T *>(at(i)->value)));
     }
+  }
+
+  // The array may instead be used as a stack, adding and removing elements at its
+  // end. This must not be mixed with alloc() and free().
+  template <typename... Args>
+  T *
+  push(Args &&...args) {
+    auto i = len++;
+
+    auto slot = reserve(i);
+
+    set_live(i, true);
+
+    return new (slot->value) T(std::forward<Args>(args)...);
+  }
+
+  T *
+  top() {
+    if (len == 0) return nullptr;
+
+    return std::launder(reinterpret_cast<T *>(at(len - 1)->value));
+  }
+
+  void
+  pop() {
+    assert(len > 0);
+
+    top()->~T();
+
+    set_live(--len, false);
   }
 
   // Releases the segments at the end of the array that hold no live element.
@@ -2467,10 +2498,11 @@ struct js_context_s {
   operator=(const js_context_s &) = delete;
 };
 
-// Handle scopes are not owned by the environment. They must be destroyed in
-// the exact reverse of the order they were opened, interleaved with the scopes
-// held on the native stack, and no sweep can reconstruct that order. Leaving
-// one open therefore leaks it.
+// The environment owns the storage for handle scopes, but does not destroy any
+// left open when it is torn down: they must be destroyed in the exact reverse
+// of the order they were opened, interleaved with the scopes held on the native
+// stack, and no sweep can reconstruct that order. Only their storage is
+// released, after the isolate is disposed.
 struct js_handle_scope_s {
   HandleScope scope;
 
@@ -2493,6 +2525,25 @@ struct js_escapable_handle_scope_s {
 
   js_escapable_handle_scope_s &
   operator=(const js_escapable_handle_scope_s &) = delete;
+};
+
+// Handle scopes are opened and closed often, and must close in the reverse order
+// they were opened. Their storage is therefore kept as a stack on the
+// environment and reused as scopes are opened again.
+struct js_handle_scope_slot_s {
+  union {
+    js_handle_scope_t handle_scope;
+    js_escapable_handle_scope_t escapable_handle_scope;
+  };
+
+  js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s(const js_handle_scope_slot_s &) = delete;
+
+  ~js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s &
+  operator=(const js_handle_scope_slot_s &) = delete;
 };
 
 // Every unit compiled by this library carries host-defined options of its own,
@@ -3924,6 +3975,8 @@ struct js_allocations_s {
   js_segment_array_t<js_typed_callback_t> typed_callbacks;
   js_segment_array_t<js_finalizer_t> finalizers;
   js_segment_array_t<js_delegate_t> delegates;
+
+  js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
 };
 
 namespace {
@@ -3948,6 +4001,7 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
+  allocations->handle_scopes.shrink();
 }
 
 static void
@@ -4409,6 +4463,22 @@ js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options,
   return 0;
 }
 
+template <typename T>
+static inline T *
+js__open_handle_scope(js_env_t *env) {
+  auto slot = env->allocations->handle_scopes.push();
+
+  return new (slot) T(env->isolate);
+}
+
+template <typename T>
+static inline void
+js__close_handle_scope(js_env_t *env, T *scope) {
+  scope->~T();
+
+  env->allocations->handle_scopes.pop();
+}
+
 } // namespace
 
 extern "C" int
@@ -4417,7 +4487,7 @@ js_open_handle_scope(js_env_t *env, js_handle_scope_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_handle_scope_t>(env);
 
   return 0;
 }
@@ -4428,7 +4498,7 @@ js_close_handle_scope(js_env_t *env, js_handle_scope_t *scope) {
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }
@@ -4439,7 +4509,7 @@ js_open_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t **resu
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_escapable_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_escapable_handle_scope_t>(env);
 
   return 0;
 }
@@ -4450,7 +4520,7 @@ js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scop
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }

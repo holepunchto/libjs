@@ -241,6 +241,7 @@ list(APPEND tests
   get-value-string-utf8-length
   get-value-string-utf8-no-null
   get-value-string-utf8-truncate
+  handle-scope-nested
   has-element
   has-own-property
   has-property
