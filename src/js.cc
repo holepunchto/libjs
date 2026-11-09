@@ -1771,27 +1771,27 @@ js__destroy_allocations(js_allocations_t *allocations);
 // thread-local pointer records the isolate libjs has entered on this thread,
 // and the scope only enters and exits when it differs. Scopes nest strictly:
 // each one restores the previous isolate when it leaves.
-static thread_local Isolate *js__tls_entered_isolate = nullptr;
+static thread_local Isolate *js__entered_isolate = nullptr;
 
 struct js_isolate_scope_s {
-  Isolate *entered_isolate;
-  Isolate *previous_isolate;
+  Isolate *current;
+  Isolate *previous;
 
-  explicit js_isolate_scope_s(Isolate *isolate) noexcept
-      : entered_isolate(nullptr),
-        previous_isolate(nullptr) {
-    if (V8_UNLIKELY(js__tls_entered_isolate != isolate)) {
-      previous_isolate = js__tls_entered_isolate;
-      js__tls_entered_isolate = isolate;
-      entered_isolate = isolate;
+  explicit js_isolate_scope_s(Isolate *isolate)
+      : current(nullptr),
+        previous(nullptr) {
+    if (js__entered_isolate != isolate) [[unlikely]] {
+      previous = js__entered_isolate;
+      js__entered_isolate = isolate;
+      current = isolate;
       isolate->Enter();
     }
   }
 
-  ~js_isolate_scope_s() noexcept {
-    if (V8_UNLIKELY(entered_isolate != nullptr)) {
-      entered_isolate->Exit();
-      js__tls_entered_isolate = previous_isolate;
+  ~js_isolate_scope_s() {
+    if (current != nullptr) [[unlikely]] {
+      current->Exit();
+      js__entered_isolate = previous;
     }
   }
 
@@ -1969,7 +1969,7 @@ struct js_env_s {
       js__release_allocations(allocations);
     }
 
-    if (js__tls_entered_isolate == isolate) js__tls_entered_isolate = nullptr;
+    if (js__entered_isolate == isolate) js__entered_isolate = nullptr;
 
     isolate->Dispose();
 
