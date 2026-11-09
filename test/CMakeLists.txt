@@ -324,6 +324,8 @@ list(APPEND tests
   queue-microtask
   queue-microtask-with-callback
   queue-microtask-with-callback-terminate
+  queue-microtask-with-callback-throw
+  queue-microtask-with-callback-throw-without-handler
   reference-ref-unref-leaves-object-unchanged
   reference-unref
   reference-unref-with-finalizer

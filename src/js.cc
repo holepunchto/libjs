@@ -4169,9 +4169,22 @@ void
 js_microtask_s::on_run(void *data) {
   auto task = static_cast<js_microtask_t *>(data);
 
-  task->cb(task->env, task->data);
+  auto env = task->env;
 
-  task->env->allocations->microtasks.free(task);
+  // A microtask is not part of the call that queued it, so nothing is there to
+  // receive its exceptions. V8 would drop them, so report them as uncaught.
+  env->call_into_native<void>(
+    [&] {
+      task->cb(env, task->data);
+    },
+    true /* detached */
+  );
+
+  Local<Value> error;
+
+  if (env->take_exception().ToLocal(&error)) env->uncaught_exception(error);
+
+  env->allocations->microtasks.free(task);
 }
 
 namespace {
