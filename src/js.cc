@@ -2491,8 +2491,19 @@ struct js_escapable_handle_scope_s {
 // they were opened. Their storage is therefore kept as a stack on the
 // environment and reused as scopes are opened again.
 struct js_handle_scope_slot_s {
-  alignas(std::max(alignof(js_handle_scope_s), alignof(js_escapable_handle_scope_s)))
-  uint8_t storage[std::max(sizeof(js_handle_scope_s), sizeof(js_escapable_handle_scope_s))];
+  union {
+    js_handle_scope_t handle_scope;
+    js_escapable_handle_scope_t escapable_handle_scope;
+  };
+
+  js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s(const js_handle_scope_slot_s &) = delete;
+
+  ~js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s &
+  operator=(const js_handle_scope_slot_s &) = delete;
 };
 
 // Every unit compiled by this library carries host-defined options of its own,
@@ -4417,7 +4428,7 @@ static inline T *
 js__open_handle_scope(js_env_t *env) {
   auto slot = env->allocations->handle_scopes.push();
 
-  return new (slot->storage) T(env->isolate);
+  return new (slot) T(env->isolate);
 }
 
 template <typename T>
