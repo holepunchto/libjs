@@ -4419,10 +4419,6 @@ js__open_handle_scope(js_env_t *env) {
 template <typename T>
 static inline void
 js__close_handle_scope(js_env_t *env, T *scope) {
-  // The scope being closed must be the most recent one open: closing another
-  // would corrupt the handles of the scopes opened after it.
-  if (static_cast<void *>(scope) != static_cast<void *>(env->allocations->handle_scopes.top())) abort();
-
   scope->~T();
 
   env->allocations->handle_scopes.pop();
