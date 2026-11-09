@@ -267,6 +267,8 @@ list(APPEND tests
   is-boolean-object
   is-dataview
   is-date
+  is-detachable-arraybuffer
+  is-detachable-arraybuffer-wasm-memory
   is-detached-arraybuffer
   is-error
   is-external

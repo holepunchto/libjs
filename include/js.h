@@ -2110,8 +2110,8 @@ js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finaliz
  * the data if it is owned by the engine. Detaching a buffer that is already
  * detached has no effect.
  *
- * The behavior is undefined if the buffer cannot be detached, whether that is
- * the case being up to the engine.
+ * The behavior is undefined if the buffer cannot be detached, which can be
+ * checked with `js_is_detachable_arraybuffer()`.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -2553,6 +2553,16 @@ js_is_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
  */
 int
 js_is_detached_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * Check whether a value is an `ArrayBuffer` that can be detached with
+ * `js_detach_arraybuffer()`. A buffer that has already been detached is still
+ * detachable, as detaching it again has no effect.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_is_detachable_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
