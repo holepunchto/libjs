@@ -7776,6 +7776,19 @@ js_is_detached_arraybuffer(js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_detachable_arraybuffer(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local(value);
+
+  *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->IsDetachable();
+
+  return 0;
+}
+
+extern "C" int
 js_is_sharedarraybuffer(js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
