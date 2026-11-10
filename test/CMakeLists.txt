@@ -258,6 +258,7 @@ list(APPEND tests
   inspector-evaluate-call-function-throw
   inspector-multiple-debugger-enable
   inspector-pause
+  inspector-profile-idle
   inspector-response-throw
   is-arguments
   is-array
