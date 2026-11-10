@@ -59,6 +59,7 @@ typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
 typedef struct js_isolate_scope_s js_isolate_scope_t;
+typedef struct js_idle_window_s js_idle_window_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -1833,6 +1834,122 @@ struct js_isolate_scope_s {
   operator=(const js_isolate_scope_s &) = delete;
 };
 
+// V8 only samples an isolate for profiling while it's entered, and libjs only
+// enters it during calls. To record time spent waiting on the loop as idle, the
+// idle window enters every isolate on the loop while it polls for I/O. Entries
+// must be exited in reverse order, so a single window per loop owns them all.
+// It's safe to hold the entries across the poll as libuv always runs prepare
+// and check handles in pairs, and isolates are only disposed from close
+// callbacks, which run after the check handles.
+static thread_local std::map<uv_loop_t *, js_idle_window_t *> js__idle_windows;
+
+struct js_idle_window_s {
+  uv_prepare_t prepare;
+  uv_check_t check;
+
+  int active_handles;
+
+  std::vector<Isolate *> isolates;
+
+  // Isolates are only added while the window is open, so the entered ones are
+  // always the first ones.
+  size_t entered;
+
+  static void
+  attach(uv_loop_t *loop, Isolate *isolate) {
+    auto &window = js__idle_windows[loop];
+
+    if (window == nullptr) window = new js_idle_window_t(loop);
+
+    window->isolates.push_back(isolate);
+  }
+
+  static void
+  detach(uv_loop_t *loop, Isolate *isolate) {
+    auto window = js__idle_windows.at(loop);
+
+    assert(window->entered == 0);
+
+    std::erase(window->isolates, isolate);
+
+    if (window->isolates.empty()) {
+      js__idle_windows.erase(loop);
+
+      uv_close(reinterpret_cast<uv_handle_t *>(&window->prepare), on_handle_close);
+
+      uv_close(reinterpret_cast<uv_handle_t *>(&window->check), on_handle_close);
+    }
+  }
+
+private:
+  js_idle_window_s(uv_loop_t *loop)
+      : prepare(),
+        check(),
+        active_handles(2),
+        isolates(),
+        entered(0) {
+    int err;
+
+    // Prepare handles run in reverse start order, so starting the window before
+    // the handles of its environments opens it after their tasks have run.
+    err = uv_prepare_init(loop, &prepare);
+    assert(err == 0);
+
+    err = uv_prepare_start(&prepare, on_prepare);
+    assert(err == 0);
+
+    prepare.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
+    err = uv_check_init(loop, &check);
+    assert(err == 0);
+
+    err = uv_check_start(&check, on_check);
+    assert(err == 0);
+
+    check.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+  }
+
+  js_idle_window_s(const js_idle_window_s &) = delete;
+
+  js_idle_window_s &
+  operator=(const js_idle_window_s &) = delete;
+
+  static void
+  on_prepare(uv_prepare_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    for (auto isolate : window->isolates) {
+      isolate->Enter();
+      isolate->SetIdle(true);
+    }
+
+    window->entered = window->isolates.size();
+  }
+
+  static void
+  on_check(uv_check_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    while (window->entered > 0) {
+      auto isolate = window->isolates[--window->entered];
+
+      isolate->SetIdle(false);
+      isolate->Exit();
+    }
+  }
+
+  static void
+  on_handle_close(uv_handle_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    if (--window->active_handles == 0) delete window;
+  }
+};
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1933,6 +2050,12 @@ struct js_env_s {
 
     tasks->self = tasks;
 
+    // Isolates start out idle. Mark this one busy so that work done in calls
+    // outside the idle window isn't recorded as idle.
+    isolate->SetIdle(false);
+
+    js_idle_window_t::attach(loop, isolate);
+
     err = uv_prepare_init(loop, &prepare);
     assert(err == 0);
 
@@ -2005,6 +2128,8 @@ struct js_env_s {
     }
 
     if (js__entered_isolate == isolate) js__entered_isolate = nullptr;
+
+    js_idle_window_t::detach(loop, isolate);
 
     isolate->Dispose();
 
