@@ -181,6 +181,7 @@ list(APPEND tests
   dynamic-import-without-handler
   escapable-handle-scope
   fatal-exception
+  fatal-exception-without-handler
   freeze
   garbage-collection-tracking
   get-array-elements

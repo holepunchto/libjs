@@ -32,22 +32,14 @@ main() {
   e = js_throw_error(env, NULL, "err");
   assert(e == 0);
 
-  // Resolving a deferred enters the engine, which may discard its own record
-  // of an exception thrown with no JavaScript there to receive it. The error
-  // must remain pending regardless.
-
   js_value_t *undefined;
   e = js_get_undefined(env, &undefined);
   assert(e == 0);
 
+  // Settling a deferred may run JavaScript, so it is refused while an
+  // exception is pending. The deferred is left unsettled.
   e = js_resolve_deferred(env, deferred, undefined);
-  assert(e == 0);
-
-  bool has_exception;
-  e = js_is_exception_pending(env, &has_exception);
-  assert(e == 0);
-
-  assert(has_exception);
+  assert(e == js_pending_exception);
 
   js_value_t *error;
   e = js_get_and_clear_last_exception(env, &error);
@@ -60,8 +52,15 @@ main() {
   utf8_t value[4];
   e = js_get_value_string_utf8(env, message, value, 4, NULL);
   assert(e == 0);
-
   assert(strcmp((char *) value, "err") == 0);
+
+  e = js_resolve_deferred(env, deferred, undefined);
+  assert(e == 0);
+
+  js_promise_state_t state;
+  e = js_get_promise_state(env, promise, &state);
+  assert(e == 0);
+  assert(state == js_promise_fulfilled);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

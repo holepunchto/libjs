@@ -2614,13 +2614,11 @@ struct js_env_scope_s {
 struct js_context_s {
   Global<Context> context;
 
-  js_context_s(js_env_t *env)
-      : context() {
+  js_context_s(js_env_t *env, Local<Context> local)
+      : context(env->isolate, local) {
     auto parent_context = env->context.Get(env->isolate);
 
-    context.Reset(env->isolate, Context::New(env->isolate));
-
-    context.Get(env->isolate)->SetSecurityToken(parent_context->GetSecurityToken());
+    local->SetSecurityToken(parent_context->GetSecurityToken());
   }
 
   js_context_s(const js_context_s &) = delete;
@@ -4762,7 +4760,11 @@ js_create_context(js_env_t *env, js_context_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = env->allocations->contexts.alloc(env);
+  auto context = Context::New(env->isolate);
+
+  if (context.IsEmpty()) return js__error(env);
+
+  *result = env->allocations->contexts.alloc(env, context);
 
   return 0;
 }
@@ -6811,15 +6813,17 @@ js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *
 
 extern "C" int
 js_create_date(js_env_t *env, double time, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
-  auto date = Date::New(context, time).ToLocalChecked();
+  auto date = Date::New(context, time);
 
-  *result = js_from_local(date);
+  if (date.IsEmpty()) return js__error(env);
+
+  *result = js_from_local(date.ToLocalChecked());
 
   return 0;
 }
@@ -6901,13 +6905,15 @@ js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *res
 
 extern "C" int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
-  auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+  Local<Promise::Resolver> resolver;
+
+  if (!Promise::Resolver::New(context).ToLocal(&resolver)) return js__error(env);
 
   *deferred = env->allocations->deferreds.alloc(env->isolate, resolver);
 
@@ -6921,8 +6927,6 @@ namespace {
 template <bool resolved>
 static inline int
 js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
-  // Allow continuing even with a pending exception
-
   auto context = env->current_context();
 
   auto resolver = deferred->resolver.Get(env->isolate);
@@ -6931,14 +6935,15 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
   // Resolving with a thenable reads its `then` property, which may run
   // JavaScript.
-  env->depth++;
-
-  if (resolved) resolver->Resolve(context, local).Check();
-  else resolver->Reject(context, local).Check();
-
-  env->depth--;
+  auto success = env->try_catch<bool>(
+    [&] {
+      return resolved ? resolver->Resolve(context, local) : resolver->Reject(context, local);
+    }
+  );
 
   env->allocations->deferreds.free(deferred);
+
+  if (success.IsNothing()) return js__error(env);
 
   if (env->depth == 0) env->run_microtasks();
 
@@ -6949,6 +6954,8 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
 extern "C" int
 js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  if (env->is_exception_pending()) return js__error(env);
+
   js_env_scope_t env_scope(env);
 
   return js_conclude_deferred<true>(env, deferred, resolution);
@@ -6956,6 +6963,8 @@ js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
 
 extern "C" int
 js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  if (env->is_exception_pending()) return js__error(env);
+
   js_env_scope_t env_scope(env);
 
   return js_conclude_deferred<false>(env, deferred, resolution);
@@ -9369,7 +9378,7 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
 
 extern "C" int
 js_queue_microtask(js_env_t *env, js_value_t *function) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
@@ -9382,7 +9391,7 @@ js_queue_microtask(js_env_t *env, js_value_t *function) {
 
 extern "C" int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
@@ -9869,6 +9878,8 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 extern "C" int
 js_fatal_exception(js_env_t *env, js_value_t *error) {
   // Allow continuing even with a pending exception
+
+  if (env->callbacks.uncaught_exception == nullptr) return 0;
 
   js_env_scope_t env_scope(env);
 
