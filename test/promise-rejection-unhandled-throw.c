@@ -44,10 +44,6 @@ main() {
   e = js_create_promise(env, &rejected, &promise);
   assert(e == 0);
 
-  js_deferred_t *resolved;
-  e = js_create_promise(env, &resolved, &promise);
-  assert(e == 0);
-
   js_value_t *undefined;
   e = js_get_undefined(env, &undefined);
   assert(e == 0);
@@ -59,12 +55,6 @@ main() {
   assert(e == 0);
 
   assert(unhandled_called);
-
-  // Resolving a deferred enters the engine, which may discard its own record
-  // of the error. The error must remain pending regardless.
-
-  e = js_resolve_deferred(env, resolved, undefined);
-  assert(e == 0);
 
   bool has_exception;
   e = js_is_exception_pending(env, &has_exception);

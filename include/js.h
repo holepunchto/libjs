@@ -1941,8 +1941,6 @@ js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *
  * Create a `Date` from a number of milliseconds since the Unix epoch. A time
  * that is `NaN` or outside the range representable by `Date` yields an invalid
  * date, whose value is `NaN`.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_date(js_env_t *env, double time, js_value_t **result);
@@ -2009,8 +2007,6 @@ js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *res
  * Create a pending promise together with the deferred used to settle it. The
  * deferred must eventually be settled with either `js_resolve_deferred()` or
  * `js_reject_deferred()`, exactly one of which may be called and only once.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
@@ -2022,8 +2018,6 @@ js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise)
  * If no JavaScript is executing on the stack a microtask checkpoint is
  * performed before returning, running any reactions the promise has
  * registered.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
@@ -2035,8 +2029,6 @@ js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
  * If no JavaScript is executing on the stack a microtask checkpoint is
  * performed before returning, running any reactions the promise has
  * registered.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
@@ -3200,8 +3192,6 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
  * If no JavaScript is executing on the stack a checkpoint is performed before
  * returning, in which case the function is called before this function
  * returns.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_queue_microtask(js_env_t *env, js_value_t *function);
@@ -3212,8 +3202,6 @@ js_queue_microtask(js_env_t *env, js_value_t *function);
  * If no JavaScript is executing on the stack a checkpoint is performed before
  * returning, in which case the callback is called before this function
  * returns.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data);

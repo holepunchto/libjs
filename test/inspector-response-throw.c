@@ -54,21 +54,7 @@ main() {
   assert(response_called);
 
   // Nothing is there to receive the error thrown by the response callback, so
-  // it must remain pending even after the engine discards its own record of it
-  // when a deferred is resolved.
-
-  js_deferred_t *deferred;
-  js_value_t *promise;
-  e = js_create_promise(env, &deferred, &promise);
-  assert(e == 0);
-
-  js_value_t *undefined;
-  e = js_get_undefined(env, &undefined);
-  assert(e == 0);
-
-  e = js_resolve_deferred(env, deferred, undefined);
-  assert(e == 0);
-
+  // it must remain pending.
   bool has_exception;
   e = js_is_exception_pending(env, &has_exception);
   assert(e == 0);
