@@ -2682,30 +2682,56 @@ int
 js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
 /**
- * Get the value stored under a symbol in the continuation data of the current
- * execution, or `undefined` if no value is stored under it. Fails if the key is
- * not a symbol.
+ * Get the continuation frame of the current execution. The frame holds the
+ * continuation data of the current execution and lets that data follow an
+ * asynchronous flow of execution. Engines that support it capture the frame
+ * when a promise reaction is created and restore it while the reaction runs.
+ * Other engines leave the frame as it is.
  *
- * Continuation data is a set of values, keyed by symbols, that the engine
- * captures when a promise reaction is created and restores while the reaction
- * runs. This lets a value follow an asynchronous flow of execution across
- * `await` and `.then()`.
+ * The frame is owned by the engine and must not be inspected or changed. It
+ * can be kept alive with a reference and later restored with
+ * `js_set_continuation_frame()`, such as when native code calls into
+ * JavaScript from an I/O callback.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_get_continuation_frame(js_env_t *env, js_value_t **result);
+
+/**
+ * Make a continuation frame the frame of the current execution. The frame must
+ * be one returned by `js_get_continuation_frame()`, or `NULL` for the empty
+ * frame. If `previous` is not `NULL`, it receives the frame that was replaced.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+int
+js_set_continuation_frame(js_env_t *env, js_value_t *frame, js_value_t **previous);
+
+/**
+ * Get the value stored under a symbol in the continuation frame of the current
+ * execution, or `undefined` if no value is stored under it. The behavior is
+ * undefined if the key is not a symbol.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
 
 /**
- * Store a value under a symbol in the continuation data of the current
- * execution. Storing `undefined` removes the value. Fails if the key is not a
- * symbol.
+ * Store a value under a symbol in the continuation frame of the current
+ * execution. Storing `undefined` removes the value. The behavior is undefined
+ * if the key is not a symbol.
  *
- * Only promise reactions created after the call see the new value. Reactions
- * created before it keep the value they captured, and values stored under other
- * symbols are left as they are.
+ * The call replaces the current frame with a new one rather than changing it.
+ * Frames captured before the call keep the value they held, and values stored
+ * under other symbols are carried over to the new frame.
  *
  * A stored value is kept alive for as long as the continuation data that holds
  * it can still be restored, even if nothing else refers to the symbol. The
  * owner of a symbol must therefore remove its value when done with it.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value);

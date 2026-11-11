@@ -39,6 +39,7 @@ list(APPEND tests
   compile-function-with-code-cache-rejected
   continuation-data-pending-exception
   continuation-data-promise-reaction
+  continuation-frame-pending-exception
   create-array-with-elements
   create-array-with-length
   create-arraybuffer
@@ -188,7 +189,6 @@ list(APPEND tests
   get-array-elements
   get-arraybuffer-info
   get-bindings
-  get-continuation-data-non-symbol
   get-dataview-info
   get-env-loop
   get-env-platform
@@ -353,7 +353,7 @@ list(APPEND tests
   seal
   set-array-elements
   set-continuation-data
-  set-continuation-data-non-symbol
+  set-continuation-frame
   set-named-property
   set-property
   set-prototype

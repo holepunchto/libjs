@@ -60,6 +60,7 @@ typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
 typedef struct js_isolate_scope_s js_isolate_scope_t;
 typedef struct js_idle_window_s js_idle_window_t;
+typedef struct js_continuation_scan_s js_continuation_scan_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -8183,78 +8184,135 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
   return 0;
 }
 
-extern "C" int
-js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result) {
-  if (env->is_exception_pending()) return js__error(env);
+static inline Local<Value>
+js__get_continuation_frame(js_env_t *env) {
+  auto data = env->isolate->GetContinuationPreservedEmbedderData();
 
-  int err;
+  if (data.IsEmpty() || !data->IsValue()) return Undefined(env->isolate);
+
+  return data.As<Value>();
+}
+
+extern "C" int
+js_get_continuation_frame(js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  auto key = js_to_local(symbol);
+  *result = js_from_local(js__get_continuation_frame(env));
 
-  if (!key->IsSymbol()) {
-    err = js_throw_error(env, NULL, "Continuation data must be keyed by a symbol");
-    assert(err == 0);
+  return 0;
+}
 
-    return js__error(env);
+extern "C" int
+js_set_continuation_frame(js_env_t *env, js_value_t *frame, js_value_t **previous) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  if (previous) *previous = js_from_local(js__get_continuation_frame(env));
+
+  Local<Value> next = frame ? js_to_local(frame) : Undefined(env->isolate).As<Value>();
+
+  env->isolate->SetContinuationPreservedEmbedderData(next);
+
+  return 0;
+}
+
+// Frames are flat arrays of alternating keys and values. They are only read
+// with `Array::Iterate()` and built with `Array::New()`, as neither runs
+// JavaScript and so both are safe while an exception is pending. Elements
+// passed to the iteration callback die with its handle scope, so those that
+// must outlive it are held in globals.
+struct js_continuation_scan_s {
+  Isolate *isolate;
+  Local<Value> key;
+  bool collect;
+  bool match;
+  Global<Value> value;
+  std::vector<Global<Value>> rest;
+};
+
+namespace {
+
+static Array::CallbackResult
+js__scan_continuation_frame(uint32_t i, Local<Value> element, void *data) {
+  auto scan = reinterpret_cast<js_continuation_scan_t *>(data);
+
+  if (i % 2 == 0) {
+    scan->match = element->StrictEquals(scan->key);
+  } else if (scan->match) {
+    if (scan->collect) return Array::CallbackResult::kContinue;
+
+    scan->value.Reset(scan->isolate, element);
+
+    return Array::CallbackResult::kBreak;
   }
 
-  Local<Value> value = Undefined(env->isolate);
+  if (scan->collect && !scan->match) scan->rest.emplace_back(scan->isolate, element);
 
-  auto data = env->isolate->GetContinuationPreservedEmbedderData();
+  return Array::CallbackResult::kContinue;
+}
 
-  if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
-    value = data.As<Value>().As<Map>()->Get(env->current_context(), key).ToLocalChecked();
+static inline void
+js__scan_continuation_frame(js_env_t *env, js_continuation_scan_t &scan) {
+  auto frame = js__get_continuation_frame(env);
+
+  if (!frame->IsArray()) return;
+
+  auto iterated = frame.As<Array>()->Iterate(env->current_context(), js__scan_continuation_frame, &scan);
+  assert(iterated.IsJust());
+}
+
+} // namespace
+
+extern "C" int
+js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  js_continuation_scan_t scan = {env->isolate, js_to_local<Symbol>(symbol), false};
+
+  js__scan_continuation_frame(env, scan);
+
+  if (scan.value.IsEmpty()) {
+    *result = js_from_local(Undefined(env->isolate));
+  } else {
+    *result = js_from_local(scan.value.Get(env->isolate));
   }
-
-  *result = js_from_local(value);
 
   return 0;
 }
 
 extern "C" int
 js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
-  if (env->is_exception_pending()) return js__error(env);
-
-  int err;
+  // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  auto key = js_to_local(symbol);
+  auto key = js_to_local<Symbol>(symbol);
 
-  if (!key->IsSymbol()) {
-    err = js_throw_error(env, NULL, "Continuation data must be keyed by a symbol");
-    assert(err == 0);
+  js_continuation_scan_t scan = {env->isolate, key, true};
 
-    return js__error(env);
-  }
+  js__scan_continuation_frame(env, scan);
 
-  auto context = env->current_context();
+  std::vector<Local<Value>> entries;
 
-  // Never change the map that is already in the slot, as promise reactions
-  // created earlier hold a reference to it. Build a new one instead.
-  auto next = Map::New(env->isolate);
+  entries.reserve(scan.rest.size() + 2);
 
-  auto data = env->isolate->GetContinuationPreservedEmbedderData();
-
-  if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
-    auto entries = data.As<Value>().As<Map>()->AsArray();
-
-    for (uint32_t i = 0, n = entries->Length(); i < n; i += 2) {
-      auto k = entries->Get(context, i).ToLocalChecked();
-
-      if (k->StrictEquals(key)) continue;
-
-      auto v = entries->Get(context, i + 1).ToLocalChecked();
-
-      next->Set(context, k, v).ToLocalChecked();
-    }
-  }
+  for (auto &entry : scan.rest) entries.push_back(entry.Get(env->isolate));
 
   auto local = js_to_local(value);
 
-  if (!local->IsUndefined()) next->Set(context, key, local).ToLocalChecked();
+  if (!local->IsUndefined()) {
+    entries.push_back(key);
+    entries.push_back(local);
+  }
+
+  // Never change the frame that is already in the slot, as promise reactions
+  // created earlier hold a reference to it. Build a new one instead.
+  auto next = Array::New(env->isolate, entries.data(), entries.size());
 
   env->isolate->SetContinuationPreservedEmbedderData(next);
 
