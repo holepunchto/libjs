@@ -83,7 +83,7 @@ main() {
 
   // Each call enters the second environment and returns to the first, which
   // goes on creating values and running JavaScript.
-  assert(eval_uint32(a, "let sum = 0; for (let i = 0; i < 1000; i++) sum += fromB(); sum") == 42000);
+  assert(eval_uint32(a, "var sum = 0; for (var i = 0; i < 1000; i++) sum += fromB(); sum") == 42000);
 
   e = js_close_handle_scope(a, scope);
   assert(e == 0);

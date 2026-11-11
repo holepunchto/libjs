@@ -5,8 +5,11 @@ list(APPEND tests
   add-teardown-callback-deferred
   add-teardown-callback-deferred-remove
   add-teardown-callback-deferred-twice
+  add-teardown-callback-drained
   add-teardown-callback-multiple
   add-teardown-callback-remove
+  add-teardown-callback-remove-twice
+  add-teardown-callback-twice
   add-type-tag
   add-type-tag-delegate
   add-type-tag-twice

@@ -57,7 +57,7 @@ main() {
   assert(e == 0);
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "queue(); (function () {})()", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "queue(); while (true) (function () {})()", -1, &script);
   assert(e == 0);
 
   js_value_t *result;

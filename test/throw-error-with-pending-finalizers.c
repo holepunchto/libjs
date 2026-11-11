@@ -92,7 +92,7 @@ main() {
   // may make the error get lost.
 
   js_value_t *script;
-  e = js_create_string_utf8(env, (utf8_t *) "let thrown = 0; for (let i = 0; i < 200000; i++) { create(); try { fail() } catch { thrown++ } } thrown", -1, &script);
+  e = js_create_string_utf8(env, (utf8_t *) "var thrown = 0; for (var i = 0; i < 200000; i++) { create(); try { fail() } catch (err) { thrown++ } } thrown", -1, &script);
   assert(e == 0);
 
   js_value_t *result;
