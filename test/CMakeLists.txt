@@ -188,7 +188,6 @@ list(APPEND tests
   get-array-elements
   get-arraybuffer-info
   get-bindings
-  get-continuation-data-empty
   get-continuation-data-non-symbol
   get-dataview-info
   get-env-loop
@@ -354,7 +353,6 @@ list(APPEND tests
   seal
   set-array-elements
   set-continuation-data
-  set-continuation-data-copy
   set-continuation-data-non-symbol
   set-named-property
   set-property

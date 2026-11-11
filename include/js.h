@@ -2682,31 +2682,41 @@ int
 js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
 /**
+ * Get the value stored under a symbol in the continuation data of the current
+ * execution, or `undefined` if no value is stored under it. Fails if the key is
+ * not a symbol.
+ *
+ * Continuation data is a set of values, keyed by symbols, that the engine
+ * captures when a promise reaction is created and restores while the reaction
+ * runs. This lets a value follow an asynchronous flow of execution across
+ * `await` and `.then()`.
+ */
+int
+js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
+
+/**
+ * Store a value under a symbol in the continuation data of the current
+ * execution. Storing `undefined` removes the value. Fails if the key is not a
+ * symbol.
+ *
+ * Only promise reactions created after the call see the new value. Reactions
+ * created before it keep the value they captured, and values stored under other
+ * symbols are left as they are.
+ *
+ * A stored value is kept alive for as long as the continuation data that holds
+ * it can still be restored, even if nothing else refers to the symbol. The
+ * owner of a symbol must therefore remove its value when done with it.
+ */
+int
+js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value);
+
+/**
  * Get the global object of the current context.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
 js_get_global(js_env_t *env, js_value_t **result);
-
-/**
- * Get the value of the continuation-preserved embedder data slot: a value that
- * V8 copies into every promise reaction when it is created and restores while the
- * reaction runs. Yields `undefined` if nothing has been set.
- *
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
-
-/**
- * Set the value of the continuation-preserved embedder data slot. Promise reactions
- * created from now on capture this value.
- *
- * This function can be called even if there is a pending JavaScript exception.
- */
-int
-js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value);
 
 /**
  * Get the global object of the context that an object was created in, or the

@@ -53,7 +53,6 @@ main() {
   e = js_set_continuation_data(env, key, two);
   assert(e == 0);
 
-  // create a promise and deferred callback
   js_deferred_t *deferred;
   js_value_t *promise;
   e = js_create_promise(env, &deferred, &promise);
@@ -67,11 +66,10 @@ main() {
   e = js_get_named_property(env, promise, "then", &then);
   assert(e == 0);
 
-  // callback is registered on promise resolution
+  // The reaction captures the continuation data as it is now.
   e = js_call_function(env, promise, then, 1, &callback, NULL);
   assert(e == 0);
 
-  // alter the slot data
   e = js_set_continuation_data(env, key, one);
   assert(e == 0);
 
@@ -79,13 +77,13 @@ main() {
   e = js_get_undefined(env, &undefined);
   assert(e == 0);
 
-  // resolving the promise runs the callback with the old slot data
+  // The reaction sees the value it captured, not the one set after it.
   e = js_resolve_deferred(env, deferred, undefined);
   assert(e == 0);
 
   assert(seen == 2);
 
-  // after the callback runs the old slot data is restored
+  // Once the reaction is done, the data from before it ran is restored.
   js_value_t *curr;
   e = js_get_continuation_data(env, key, &curr);
   assert(e == 0);

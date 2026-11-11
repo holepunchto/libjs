@@ -8184,17 +8184,6 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
 }
 
 extern "C" int
-js_get_global(js_env_t *env, js_value_t **result) {
-  // Allow continuing even with a pending exception
-
-  js_env_scope_t env_scope(env);
-
-  *result = js_from_local(env->current_context()->Global());
-
-  return 0;
-}
-
-extern "C" int
 js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
@@ -8216,7 +8205,7 @@ js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result)
   auto data = env->isolate->GetContinuationPreservedEmbedderData();
 
   if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
-    value = data.As<Map>()->Get(env->current_context(), key).ToLocalChecked();
+    value = data.As<Value>().As<Map>()->Get(env->current_context(), key).ToLocalChecked();
   }
 
   *result = js_from_local(value);
@@ -8243,14 +8232,14 @@ js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
 
   auto context = env->current_context();
 
-  // Never change the map that is already in the slot, as prior continuations
-  // hold a reference to it. Build a new one instead
+  // Never change the map that is already in the slot, as promise reactions
+  // created earlier hold a reference to it. Build a new one instead.
   auto next = Map::New(env->isolate);
 
   auto data = env->isolate->GetContinuationPreservedEmbedderData();
 
   if (!data.IsEmpty() && data->IsValue() && data.As<Value>()->IsMap()) {
-    auto entries = data.As<Map>()->AsArray();
+    auto entries = data.As<Value>().As<Map>()->AsArray();
 
     for (uint32_t i = 0, n = entries->Length(); i < n; i += 2) {
       auto k = entries->Get(context, i).ToLocalChecked();
@@ -8268,6 +8257,17 @@ js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
   if (!local->IsUndefined()) next->Set(context, key, local).ToLocalChecked();
 
   env->isolate->SetContinuationPreservedEmbedderData(next);
+
+  return 0;
+}
+
+extern "C" int
+js_get_global(js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_from_local(env->current_context()->Global());
 
   return 0;
 }
