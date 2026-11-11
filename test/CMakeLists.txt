@@ -1,5 +1,6 @@
 list(APPEND tests
   add-finalizer
+  add-finalizer-continuation-data
   add-finalizer-destroy-env
   add-teardown-callback
   add-teardown-callback-deferred
@@ -320,11 +321,14 @@ list(APPEND tests
   promise-rejection
   promise-rejection-handled-reentrant-deferred
   promise-rejection-unhandled
+  promise-rejection-unhandled-continuation-data
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   promise-rejection-unhandled-throw
   promise-rejection-unhandled-throw-destroy-env
   promise-rejection-unhandled-throw-nested
+  open-continuation-data-scope
+  open-continuation-scope
   queue-microtask
   queue-microtask-with-callback
   queue-microtask-with-callback-terminate
@@ -352,8 +356,6 @@ list(APPEND tests
   run-script-throw
   seal
   set-array-elements
-  set-continuation-data
-  set-continuation-frame
   set-named-property
   set-property
   set-prototype

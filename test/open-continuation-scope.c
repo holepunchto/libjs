@@ -64,31 +64,28 @@ main() {
   e = js_create_uint32(env, 2, &two);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, one);
+  js_continuation_scope_t *outer;
+  e = js_open_continuation_data_scope(env, key, one, &outer);
   assert(e == 0);
 
   js_value_t *captured;
   e = js_get_continuation_frame(env, &captured);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, two);
+  js_continuation_scope_t *inner;
+  e = js_open_continuation_data_scope(env, key, two, &inner);
   assert(e == 0);
 
   // Restoring the captured frame brings back the data it held.
-  js_value_t *previous;
-  e = js_set_continuation_frame(env, captured, &previous);
+  js_continuation_scope_t *restored;
+  e = js_open_continuation_scope(env, captured, &restored);
   assert(e == 0);
 
   expect_uint32(env, key, 1);
 
-  // The replaced frame can be restored in turn.
-  e = js_set_continuation_frame(env, previous, NULL);
-  assert(e == 0);
-
-  expect_uint32(env, key, 2);
-
   // The empty frame holds no data.
-  e = js_set_continuation_frame(env, NULL, &previous);
+  js_continuation_scope_t *emptied;
+  e = js_open_continuation_scope(env, NULL, &emptied);
   assert(e == 0);
 
   expect_undefined(env, key);
@@ -98,12 +95,34 @@ main() {
   e = js_get_continuation_frame(env, &empty);
   assert(e == 0);
 
-  e = js_set_continuation_frame(env, previous, NULL);
+  e = js_close_continuation_scope(env, emptied);
+  assert(e == 0);
+
+  expect_uint32(env, key, 1);
+
+  js_continuation_scope_t *reemptied;
+  e = js_open_continuation_scope(env, empty, &reemptied);
+  assert(e == 0);
+
+  expect_undefined(env, key);
+
+  // Closing each scope restores the frame from before it was opened.
+  e = js_close_continuation_scope(env, reemptied);
+  assert(e == 0);
+
+  expect_uint32(env, key, 1);
+
+  e = js_close_continuation_scope(env, restored);
   assert(e == 0);
 
   expect_uint32(env, key, 2);
 
-  e = js_set_continuation_frame(env, empty, NULL);
+  e = js_close_continuation_scope(env, inner);
+  assert(e == 0);
+
+  expect_uint32(env, key, 1);
+
+  e = js_close_continuation_scope(env, outer);
   assert(e == 0);
 
   expect_undefined(env, key);

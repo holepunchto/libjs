@@ -44,18 +44,28 @@ expect_pending(js_env_t *env, const char *expected) {
 }
 
 static void
-set_and_get(js_env_t *env) {
+open_and_close(js_env_t *env) {
   int e;
 
-  e = js_set_continuation_data(env, key, one);
+  js_continuation_scope_t *first;
+  e = js_open_continuation_data_scope(env, key, one, &first);
   assert(e == 0);
 
   expect_uint32(env, 1);
 
-  e = js_set_continuation_data(env, key, two);
+  js_continuation_scope_t *second;
+  e = js_open_continuation_data_scope(env, key, two, &second);
   assert(e == 0);
 
   expect_uint32(env, 2);
+
+  e = js_close_continuation_scope(env, second);
+  assert(e == 0);
+
+  expect_uint32(env, 1);
+
+  e = js_close_continuation_scope(env, first);
+  assert(e == 0);
 }
 
 static js_value_t *
@@ -66,7 +76,7 @@ on_call(js_env_t *env, js_callback_info_t *info) {
   e = js_throw_error(env, NULL, "nested");
   assert(e == 0);
 
-  set_and_get(env);
+  open_and_close(env);
 
   return NULL;
 }
@@ -101,7 +111,7 @@ main() {
   e = js_throw_error(env, NULL, "boom");
   assert(e == 0);
 
-  set_and_get(env);
+  open_and_close(env);
 
   expect_pending(env, "boom");
 

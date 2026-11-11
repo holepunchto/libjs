@@ -35,6 +35,7 @@
 using namespace v8;
 using namespace v8_inspector;
 
+typedef struct js_unhandled_promise_s js_unhandled_promise_t;
 typedef struct js_callback_s js_callback_t;
 typedef struct js_typed_callback_s js_typed_callback_t;
 typedef struct js_deleter_s js_deleter_t;
@@ -1950,6 +1951,11 @@ private:
   }
 };
 
+struct js_unhandled_promise_s {
+  Global<Promise> promise;
+  Global<Value> frame;
+};
+
 struct js_env_s {
   uv_loop_t *loop;
   uv_prepare_t prepare;
@@ -1991,7 +1997,7 @@ struct js_env_s {
 
   std::vector<std::pair<js_dynamic_import_cb, void *>> dynamic_import_handlers;
 
-  std::list<Global<Promise>> unhandled_promises;
+  std::list<js_unhandled_promise_t> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
 
@@ -2223,25 +2229,27 @@ struct js_env_s {
     if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
     else {
       while (!unhandled_promises.empty()) {
-        auto promise = std::move(unhandled_promises.front());
+        auto rejection = std::move(unhandled_promises.front());
 
         unhandled_promises.pop_front();
 
         auto scope = HandleScope(isolate);
 
-        auto local = promise.Get(isolate);
+        auto local = rejection.promise.Get(isolate);
 
-        call_into_native<void>(
-          [&] {
-            callbacks.unhandled_rejection(
-              this,
-              js_from_local(local->Result()),
-              js_from_local(local),
-              callbacks.unhandled_rejection_data
-            );
-          },
-          depth == 1 /* detached */
-        );
+        call_with_continuation_frame(rejection.frame.Get(isolate), [&] {
+          call_into_native<void>(
+            [&] {
+              callbacks.unhandled_rejection(
+                this,
+                js_from_local(local->Result()),
+                js_from_local(local),
+                callbacks.unhandled_rejection_data
+              );
+            },
+            depth == 1 /* detached */
+          );
+        });
 
         // Within a call into JavaScript, an exception thrown by the handler is
         // rethrown for that call to catch. Otherwise, nothing is there to
@@ -2350,6 +2358,32 @@ struct js_env_s {
   Local<Context>
   current_context() {
     return isolate->GetCurrentContext();
+  }
+
+  Local<Value>
+  get_continuation_frame() {
+    return isolate->GetContinuationPreservedEmbedderData().As<Value>();
+  }
+
+  void
+  set_continuation_frame(Local<Value> frame) {
+    if (frame.IsEmpty()) frame = Undefined(isolate);
+
+    isolate->SetContinuationPreservedEmbedderData(frame);
+  }
+
+  template <typename F>
+  void
+  call_with_continuation_frame(Local<Value> frame, F &&fn) {
+    auto scope = HandleScope(isolate);
+
+    auto previous = get_continuation_frame();
+
+    set_continuation_frame(frame);
+
+    fn();
+
+    set_continuation_frame(previous);
   }
 
   template <typename T>
@@ -2466,12 +2500,15 @@ struct js_env_s {
 
     switch (message.GetEvent()) {
     case kPromiseRejectWithNoHandler:
-      env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
+      env->unhandled_promises.push_back({
+        Global<Promise>(isolate, promise),
+        Global<Value>(isolate, env->get_continuation_frame()),
+      });
       break;
 
     case kPromiseHandlerAddedAfterReject:
       for (auto it = env->unhandled_promises.begin(); it != env->unhandled_promises.end(); it++) {
-        auto unhandled_promise = it->Get(isolate);
+        auto unhandled_promise = it->promise.Get(isolate);
 
         if (unhandled_promise == promise) {
           env->unhandled_promises.erase(it);
@@ -2661,6 +2698,18 @@ struct js_escapable_handle_scope_s {
 // Handle scopes are opened and closed often, and must close in the reverse order
 // they were opened. Their storage is therefore kept as a stack on the
 // environment and reused as scopes are opened again.
+struct js_continuation_scope_s {
+  Local<Value> previous;
+
+  js_continuation_scope_s(Local<Value> previous)
+      : previous(previous) {}
+
+  js_continuation_scope_s(const js_continuation_scope_s &) = delete;
+
+  js_continuation_scope_s &
+  operator=(const js_continuation_scope_s &) = delete;
+};
+
 struct js_handle_scope_slot_s {
   union {
     js_handle_scope_t handle_scope;
@@ -3192,12 +3241,16 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
-      finalizer->env->call_into_native<void>(
-        [&] {
-          finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
-        },
-        true /* detached */
-      );
+      auto env = finalizer->env;
+
+      env->call_with_continuation_frame(Local<Value>(), [&] {
+        env->call_into_native<void>(
+          [&] {
+            finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
+          },
+          true /* detached */
+        );
+      });
     }
 
     finalizer->destroy();
@@ -4125,6 +4178,7 @@ struct js_allocations_s {
   js_segment_array_t<js_delegate_t> delegates;
 
   js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
+  js_segment_array_t<js_continuation_scope_t> continuation_scopes;
 };
 
 namespace {
@@ -4153,6 +4207,7 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
   allocations->handle_scopes.shrink();
+  allocations->continuation_scopes.shrink();
 }
 
 static void
@@ -4234,12 +4289,14 @@ js__finalize_external_strings(js_env_t *env) {
   auto finalize = [env](auto string) {
     if (string->finalize_cb == nullptr) return;
 
-    env->call_into_native<void>(
-      [&] {
-        string->finalize();
-      },
-      true /* detached */
-    );
+    env->call_with_continuation_frame(Local<Value>(), [&] {
+      env->call_into_native<void>(
+        [&] {
+          string->finalize();
+        },
+        true /* detached */
+      );
+    });
   };
 
   js__drain_external_strings(env->allocations->external_strings_utf16le, finalize);
@@ -8183,38 +8240,48 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
   return 0;
 }
 
-static inline Local<Value>
-js__get_continuation_frame(js_env_t *env) {
-  return env->isolate->GetContinuationPreservedEmbedderData().As<Value>();
-}
-
-static inline void
-js__set_continuation_frame(js_env_t *env, Local<Value> frame) {
-  if (frame.IsEmpty()) frame = Undefined(env->isolate);
-
-  env->isolate->SetContinuationPreservedEmbedderData(frame);
-}
-
 extern "C" int
 js_get_continuation_frame(js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  *result = js_from_local(js__get_continuation_frame(env));
+  *result = js_from_local(env->get_continuation_frame());
+
+  return 0;
+}
+
+static inline js_continuation_scope_t *
+js__open_continuation_scope(js_env_t *env, Local<Value> frame) {
+  auto scope = env->allocations->continuation_scopes.push(env->get_continuation_frame());
+
+  env->set_continuation_frame(frame);
+
+  return scope;
+}
+
+extern "C" int
+js_open_continuation_scope(js_env_t *env, js_value_t *frame, js_continuation_scope_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js__open_continuation_scope(env, frame ? js_to_local(frame) : Local<Value>());
 
   return 0;
 }
 
 extern "C" int
-js_set_continuation_frame(js_env_t *env, js_value_t *frame, js_value_t **previous) {
+js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  if (previous) *previous = js_from_local(js__get_continuation_frame(env));
+  assert(scope == env->allocations->continuation_scopes.top());
 
-  js__set_continuation_frame(env, frame ? js_to_local(frame) : Local<Value>());
+  env->set_continuation_frame(scope->previous);
+
+  env->allocations->continuation_scopes.pop();
 
   return 0;
 }
@@ -8276,7 +8343,7 @@ js__copy_continuation_data(uint32_t i, Local<Value> element, void *data) {
 
 static inline void
 js__iterate_continuation_frame(js_env_t *env, Array::IterationCallback callback, void *data) {
-  auto frame = js__get_continuation_frame(env);
+  auto frame = env->get_continuation_frame();
 
   if (!frame->IsArray()) return;
 
@@ -8312,7 +8379,7 @@ js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result)
 }
 
 extern "C" int
-js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
+js_open_continuation_data_scope(js_env_t *env, js_value_t *symbol, js_value_t *value, js_continuation_scope_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
@@ -8325,7 +8392,11 @@ js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
 
   js__iterate_continuation_frame(env, js__copy_continuation_data, &copy);
 
-  if (local->IsUndefined() && !copy.found) return 0;
+  if (local->IsUndefined() && !copy.found) {
+    *result = js__open_continuation_scope(env, env->get_continuation_frame());
+
+    return 0;
+  }
 
   std::vector<Local<Value>> entries;
 
@@ -8338,8 +8409,11 @@ js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
     entries.push_back(local);
   }
 
-  if (entries.empty()) js__set_continuation_frame(env, Local<Value>());
-  else js__set_continuation_frame(env, Array::New(env->isolate, entries.data(), entries.size()));
+  Local<Value> frame;
+
+  if (!entries.empty()) frame = Array::New(env->isolate, entries.data(), entries.size());
+
+  *result = js__open_continuation_scope(env, frame);
 
   return 0;
 }

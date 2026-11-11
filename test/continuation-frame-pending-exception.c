@@ -34,14 +34,16 @@ main() {
   e = js_create_uint32(env, 2, &two);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, one);
+  js_continuation_scope_t *outer;
+  e = js_open_continuation_data_scope(env, key, one, &outer);
   assert(e == 0);
 
   js_value_t *captured;
   e = js_get_continuation_frame(env, &captured);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, two);
+  js_continuation_scope_t *inner;
+  e = js_open_continuation_data_scope(env, key, two, &inner);
   assert(e == 0);
 
   // Leave an exception pending, as if a callback called from an I/O handler
@@ -49,9 +51,28 @@ main() {
   e = js_throw_error(env, NULL, "boom");
   assert(e == 0);
 
-  js_value_t *previous;
-  e = js_set_continuation_frame(env, captured, &previous);
+  js_continuation_scope_t *restored;
+  e = js_open_continuation_scope(env, captured, &restored);
   assert(e == 0);
+
+  js_value_t *result;
+  e = js_get_continuation_data(env, key, &result);
+  assert(e == 0);
+
+  uint32_t value;
+  e = js_get_value_uint32(env, result, &value);
+  assert(e == 0);
+  assert(value == 1);
+
+  e = js_close_continuation_scope(env, restored);
+  assert(e == 0);
+
+  e = js_get_continuation_data(env, key, &result);
+  assert(e == 0);
+
+  e = js_get_value_uint32(env, result, &value);
+  assert(e == 0);
+  assert(value == 2);
 
   // The original exception is still the pending one.
   js_value_t *error;
@@ -67,26 +88,11 @@ main() {
   assert(e == 0);
   assert(strcmp((char *) text, "boom") == 0);
 
-  // And the restore took effect.
-  js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_close_continuation_scope(env, inner);
   assert(e == 0);
 
-  uint32_t value;
-  e = js_get_value_uint32(env, result, &value);
+  e = js_close_continuation_scope(env, outer);
   assert(e == 0);
-  assert(value == 1);
-
-  // The frame replaced while the exception was pending can be restored too.
-  e = js_set_continuation_frame(env, previous, NULL);
-  assert(e == 0);
-
-  e = js_get_continuation_data(env, key, &result);
-  assert(e == 0);
-
-  e = js_get_value_uint32(env, result, &value);
-  assert(e == 0);
-  assert(value == 2);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

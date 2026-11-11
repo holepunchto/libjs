@@ -72,30 +72,52 @@ main() {
   e = js_get_undefined(env, &undefined);
   assert(e == 0);
 
-  // Nothing has been set yet.
+  // Nothing has been stored yet.
   expect_undefined(env, a);
   expect_undefined(env, b);
 
-  // Setting under one symbol is only visible under that symbol.
-  e = js_set_continuation_data(env, a, one);
+  // Storing under one symbol is only visible under that symbol.
+  js_continuation_scope_t *first;
+  e = js_open_continuation_data_scope(env, a, one, &first);
   assert(e == 0);
 
   expect_uint32(env, a, 1);
   expect_undefined(env, b);
 
-  // Setting under a second symbol leaves the first one alone.
-  e = js_set_continuation_data(env, b, two);
+  // Storing under a second symbol leaves the first one alone.
+  js_continuation_scope_t *second;
+  e = js_open_continuation_data_scope(env, b, two, &second);
   assert(e == 0);
 
   expect_uint32(env, a, 1);
   expect_uint32(env, b, 2);
 
-  // Setting undefined removes the entry, again only for that symbol.
-  e = js_set_continuation_data(env, a, undefined);
+  // Storing undefined removes the entry, again only for that symbol.
+  js_continuation_scope_t *third;
+  e = js_open_continuation_data_scope(env, a, undefined, &third);
   assert(e == 0);
 
   expect_undefined(env, a);
   expect_uint32(env, b, 2);
+
+  // Closing each scope restores the data from before it was opened.
+  e = js_close_continuation_scope(env, third);
+  assert(e == 0);
+
+  expect_uint32(env, a, 1);
+  expect_uint32(env, b, 2);
+
+  e = js_close_continuation_scope(env, second);
+  assert(e == 0);
+
+  expect_uint32(env, a, 1);
+  expect_undefined(env, b);
+
+  e = js_close_continuation_scope(env, first);
+  assert(e == 0);
+
+  expect_undefined(env, a);
+  expect_undefined(env, b);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

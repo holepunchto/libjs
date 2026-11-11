@@ -50,7 +50,8 @@ main() {
   e = js_create_uint32(env, 2, &two);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, two);
+  js_continuation_scope_t *outer;
+  e = js_open_continuation_data_scope(env, key, two, &outer);
   assert(e == 0);
 
   js_deferred_t *deferred;
@@ -70,7 +71,8 @@ main() {
   e = js_call_function(env, promise, then, 1, &callback, NULL);
   assert(e == 0);
 
-  e = js_set_continuation_data(env, key, one);
+  js_continuation_scope_t *inner;
+  e = js_open_continuation_data_scope(env, key, one, &inner);
   assert(e == 0);
 
   js_value_t *undefined;
@@ -92,6 +94,12 @@ main() {
   e = js_get_value_uint32(env, curr, &value);
   assert(e == 0);
   assert(value == 1);
+
+  e = js_close_continuation_scope(env, inner);
+  assert(e == 0);
+
+  e = js_close_continuation_scope(env, outer);
+  assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
