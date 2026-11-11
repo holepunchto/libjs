@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <uv.h>
 
 #include "../include/js.h"
@@ -15,6 +16,8 @@ on_uncaught_exception(js_env_t *env, js_value_t *error, void *data) {
 static void
 on_unhandled_rejection(js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
   unhandled_called++;
+
+  assert((intptr_t) data == 42);
 }
 
 int
@@ -34,7 +37,7 @@ main() {
   e = js_on_uncaught_exception(env, on_uncaught_exception, NULL);
   assert(e == 0);
 
-  e = js_on_unhandled_rejection(env, on_unhandled_rejection, NULL);
+  e = js_on_unhandled_rejection(env, on_unhandled_rejection, (void *) 42);
   assert(e == 0);
 
   js_handle_scope_t *scope;
