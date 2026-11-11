@@ -19,7 +19,9 @@ static void
 on_response(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len, void *data) {
   if (strstr(message, "\"id\":3") == NULL) return;
 
-  profile = strndup(message, len);
+  profile = malloc(len + 1);
+  memcpy(profile, message, len);
+  profile[len] = '\0';
 }
 
 static void
