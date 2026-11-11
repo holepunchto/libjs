@@ -1,5 +1,6 @@
 list(APPEND tests
   add-finalizer
+  add-finalizer-continuation-variable
   add-finalizer-destroy-env
   add-teardown-callback
   add-teardown-callback-deferred
@@ -40,6 +41,9 @@ list(APPEND tests
   compile-function-invalid-argument-name
   compile-function-with-code-cache
   compile-function-with-code-cache-rejected
+  continuation-snapshot-pending-exception
+  continuation-variable-pending-exception
+  continuation-variable-promise-reaction
   create-array-with-elements
   create-array-with-length
   create-arraybuffer
@@ -308,6 +312,8 @@ list(APPEND tests
   is-weak-set
   many-large-allocs
   many-small-allocs
+  open-continuation-scope
+  open-continuation-variable-scope
   prepare-script
   prepare-script-id
   prepare-script-ignore-return
@@ -321,6 +327,7 @@ list(APPEND tests
   promise-rejection
   promise-rejection-handled-reentrant-deferred
   promise-rejection-unhandled
+  promise-rejection-unhandled-continuation-variable
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   promise-rejection-unhandled-throw
