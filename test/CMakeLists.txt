@@ -1,6 +1,6 @@
 list(APPEND tests
   add-finalizer
-  add-finalizer-continuation-data
+  add-finalizer-continuation-variable
   add-finalizer-destroy-env
   add-teardown-callback
   add-teardown-callback-deferred
@@ -38,9 +38,9 @@ list(APPEND tests
   compile-function-invalid-argument-name
   compile-function-with-code-cache
   compile-function-with-code-cache-rejected
-  continuation-data-pending-exception
-  continuation-data-promise-reaction
-  continuation-frame-pending-exception
+  continuation-snapshot-pending-exception
+  continuation-variable-pending-exception
+  continuation-variable-promise-reaction
   create-array-with-elements
   create-array-with-length
   create-arraybuffer
@@ -321,14 +321,14 @@ list(APPEND tests
   promise-rejection
   promise-rejection-handled-reentrant-deferred
   promise-rejection-unhandled
-  promise-rejection-unhandled-continuation-data
+  promise-rejection-unhandled-continuation-variable
   promise-rejection-unhandled-reentrant
   promise-rejection-unhandled-reentrant-deferred
   promise-rejection-unhandled-throw
   promise-rejection-unhandled-throw-destroy-env
   promise-rejection-unhandled-throw-nested
-  open-continuation-data-scope
   open-continuation-scope
+  open-continuation-variable-scope
   queue-microtask
   queue-microtask-with-callback
   queue-microtask-with-callback-terminate

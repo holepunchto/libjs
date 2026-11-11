@@ -9,7 +9,7 @@ expect_uint32(js_env_t *env, js_value_t *symbol, uint32_t expected) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, symbol, &result);
+  e = js_get_continuation_variable(env, symbol, &result);
   assert(e == 0);
 
   uint32_t value;
@@ -24,7 +24,7 @@ expect_undefined(js_env_t *env, js_value_t *symbol) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, symbol, &result);
+  e = js_get_continuation_variable(env, symbol, &result);
   assert(e == 0);
 
   bool is_undefined;
@@ -65,34 +65,34 @@ main() {
   assert(e == 0);
 
   js_continuation_scope_t *outer;
-  e = js_open_continuation_data_scope(env, key, one, &outer);
+  e = js_open_continuation_variable_scope(env, key, one, &outer);
   assert(e == 0);
 
   js_value_t *captured;
-  e = js_get_continuation_frame(env, &captured);
+  e = js_get_continuation_snapshot(env, &captured);
   assert(e == 0);
 
   js_continuation_scope_t *inner;
-  e = js_open_continuation_data_scope(env, key, two, &inner);
+  e = js_open_continuation_variable_scope(env, key, two, &inner);
   assert(e == 0);
 
-  // Restoring the captured frame brings back the data it held.
+  // Restoring the captured snapshot brings back the value it held.
   js_continuation_scope_t *restored;
   e = js_open_continuation_scope(env, captured, &restored);
   assert(e == 0);
 
   expect_uint32(env, key, 1);
 
-  // The empty frame holds no data.
+  // The empty snapshot sets no variables.
   js_continuation_scope_t *emptied;
   e = js_open_continuation_scope(env, NULL, &emptied);
   assert(e == 0);
 
   expect_undefined(env, key);
 
-  // A frame taken while empty can be restored like any other.
+  // A snapshot taken while empty can be restored like any other.
   js_value_t *empty;
-  e = js_get_continuation_frame(env, &empty);
+  e = js_get_continuation_snapshot(env, &empty);
   assert(e == 0);
 
   e = js_close_continuation_scope(env, emptied);
@@ -106,7 +106,7 @@ main() {
 
   expect_undefined(env, key);
 
-  // Closing each scope restores the frame from before it was opened.
+  // Closing each scope restores the snapshot from before it was opened.
   e = js_close_continuation_scope(env, reemptied);
   assert(e == 0);
 

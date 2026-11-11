@@ -12,7 +12,7 @@ on_fulfilled(js_env_t *env, js_callback_info_t *info) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   e = js_get_value_uint32(env, result, &seen);
@@ -51,7 +51,7 @@ main() {
   assert(e == 0);
 
   js_continuation_scope_t *outer;
-  e = js_open_continuation_data_scope(env, key, two, &outer);
+  e = js_open_continuation_variable_scope(env, key, two, &outer);
   assert(e == 0);
 
   js_deferred_t *deferred;
@@ -67,12 +67,12 @@ main() {
   e = js_get_named_property(env, promise, "then", &then);
   assert(e == 0);
 
-  // The reaction captures the continuation data as it is now.
+  // The reaction captures the continuation snapshot as it is now.
   e = js_call_function(env, promise, then, 1, &callback, NULL);
   assert(e == 0);
 
   js_continuation_scope_t *inner;
-  e = js_open_continuation_data_scope(env, key, one, &inner);
+  e = js_open_continuation_variable_scope(env, key, one, &inner);
   assert(e == 0);
 
   js_value_t *undefined;
@@ -85,9 +85,9 @@ main() {
 
   assert(seen == 2);
 
-  // Once the reaction is done, the data from before it ran is restored.
+  // Once the reaction is done, the snapshot from before it ran is restored.
   js_value_t *curr;
-  e = js_get_continuation_data(env, key, &curr);
+  e = js_get_continuation_variable(env, key, &curr);
   assert(e == 0);
 
   uint32_t value;

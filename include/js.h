@@ -2683,26 +2683,27 @@ int
 js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
 
 /**
- * Get the continuation frame of the current execution. The frame holds the
- * continuation data of the current execution and lets that data follow an
- * asynchronous flow of execution. Engines that support it capture the frame
+ * Get the continuation snapshot of the current execution. The snapshot holds
+ * the continuation variables of the current execution and lets them follow an
+ * asynchronous flow of execution. Engines that support it capture the snapshot
  * when a promise reaction is created and restore it while the reaction runs.
- * Other engines leave the frame as it is.
+ * Other engines leave the snapshot as it is.
  *
- * The frame is owned by the engine and must not be inspected or changed, and
- * it never changes once taken. It can be kept alive with a reference and later
- * restored with `js_open_continuation_scope()`, such as when native code calls
- * into JavaScript from an I/O callback.
+ * The snapshot is owned by the engine and must not be inspected or changed,
+ * and it never changes once taken. It can be kept alive with a reference and
+ * later restored with `js_open_continuation_scope()`, such as when native code
+ * calls into JavaScript from an I/O callback.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_get_continuation_frame(js_env_t *env, js_value_t **result);
+js_get_continuation_snapshot(js_env_t *env, js_value_t **result);
 
 /**
- * Open a continuation scope that makes a continuation frame the frame of the
- * current execution until the scope is closed. The frame must be one returned
- * by `js_get_continuation_frame()`, or `NULL` for the empty frame.
+ * Open a continuation scope that makes a continuation snapshot the snapshot of
+ * the current execution until the scope is closed. The snapshot must be one
+ * returned by `js_get_continuation_snapshot()`, or `NULL` for the empty
+ * snapshot.
  *
  * Continuation scopes form a stack and must be closed in the reverse order in
  * which they were opened, and before the handle scope that was innermost when
@@ -2712,18 +2713,18 @@ js_get_continuation_frame(js_env_t *env, js_value_t **result);
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_open_continuation_scope(js_env_t *env, js_value_t *frame, js_continuation_scope_t **result);
+js_open_continuation_scope(js_env_t *env, js_value_t *snapshot, js_continuation_scope_t **result);
 
 /**
- * Open a continuation scope that stores a value under a symbol by making a new
- * continuation frame the frame of the current execution until the scope is
- * closed. Storing `undefined` removes the value. The behavior is undefined if
- * the key is not a symbol.
+ * Open a continuation scope that sets the continuation variable identified by
+ * a symbol, by making a new continuation snapshot the snapshot of the current
+ * execution until the scope is closed. Setting a variable to `undefined`
+ * removes it. The behavior is undefined if the variable is not a symbol.
  *
- * Values stored under other symbols are carried over to the new frame, while
- * frames captured before the call keep the value they held. A stored value is
- * kept alive for as long as a frame that holds it can still be restored, even
- * if nothing else refers to the symbol.
+ * Other variables are carried over to the new snapshot, while snapshots taken
+ * before the call keep the value they held. A value is kept alive for as long
+ * as a snapshot that holds it can still be restored, even if nothing else
+ * refers to the symbol.
  *
  * The scope behaves as one opened with `js_open_continuation_scope()` in all
  * other respects.
@@ -2731,11 +2732,11 @@ js_open_continuation_scope(js_env_t *env, js_value_t *frame, js_continuation_sco
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_open_continuation_data_scope(js_env_t *env, js_value_t *symbol, js_value_t *value, js_continuation_scope_t **result);
+js_open_continuation_variable_scope(js_env_t *env, js_value_t *variable, js_value_t *value, js_continuation_scope_t **result);
 
 /**
- * Close a continuation scope, making the frame that was current when it was
- * opened the frame of the current execution again. The scope must be the
+ * Close a continuation scope, making the snapshot that was current when it was
+ * opened the snapshot of the current execution again. The scope must be the
  * innermost continuation scope that is currently open.
  *
  * This function can be called even if there is a pending JavaScript exception.
@@ -2744,14 +2745,15 @@ int
 js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope);
 
 /**
- * Get the value stored under a symbol in the continuation frame of the current
- * execution, or `undefined` if no value is stored under it. The behavior is
- * undefined if the key is not a symbol.
+ * Get the value of the continuation variable identified by a symbol in the
+ * continuation snapshot of the current execution, or `undefined` if the
+ * variable is not set. The behavior is undefined if the variable is not a
+ * symbol.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
 int
-js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
+js_get_continuation_variable(js_env_t *env, js_value_t *variable, js_value_t **result);
 
 /**
  * Get the global object of the current context.

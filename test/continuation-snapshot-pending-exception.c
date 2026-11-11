@@ -35,19 +35,19 @@ main() {
   assert(e == 0);
 
   js_continuation_scope_t *outer;
-  e = js_open_continuation_data_scope(env, key, one, &outer);
+  e = js_open_continuation_variable_scope(env, key, one, &outer);
   assert(e == 0);
 
   js_value_t *captured;
-  e = js_get_continuation_frame(env, &captured);
+  e = js_get_continuation_snapshot(env, &captured);
   assert(e == 0);
 
   js_continuation_scope_t *inner;
-  e = js_open_continuation_data_scope(env, key, two, &inner);
+  e = js_open_continuation_variable_scope(env, key, two, &inner);
   assert(e == 0);
 
   // Leave an exception pending, as if a callback called from an I/O handler
-  // had thrown before the handler restored its frame.
+  // had thrown before the handler restored its snapshot.
   e = js_throw_error(env, NULL, "boom");
   assert(e == 0);
 
@@ -56,7 +56,7 @@ main() {
   assert(e == 0);
 
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   uint32_t value;
@@ -67,7 +67,7 @@ main() {
   e = js_close_continuation_scope(env, restored);
   assert(e == 0);
 
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   e = js_get_value_uint32(env, result, &value);

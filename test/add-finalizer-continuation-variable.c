@@ -18,10 +18,10 @@ on_finalize(js_env_t *env, void *data, void *finalize_hint) {
   e = js_open_handle_scope(env, &scope);
   assert(e == 0);
 
-  // Finalizers run in the empty frame, whatever frame is current when the
+  // Finalizers run in the empty snapshot, whatever snapshot is current when the
   // object is collected.
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   bool is_undefined;
@@ -63,7 +63,7 @@ main() {
   assert(e == 0);
 
   js_continuation_scope_t *outer;
-  e = js_open_continuation_data_scope(env, key, one, &outer);
+  e = js_open_continuation_variable_scope(env, key, one, &outer);
   assert(e == 0);
 
   js_handle_scope_t *inner;
@@ -85,9 +85,9 @@ main() {
 
   assert(finalize_called);
 
-  // The frame from before the finalizer ran is restored afterwards.
+  // The snapshot from before the finalizer ran is restored afterwards.
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   uint32_t value;

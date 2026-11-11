@@ -9,7 +9,7 @@ expect_uint32(js_env_t *env, js_value_t *symbol, uint32_t expected) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, symbol, &result);
+  e = js_get_continuation_variable(env, symbol, &result);
   assert(e == 0);
 
   uint32_t value;
@@ -24,7 +24,7 @@ expect_undefined(js_env_t *env, js_value_t *symbol) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, symbol, &result);
+  e = js_get_continuation_variable(env, symbol, &result);
   assert(e == 0);
 
   bool is_undefined;
@@ -78,7 +78,7 @@ main() {
 
   // Storing under one symbol is only visible under that symbol.
   js_continuation_scope_t *first;
-  e = js_open_continuation_data_scope(env, a, one, &first);
+  e = js_open_continuation_variable_scope(env, a, one, &first);
   assert(e == 0);
 
   expect_uint32(env, a, 1);
@@ -86,7 +86,7 @@ main() {
 
   // Storing under a second symbol leaves the first one alone.
   js_continuation_scope_t *second;
-  e = js_open_continuation_data_scope(env, b, two, &second);
+  e = js_open_continuation_variable_scope(env, b, two, &second);
   assert(e == 0);
 
   expect_uint32(env, a, 1);
@@ -94,13 +94,13 @@ main() {
 
   // Storing undefined removes the entry, again only for that symbol.
   js_continuation_scope_t *third;
-  e = js_open_continuation_data_scope(env, a, undefined, &third);
+  e = js_open_continuation_variable_scope(env, a, undefined, &third);
   assert(e == 0);
 
   expect_undefined(env, a);
   expect_uint32(env, b, 2);
 
-  // Closing each scope restores the data from before it was opened.
+  // Closing each scope restores the variables from before it was opened.
   e = js_close_continuation_scope(env, third);
   assert(e == 0);
 

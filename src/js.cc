@@ -1953,7 +1953,7 @@ private:
 
 struct js_unhandled_promise_s {
   Global<Promise> promise;
-  Global<Value> frame;
+  Global<Value> snapshot;
 };
 
 struct js_env_s {
@@ -2237,7 +2237,7 @@ struct js_env_s {
 
         auto local = rejection.promise.Get(isolate);
 
-        call_with_continuation_frame(rejection.frame.Get(isolate), [&] {
+        call_with_continuation_snapshot(rejection.snapshot.Get(isolate), [&] {
           call_into_native<void>(
             [&] {
               callbacks.unhandled_rejection(
@@ -2361,29 +2361,29 @@ struct js_env_s {
   }
 
   Local<Value>
-  get_continuation_frame() {
+  get_continuation_snapshot() {
     return isolate->GetContinuationPreservedEmbedderData().As<Value>();
   }
 
   void
-  set_continuation_frame(Local<Value> frame) {
-    if (frame.IsEmpty()) frame = Undefined(isolate);
+  set_continuation_snapshot(Local<Value> snapshot) {
+    if (snapshot.IsEmpty()) snapshot = Undefined(isolate);
 
-    isolate->SetContinuationPreservedEmbedderData(frame);
+    isolate->SetContinuationPreservedEmbedderData(snapshot);
   }
 
   template <typename F>
   void
-  call_with_continuation_frame(Local<Value> frame, F &&fn) {
+  call_with_continuation_snapshot(Local<Value> snapshot, F &&fn) {
     auto scope = HandleScope(isolate);
 
-    auto previous = get_continuation_frame();
+    auto previous = get_continuation_snapshot();
 
-    set_continuation_frame(frame);
+    set_continuation_snapshot(snapshot);
 
     fn();
 
-    set_continuation_frame(previous);
+    set_continuation_snapshot(previous);
   }
 
   template <typename T>
@@ -2502,7 +2502,7 @@ struct js_env_s {
     case kPromiseRejectWithNoHandler:
       env->unhandled_promises.push_back({
         Global<Promise>(isolate, promise),
-        Global<Value>(isolate, env->get_continuation_frame()),
+        Global<Value>(isolate, env->get_continuation_snapshot()),
       });
       break;
 
@@ -3243,7 +3243,7 @@ private:
     if (finalizer->finalize_cb) {
       auto env = finalizer->env;
 
-      env->call_with_continuation_frame(Local<Value>(), [&] {
+      env->call_with_continuation_snapshot(Local<Value>(), [&] {
         env->call_into_native<void>(
           [&] {
             finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
@@ -4289,7 +4289,7 @@ js__finalize_external_strings(js_env_t *env) {
   auto finalize = [env](auto string) {
     if (string->finalize_cb == nullptr) return;
 
-    env->call_with_continuation_frame(Local<Value>(), [&] {
+    env->call_with_continuation_snapshot(Local<Value>(), [&] {
       env->call_into_native<void>(
         [&] {
           string->finalize();
@@ -8241,32 +8241,32 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
 }
 
 extern "C" int
-js_get_continuation_frame(js_env_t *env, js_value_t **result) {
+js_get_continuation_snapshot(js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  *result = js_from_local(env->get_continuation_frame());
+  *result = js_from_local(env->get_continuation_snapshot());
 
   return 0;
 }
 
 static inline js_continuation_scope_t *
-js__open_continuation_scope(js_env_t *env, Local<Value> frame) {
-  auto scope = env->allocations->continuation_scopes.push(env->get_continuation_frame());
+js__open_continuation_scope(js_env_t *env, Local<Value> snapshot) {
+  auto scope = env->allocations->continuation_scopes.push(env->get_continuation_snapshot());
 
-  env->set_continuation_frame(frame);
+  env->set_continuation_snapshot(snapshot);
 
   return scope;
 }
 
 extern "C" int
-js_open_continuation_scope(js_env_t *env, js_value_t *frame, js_continuation_scope_t **result) {
+js_open_continuation_scope(js_env_t *env, js_value_t *snapshot, js_continuation_scope_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  *result = js__open_continuation_scope(env, frame ? js_to_local(frame) : Local<Value>());
+  *result = js__open_continuation_scope(env, snapshot ? js_to_local(snapshot) : Local<Value>());
 
   return 0;
 }
@@ -8279,7 +8279,7 @@ js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope) {
 
   assert(scope == env->allocations->continuation_scopes.top());
 
-  env->set_continuation_frame(scope->previous);
+  env->set_continuation_snapshot(scope->previous);
 
   env->allocations->continuation_scopes.pop();
 
@@ -8288,7 +8288,7 @@ js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope) {
 
 namespace {
 
-// Frames are flat arrays of alternating keys and values. They are only read
+// Snapshots are flat arrays of alternating keys and values. They are only read
 // with `Array::Iterate()` and built with `Array::New()`, as neither runs
 // JavaScript and so both are safe while an exception is pending. Elements
 // passed to the iteration callback die with its handle scope, so those that
@@ -8310,7 +8310,7 @@ struct js_continuation_copy_s {
 };
 
 static Array::CallbackResult
-js__lookup_continuation_data(uint32_t i, Local<Value> element, void *data) {
+js__lookup_continuation_variable(uint32_t i, Local<Value> element, void *data) {
   auto lookup = reinterpret_cast<js_continuation_lookup_s *>(data);
 
   if (i % 2 == 0) {
@@ -8327,7 +8327,7 @@ js__lookup_continuation_data(uint32_t i, Local<Value> element, void *data) {
 }
 
 static Array::CallbackResult
-js__copy_continuation_data(uint32_t i, Local<Value> element, void *data) {
+js__copy_continuation_variable(uint32_t i, Local<Value> element, void *data) {
   auto copy = reinterpret_cast<js_continuation_copy_s *>(data);
 
   if (i % 2 == 0) {
@@ -8342,19 +8342,19 @@ js__copy_continuation_data(uint32_t i, Local<Value> element, void *data) {
 }
 
 static inline void
-js__iterate_continuation_frame(js_env_t *env, Array::IterationCallback callback, void *data) {
-  auto frame = env->get_continuation_frame();
+js__iterate_continuation_snapshot(js_env_t *env, Array::IterationCallback callback, void *data) {
+  auto snapshot = env->get_continuation_snapshot();
 
-  if (!frame->IsArray()) return;
+  if (!snapshot->IsArray()) return;
 
-  auto iterated = frame.As<Array>()->Iterate(env->current_context(), callback, data);
+  auto iterated = snapshot.As<Array>()->Iterate(env->current_context(), callback, data);
   assert(iterated.IsJust());
 }
 
 } // namespace
 
 extern "C" int
-js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result) {
+js_get_continuation_variable(js_env_t *env, js_value_t *variable, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
@@ -8364,9 +8364,9 @@ js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result)
   {
     auto scope = EscapableHandleScope(env->isolate);
 
-    js_continuation_lookup_s lookup = {js_to_local<Symbol>(symbol), &scope};
+    js_continuation_lookup_s lookup = {js_to_local<Symbol>(variable), &scope};
 
-    js__iterate_continuation_frame(env, js__lookup_continuation_data, &lookup);
+    js__iterate_continuation_snapshot(env, js__lookup_continuation_variable, &lookup);
 
     value = lookup.value;
   }
@@ -8379,21 +8379,21 @@ js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result)
 }
 
 extern "C" int
-js_open_continuation_data_scope(js_env_t *env, js_value_t *symbol, js_value_t *value, js_continuation_scope_t **result) {
+js_open_continuation_variable_scope(js_env_t *env, js_value_t *variable, js_value_t *value, js_continuation_scope_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
-  auto key = js_to_local<Symbol>(symbol);
+  auto key = js_to_local<Symbol>(variable);
 
   auto local = js_to_local(value);
 
   js_continuation_copy_s copy = {env->isolate, key};
 
-  js__iterate_continuation_frame(env, js__copy_continuation_data, &copy);
+  js__iterate_continuation_snapshot(env, js__copy_continuation_variable, &copy);
 
   if (local->IsUndefined() && !copy.found) {
-    *result = js__open_continuation_scope(env, env->get_continuation_frame());
+    *result = js__open_continuation_scope(env, env->get_continuation_snapshot());
 
     return 0;
   }
@@ -8409,11 +8409,11 @@ js_open_continuation_data_scope(js_env_t *env, js_value_t *symbol, js_value_t *v
     entries.push_back(local);
   }
 
-  Local<Value> frame;
+  Local<Value> snapshot;
 
-  if (!entries.empty()) frame = Array::New(env->isolate, entries.data(), entries.size());
+  if (!entries.empty()) snapshot = Array::New(env->isolate, entries.data(), entries.size());
 
-  *result = js__open_continuation_scope(env, frame);
+  *result = js__open_continuation_scope(env, snapshot);
 
   return 0;
 }

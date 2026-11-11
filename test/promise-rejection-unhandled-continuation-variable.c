@@ -10,7 +10,7 @@ static js_deferred_t *deferred;
 static uint32_t seen = 0;
 
 static js_continuation_scope_t *
-open_data_scope(js_env_t *env, uint32_t value) {
+open_variable_scope(js_env_t *env, uint32_t value) {
   int e;
 
   js_value_t *local;
@@ -18,18 +18,18 @@ open_data_scope(js_env_t *env, uint32_t value) {
   assert(e == 0);
 
   js_continuation_scope_t *scope;
-  e = js_open_continuation_data_scope(env, key, local, &scope);
+  e = js_open_continuation_variable_scope(env, key, local, &scope);
   assert(e == 0);
 
   return scope;
 }
 
 static uint32_t
-get_data(js_env_t *env) {
+get_variable(js_env_t *env) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   uint32_t value;
@@ -41,14 +41,14 @@ get_data(js_env_t *env) {
 
 static void
 on_unhandled_rejection(js_env_t *env, js_value_t *reason, js_value_t *promise, void *data) {
-  seen = get_data(env);
+  seen = get_variable(env);
 }
 
 static js_value_t *
 on_call(js_env_t *env, js_callback_info_t *info) {
   int e;
 
-  js_continuation_scope_t *scope = open_data_scope(env, 1);
+  js_continuation_scope_t *scope = open_variable_scope(env, 1);
 
   js_value_t *undefined;
   e = js_get_undefined(env, &undefined);
@@ -101,15 +101,15 @@ main() {
   e = js_get_global(env, &global);
   assert(e == 0);
 
-  js_continuation_scope_t *outer = open_data_scope(env, 2);
+  js_continuation_scope_t *outer = open_variable_scope(env, 2);
 
   e = js_call_function(env, global, fn, 0, NULL, NULL);
   assert(e == 0);
 
-  // The handler runs with the data from when the promise was rejected, and
-  // the data from before it ran is restored afterwards.
+  // The handler runs with the snapshot from when the promise was rejected,
+  // and the snapshot from before it ran is restored afterwards.
   assert(seen == 1);
-  assert(get_data(env) == 2);
+  assert(get_variable(env) == 2);
 
   e = js_close_continuation_scope(env, outer);
   assert(e == 0);

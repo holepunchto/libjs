@@ -15,7 +15,7 @@ expect_uint32(js_env_t *env, uint32_t expected) {
   int e;
 
   js_value_t *result;
-  e = js_get_continuation_data(env, key, &result);
+  e = js_get_continuation_variable(env, key, &result);
   assert(e == 0);
 
   uint32_t value;
@@ -48,13 +48,13 @@ open_and_close(js_env_t *env) {
   int e;
 
   js_continuation_scope_t *first;
-  e = js_open_continuation_data_scope(env, key, one, &first);
+  e = js_open_continuation_variable_scope(env, key, one, &first);
   assert(e == 0);
 
   expect_uint32(env, 1);
 
   js_continuation_scope_t *second;
-  e = js_open_continuation_data_scope(env, key, two, &second);
+  e = js_open_continuation_variable_scope(env, key, two, &second);
   assert(e == 0);
 
   expect_uint32(env, 2);
