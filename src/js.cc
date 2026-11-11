@@ -60,7 +60,6 @@ typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
 typedef struct js_isolate_scope_s js_isolate_scope_t;
 typedef struct js_idle_window_s js_idle_window_t;
-typedef struct js_continuation_scan_s js_continuation_scan_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -8186,11 +8185,14 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
 
 static inline Local<Value>
 js__get_continuation_frame(js_env_t *env) {
-  auto data = env->isolate->GetContinuationPreservedEmbedderData();
+  return env->isolate->GetContinuationPreservedEmbedderData().As<Value>();
+}
 
-  if (data.IsEmpty() || !data->IsValue()) return Undefined(env->isolate);
+static inline void
+js__set_continuation_frame(js_env_t *env, Local<Value> frame) {
+  if (frame.IsEmpty()) frame = Undefined(env->isolate);
 
-  return data.As<Value>();
+  env->isolate->SetContinuationPreservedEmbedderData(frame);
 }
 
 extern "C" int
@@ -8212,55 +8214,73 @@ js_set_continuation_frame(js_env_t *env, js_value_t *frame, js_value_t **previou
 
   if (previous) *previous = js_from_local(js__get_continuation_frame(env));
 
-  Local<Value> next = frame ? js_to_local(frame) : Undefined(env->isolate).As<Value>();
-
-  env->isolate->SetContinuationPreservedEmbedderData(next);
+  js__set_continuation_frame(env, frame ? js_to_local(frame) : Local<Value>());
 
   return 0;
 }
+
+namespace {
 
 // Frames are flat arrays of alternating keys and values. They are only read
 // with `Array::Iterate()` and built with `Array::New()`, as neither runs
 // JavaScript and so both are safe while an exception is pending. Elements
 // passed to the iteration callback die with its handle scope, so those that
-// must outlive it are held in globals.
-struct js_continuation_scan_s {
-  Isolate *isolate;
+// must outlive it are escaped or held in globals.
+
+struct js_continuation_lookup_s {
   Local<Value> key;
-  bool collect;
+  EscapableHandleScope *scope;
   bool match;
-  Global<Value> value;
-  std::vector<Global<Value>> rest;
+  Local<Value> value;
 };
 
-namespace {
+struct js_continuation_copy_s {
+  Isolate *isolate;
+  Local<Value> key;
+  bool match;
+  bool found;
+  std::vector<Global<Value>> entries;
+};
 
 static Array::CallbackResult
-js__scan_continuation_frame(uint32_t i, Local<Value> element, void *data) {
-  auto scan = reinterpret_cast<js_continuation_scan_t *>(data);
+js__lookup_continuation_data(uint32_t i, Local<Value> element, void *data) {
+  auto lookup = reinterpret_cast<js_continuation_lookup_s *>(data);
 
   if (i % 2 == 0) {
-    scan->match = element->StrictEquals(scan->key);
-  } else if (scan->match) {
-    if (scan->collect) return Array::CallbackResult::kContinue;
+    lookup->match = element == lookup->key;
 
-    scan->value.Reset(scan->isolate, element);
-
-    return Array::CallbackResult::kBreak;
+    return Array::CallbackResult::kContinue;
   }
 
-  if (scan->collect && !scan->match) scan->rest.emplace_back(scan->isolate, element);
+  if (!lookup->match) return Array::CallbackResult::kContinue;
+
+  lookup->value = lookup->scope->Escape(element);
+
+  return Array::CallbackResult::kBreak;
+}
+
+static Array::CallbackResult
+js__copy_continuation_data(uint32_t i, Local<Value> element, void *data) {
+  auto copy = reinterpret_cast<js_continuation_copy_s *>(data);
+
+  if (i % 2 == 0) {
+    copy->match = element == copy->key;
+
+    if (copy->match) copy->found = true;
+  }
+
+  if (!copy->match) copy->entries.emplace_back(copy->isolate, element);
 
   return Array::CallbackResult::kContinue;
 }
 
 static inline void
-js__scan_continuation_frame(js_env_t *env, js_continuation_scan_t &scan) {
+js__iterate_continuation_frame(js_env_t *env, Array::IterationCallback callback, void *data) {
   auto frame = js__get_continuation_frame(env);
 
   if (!frame->IsArray()) return;
 
-  auto iterated = frame.As<Array>()->Iterate(env->current_context(), js__scan_continuation_frame, &scan);
+  auto iterated = frame.As<Array>()->Iterate(env->current_context(), callback, data);
   assert(iterated.IsJust());
 }
 
@@ -8272,15 +8292,21 @@ js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result)
 
   js_env_scope_t env_scope(env);
 
-  js_continuation_scan_t scan = {env->isolate, js_to_local<Symbol>(symbol), false};
+  Local<Value> value;
 
-  js__scan_continuation_frame(env, scan);
+  {
+    auto scope = EscapableHandleScope(env->isolate);
 
-  if (scan.value.IsEmpty()) {
-    *result = js_from_local(Undefined(env->isolate));
-  } else {
-    *result = js_from_local(scan.value.Get(env->isolate));
+    js_continuation_lookup_s lookup = {js_to_local<Symbol>(symbol), &scope};
+
+    js__iterate_continuation_frame(env, js__lookup_continuation_data, &lookup);
+
+    value = lookup.value;
   }
+
+  if (value.IsEmpty()) value = Undefined(env->isolate);
+
+  *result = js_from_local(value);
 
   return 0;
 }
@@ -8293,28 +8319,27 @@ js_set_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t *value) {
 
   auto key = js_to_local<Symbol>(symbol);
 
-  js_continuation_scan_t scan = {env->isolate, key, true};
+  auto local = js_to_local(value);
 
-  js__scan_continuation_frame(env, scan);
+  js_continuation_copy_s copy = {env->isolate, key};
+
+  js__iterate_continuation_frame(env, js__copy_continuation_data, &copy);
+
+  if (local->IsUndefined() && !copy.found) return 0;
 
   std::vector<Local<Value>> entries;
 
-  entries.reserve(scan.rest.size() + 2);
+  entries.reserve(copy.entries.size() + 2);
 
-  for (auto &entry : scan.rest) entries.push_back(entry.Get(env->isolate));
-
-  auto local = js_to_local(value);
+  for (auto &entry : copy.entries) entries.push_back(entry.Get(env->isolate));
 
   if (!local->IsUndefined()) {
     entries.push_back(key);
     entries.push_back(local);
   }
 
-  // Never change the frame that is already in the slot, as promise reactions
-  // created earlier hold a reference to it. Build a new one instead.
-  auto next = Array::New(env->isolate, entries.data(), entries.size());
-
-  env->isolate->SetContinuationPreservedEmbedderData(next);
+  if (entries.empty()) js__set_continuation_frame(env, Local<Value>());
+  else js__set_continuation_frame(env, Array::New(env->isolate, entries.data(), entries.size()));
 
   return 0;
 }

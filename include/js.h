@@ -2688,10 +2688,10 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
  * when a promise reaction is created and restore it while the reaction runs.
  * Other engines leave the frame as it is.
  *
- * The frame is owned by the engine and must not be inspected or changed. It
- * can be kept alive with a reference and later restored with
- * `js_set_continuation_frame()`, such as when native code calls into
- * JavaScript from an I/O callback.
+ * The frame is owned by the engine and must not be inspected or changed, and
+ * it never changes once taken. It can be kept alive with a reference and later
+ * restored with `js_set_continuation_frame()`, such as when native code calls
+ * into JavaScript from an I/O callback.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -2719,17 +2719,16 @@ int
 js_get_continuation_data(js_env_t *env, js_value_t *symbol, js_value_t **result);
 
 /**
- * Store a value under a symbol in the continuation frame of the current
- * execution. Storing `undefined` removes the value. The behavior is undefined
- * if the key is not a symbol.
+ * Store a value under a symbol by making a new continuation frame the frame of
+ * the current execution. Storing `undefined` removes the value. The behavior is
+ * undefined if the key is not a symbol.
  *
- * The call replaces the current frame with a new one rather than changing it.
- * Frames captured before the call keep the value they held, and values stored
- * under other symbols are carried over to the new frame.
+ * Values stored under other symbols are carried over to the new frame, while
+ * frames captured before the call keep the value they held.
  *
- * A stored value is kept alive for as long as the continuation data that holds
- * it can still be restored, even if nothing else refers to the symbol. The
- * owner of a symbol must therefore remove its value when done with it.
+ * A stored value is kept alive for as long as a frame that holds it can still
+ * be restored, even if nothing else refers to the symbol. The owner of a symbol
+ * must therefore remove its value when done with it.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */

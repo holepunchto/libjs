@@ -49,11 +49,8 @@ main() {
   e = js_throw_error(env, NULL, "boom");
   assert(e == 0);
 
-  js_value_t *current;
-  e = js_get_continuation_frame(env, &current);
-  assert(e == 0);
-
-  e = js_set_continuation_frame(env, captured, NULL);
+  js_value_t *previous;
+  e = js_set_continuation_frame(env, captured, &previous);
   assert(e == 0);
 
   // The original exception is still the pending one.
@@ -79,6 +76,17 @@ main() {
   e = js_get_value_uint32(env, result, &value);
   assert(e == 0);
   assert(value == 1);
+
+  // The frame replaced while the exception was pending can be restored too.
+  e = js_set_continuation_frame(env, previous, NULL);
+  assert(e == 0);
+
+  e = js_get_continuation_data(env, key, &result);
+  assert(e == 0);
+
+  e = js_get_value_uint32(env, result, &value);
+  assert(e == 0);
+  assert(value == 2);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
