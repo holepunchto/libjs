@@ -308,6 +308,8 @@ list(APPEND tests
   is-weak-set
   many-large-allocs
   many-small-allocs
+  open-continuation-scope
+  open-continuation-variable-scope
   prepare-script
   prepare-script-id
   prepare-script-ignore-return
@@ -327,8 +329,6 @@ list(APPEND tests
   promise-rejection-unhandled-throw
   promise-rejection-unhandled-throw-destroy-env
   promise-rejection-unhandled-throw-nested
-  open-continuation-scope
-  open-continuation-variable-scope
   queue-microtask
   queue-microtask-with-callback
   queue-microtask-with-callback-terminate

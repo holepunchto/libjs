@@ -2372,6 +2372,22 @@ struct js_env_s {
     isolate->SetContinuationPreservedEmbedderData(snapshot);
   }
 
+  // Finalizers run in the empty snapshot, so they do not inherit whatever
+  // snapshot happens to be current when the garbage collector runs.
+  template <typename F>
+  void
+  call_into_finalizer(F &&fn) {
+    auto scope = HandleScope(isolate);
+
+    if (get_continuation_snapshot()->IsUndefined()) {
+      call_into_native<void>(fn, true /* detached */);
+    } else {
+      call_with_continuation_snapshot(Local<Value>(), [&] {
+        call_into_native<void>(fn, true /* detached */);
+      });
+    }
+  }
+
   template <typename F>
   void
   call_with_continuation_snapshot(Local<Value> snapshot, F &&fn) {
@@ -2695,9 +2711,6 @@ struct js_escapable_handle_scope_s {
   operator=(const js_escapable_handle_scope_s &) = delete;
 };
 
-// Handle scopes are opened and closed often, and must close in the reverse order
-// they were opened. Their storage is therefore kept as a stack on the
-// environment and reused as scopes are opened again.
 struct js_continuation_scope_s {
   Local<Value> previous;
 
@@ -2710,6 +2723,9 @@ struct js_continuation_scope_s {
   operator=(const js_continuation_scope_s &) = delete;
 };
 
+// Handle scopes are opened and closed often, and must close in the reverse order
+// they were opened. Their storage is therefore kept as a stack on the
+// environment and reused as scopes are opened again.
 struct js_handle_scope_slot_s {
   union {
     js_handle_scope_t handle_scope;
@@ -3243,13 +3259,8 @@ private:
     if (finalizer->finalize_cb) {
       auto env = finalizer->env;
 
-      env->call_with_continuation_snapshot(Local<Value>(), [&] {
-        env->call_into_native<void>(
-          [&] {
-            finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
-          },
-          true /* detached */
-        );
+      env->call_into_finalizer([&] {
+        finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
       });
     }
 
@@ -4289,13 +4300,8 @@ js__finalize_external_strings(js_env_t *env) {
   auto finalize = [env](auto string) {
     if (string->finalize_cb == nullptr) return;
 
-    env->call_with_continuation_snapshot(Local<Value>(), [&] {
-      env->call_into_native<void>(
-        [&] {
-          string->finalize();
-        },
-        true /* detached */
-      );
+    env->call_into_finalizer([&] {
+      string->finalize();
     });
   };
 
