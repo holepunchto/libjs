@@ -1165,9 +1165,11 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
  * recompiles from `source`, so a rejected cache is a missed optimization, never
  * a failure.
  *
- * The `source` text and origin must still be supplied, as the engine validates
- * the cache against them. On return, `*cache_rejected` reports whether the cache
- * was usable; it may be `NULL` if the caller does not care.
+ * The `source` text and origin must still be supplied, and the cache must have
+ * been produced from the same ones. Not every engine checks this, so passing a
+ * cache produced from anything else is undefined behavior. On return,
+ * `*cache_rejected` reports whether the cache was usable; it may be `NULL` if
+ * the caller does not care.
  */
 int
 js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_script_t **result);
@@ -1258,8 +1260,8 @@ js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_val
 /**
  * As `js_create_module()`, but with a code cache previously produced by
  * `js_create_module_code_cache()` supplied up front. Behaves exactly as
- * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
- * validated against `source` and the origin, and `*cache_rejected` reports
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint
+ * that must match `source` and the origin, and `*cache_rejected` reports
  * whether it was usable (`NULL` if the caller does not care).
  */
 int
@@ -1819,8 +1821,8 @@ js_compile_function(js_env_t *env, const char *name, size_t name_len, const char
 /**
  * As `js_compile_function()`, but with a code cache previously produced by
  * `js_create_function_code_cache()` supplied up front. Behaves exactly as
- * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
- * validated against `source` and the origin, and `*cache_rejected` reports
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint
+ * that must match `source` and the origin, and `*cache_rejected` reports
  * whether it was usable (`NULL` if the caller does not care). On a rejected
  * cache the engine silently recompiles from `source`.
  */
