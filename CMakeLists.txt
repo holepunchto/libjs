@@ -38,6 +38,8 @@ if(NOT TARGET v8)
   )
 endif()
 
+get_property(shared GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
+
 add_library(js OBJECT)
 
 harden(js)
@@ -48,7 +50,7 @@ set_target_properties(
   C_STANDARD 11
   CXX_STANDARD 20
   CXX_SCAN_FOR_MODULES OFF
-  POSITION_INDEPENDENT_CODE ON
+  POSITION_INDEPENDENT_CODE ${shared}
 )
 
 target_sources(
@@ -100,23 +102,25 @@ if(MSVC)
   )
 endif()
 
-add_library(js_shared SHARED)
+if(shared)
+  add_library(js_shared SHARED)
 
-set_target_properties(
-  js_shared
-  PROPERTIES
-  OUTPUT_NAME js
-  WINDOWS_EXPORT_ALL_SYMBOLS ON
-)
+  set_target_properties(
+    js_shared
+    PROPERTIES
+    OUTPUT_NAME js
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+  )
 
-target_link_libraries(
-  js_shared
-  PUBLIC
-    js
-    uv
-    v8
-    utf_shared
-)
+  target_link_libraries(
+    js_shared
+    PUBLIC
+      js
+      uv
+      v8
+      utf_shared
+  )
+endif()
 
 add_library(js_static STATIC)
 
@@ -136,7 +140,11 @@ target_link_libraries(
     utf_static
 )
 
-install(TARGETS js_shared js_static)
+install(TARGETS js_static)
+
+if(shared)
+  install(TARGETS js_shared)
+endif()
 
 install(FILES include/js.h DESTINATION include)
 
