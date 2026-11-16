@@ -178,6 +178,7 @@ add_test_executables(
   define-properties.c
   delete-element.c
   delete-property.c
+  destroy-context-with-finalizer.c
   dynamic-import.c
   dynamic-import-function-handler.c
   dynamic-import-handler-code-cache.c
@@ -371,6 +372,9 @@ add_test_executables(
   set-prototype.c
   symbol-for.c
   terminate-execution.c
+  terminate-execution-call-api.c
+  terminate-execution-call-constructor.c
+  terminate-execution-call-function.c
   threadsafe-function-context-acquire.c
   threadsafe-function-ref-unref.c
   threads.c

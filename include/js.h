@@ -3595,7 +3595,9 @@ js_fatal_exception(js_env_t *env, js_value_t *error);
 
 /**
  * Terminate JavaScript execution at the next possible opportunity, discarding
- * the remainder of the execution stack.
+ * the remainder of the execution stack. The termination cannot be caught by
+ * JavaScript. Once execution has been terminated, the environment can run
+ * JavaScript again.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
