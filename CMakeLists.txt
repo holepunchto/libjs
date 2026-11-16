@@ -16,19 +16,15 @@ fetch_package("github:libuv/libuv@1.53.0")
 
 fetch_package("github:holepunchto/libutf")
 
-if(NOT TARGET c++)
-  add_gn_target(c++ prebuilds:c++)
-endif()
+add_gn_target(c++ prebuilds:c++)
 
-if(NOT TARGET v8)
-  add_gn_target(v8 prebuilds:v8)
+add_gn_target(v8 prebuilds:v8)
 
-  target_link_libraries(
-    v8
-    INTERFACE
-      c++
-  )
-endif()
+target_link_libraries(
+  v8
+  INTERFACE
+    c++
+)
 
 add_library_targets(
   js
