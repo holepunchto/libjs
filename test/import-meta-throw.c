@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 on_module_meta(js_env_t *env, js_module_t *module, js_value_t *meta, void *data) {

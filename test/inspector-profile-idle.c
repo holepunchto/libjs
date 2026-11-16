@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Profiles an environment while its loop waits on a timer, with a second
 // environment on the same loop. The wait must show up as idle time. Sampling
@@ -100,7 +100,8 @@ main() {
   e = js_create_string_utf8(a, (utf8_t *) "const { nodes, startTime, endTime } = JSON.parse(response).result.profile\n"
                                           "const idle = nodes.find((node) => node.callFrame.functionName === '(idle)')\n"
                                           "idle ? Math.floor(idle.hitCount * 1000 / (endTime - startTime) * 100) : 0",
-                            -1, &script);
+                            -1,
+                            &script);
   assert(e == 0);
 
   js_value_t *result;

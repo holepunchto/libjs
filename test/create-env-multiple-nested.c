@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // A native function of one environment calls into a second environment on the
 // same thread and then keeps working in the first. Entering the second

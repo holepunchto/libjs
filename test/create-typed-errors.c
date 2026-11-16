@@ -3,7 +3,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 assert_error_message(js_env_t *env, js_value_t *error, const char *expected) {

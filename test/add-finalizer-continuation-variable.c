@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static js_value_t *key;
 static bool finalize_called = false;

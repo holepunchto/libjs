@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static int unhandled_called = 0;
 

@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static uint32_t
 run(js_env_t *env, js_script_t *script) {

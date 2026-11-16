@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Terminating execution skips the microtask checkpoint, so the microtask is
 // still queued when the environment is torn down and never runs.

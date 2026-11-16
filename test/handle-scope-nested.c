@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Nests handle scopes across several segments of the environment's storage,
 // alternating plain and escapable ones, and checks that every scope keeps its

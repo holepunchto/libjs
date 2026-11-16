@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static bool fn_called = false;
 
