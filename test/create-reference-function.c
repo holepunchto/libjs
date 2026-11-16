@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 js_value_t *
 on_call(js_env_t *env, js_callback_info_t *info) {

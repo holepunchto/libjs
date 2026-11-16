@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 expect_uint32(js_env_t *env, js_value_t *symbol, uint32_t expected) {

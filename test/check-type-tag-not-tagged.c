@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 int
 main() {
@@ -27,7 +27,7 @@ main() {
 
   // An object that was never tagged carries no tag to read.
   bool result = true;
-  e = js_check_type_tag(env, object, &(js_type_tag_t) {1, 2}, &result);
+  e = js_check_type_tag(env, object, &(js_type_tag_t){1, 2}, &result);
   assert(e == 0);
 
   assert(!result);

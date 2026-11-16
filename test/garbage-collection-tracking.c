@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static bool gc_start_called = false;
 static bool gc_end_called = false;

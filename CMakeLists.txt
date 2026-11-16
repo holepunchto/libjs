@@ -2,12 +2,11 @@ cmake_minimum_required(VERSION 4.0)
 
 find_package(cmake-fetch REQUIRED PATHS node_modules/cmake-fetch)
 find_package(cmake-harden REQUIRED PATHS node_modules/cmake-harden)
+find_package(cmake-prelude REQUIRED PATHS node_modules/cmake-prelude)
+find_package(cmake-test REQUIRED PATHS node_modules/cmake-test)
+find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
 
-if(NOT TARGET c++ OR NOT TARGET v8)
-  find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
-endif()
-
-project(js C CXX)
+project(js LANGUAGES C CXX VERSION 0.0.0)
 
 fetch_package("github:libuv/libuv@1.53.0")
 
@@ -18,7 +17,12 @@ if(TARGET js)
     js
     INTERFACE
       include
-      $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
+  )
+
+  target_link_libraries(
+    js
+    INTERFACE
+      utf::headers
   )
 
   return()
@@ -38,118 +42,77 @@ if(NOT TARGET v8)
   )
 endif()
 
-get_property(shared GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
-
-add_library(js OBJECT)
+add_library_targets(
+  js
+  HEADERS
+    include/js.h
+  FEATURES
+    c_std_11
+  SOURCES
+    src/js.cc
+  LINK
+    utf::<TYPE>
+  STATIC_LINK
+    uv_a
+    v8
+  SHARED_LINK
+    uv
+    v8
+  EXPORT OFF
+)
 
 harden(js)
 
-set_target_properties(
+target_compile_features(
   js
-  PROPERTIES
-  C_STANDARD 11
-  CXX_STANDARD 20
-  CXX_SCAN_FOR_MODULES OFF
-  POSITION_INDEPENDENT_CODE ${shared}
-)
-
-target_sources(
-  js
-  INTERFACE
-    include/js.h
   PRIVATE
-    src/js.cc
+    cxx_std_20
 )
 
 target_include_directories(
   js
-  INTERFACE
-    include
-  PUBLIC
-    $<TARGET_PROPERTY:c++,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:utf,INTERFACE_INCLUDE_DIRECTORIES>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(
   js
-  PUBLIC
-    $<TARGET_PROPERTY:c++,INTERFACE_COMPILE_DEFINITIONS>
   PRIVATE
     $<TARGET_PROPERTY:v8,INTERFACE_COMPILE_DEFINITIONS>
 )
 
+target_include_directories(
+  js_headers
+  INTERFACE
+    $<TARGET_PROPERTY:c++,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_compile_definitions(
+  js_headers
+  INTERFACE
+    $<TARGET_PROPERTY:c++,INTERFACE_COMPILE_DEFINITIONS>
+)
+
 target_compile_options(
-  js
-  PUBLIC
+  js_headers
+  INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
     $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>
 )
 
-if(MSVC)
+if(WIN32)
   target_compile_options(
-    js
-    PUBLIC
+    js_headers
+    INTERFACE
       /MT$<$<CONFIG:Debug>:d>
   )
 
   target_link_options(
-    js
-    PUBLIC
+    js_headers
+    INTERFACE
       /DEFAULTLIB:libcpmt$<$<CONFIG:Debug>:d>
   )
 endif()
 
-if(shared)
-  add_library(js_shared SHARED)
-
-  set_target_properties(
-    js_shared
-    PROPERTIES
-    OUTPUT_NAME js
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-  )
-
-  target_link_libraries(
-    js_shared
-    PUBLIC
-      js
-      uv
-      v8
-      utf_shared
-  )
-endif()
-
-add_library(js_static STATIC)
-
-set_target_properties(
-  js_static
-  PROPERTIES
-  OUTPUT_NAME js
-  PREFIX lib
-)
-
-target_link_libraries(
-  js_static
-  PUBLIC
-    js
-    uv_a
-    v8
-    utf_static
-)
-
-install(TARGETS js_static)
-
-if(shared)
-  install(TARGETS js_shared)
-endif()
-
-install(FILES include/js.h DESTINATION include)
-
-if(PROJECT_IS_TOP_LEVEL)
-  enable_testing()
-
-  add_subdirectory(test)
-endif()
+add_test_subdirectory(test)

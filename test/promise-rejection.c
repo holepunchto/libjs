@@ -2,8 +2,8 @@
 #include <stdbool.h>
 #include <uv.h>
 
-#include "../include/js.h"
 #include "fixtures/promise-rejection.js.h"
+#include <js.h>
 
 int unhandled_called = 0;
 

@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Creates external strings across several segments of the environment's
 // storage and checks that each is finalized once its string is collected, and

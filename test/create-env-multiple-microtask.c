@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Exercises microtask draining for two environments living on the same thread.
 // Each environment schedules a microtask that mutates its own global; the

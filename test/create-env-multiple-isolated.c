@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Verifies that two environments living on the same thread keep entirely
 // separate state. A global defined in one environment must not be visible in

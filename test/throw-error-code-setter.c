@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 assert_code(js_env_t *env, js_value_t *error) {

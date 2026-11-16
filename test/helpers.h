@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <utf.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static inline void
 js_print_pending_exception(js_env_t *env) {

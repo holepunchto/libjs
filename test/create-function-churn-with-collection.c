@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 #define rounds 20
 

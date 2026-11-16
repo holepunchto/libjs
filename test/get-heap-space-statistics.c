@@ -4,7 +4,7 @@
 #include <string.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 int
 main() {

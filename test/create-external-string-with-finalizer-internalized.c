@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // Using an external string as a property key whose name is already
 // internalized makes the engine release the string right away, while it holds

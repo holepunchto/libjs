@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // A proxy is a proxy no matter what it wraps.
 static const char *sources[] = {

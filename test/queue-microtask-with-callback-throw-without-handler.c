@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 on_microtask(js_env_t *env, void *data) {

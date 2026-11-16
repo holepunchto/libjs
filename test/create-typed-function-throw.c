@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static bool typed_throw = false;
 static int typed_calls_after_throw = 0;

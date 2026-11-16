@@ -2,7 +2,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 // An object of no particular kind is plain `js_object`, including a function,
 // which is classified by `js_typeof()` instead.

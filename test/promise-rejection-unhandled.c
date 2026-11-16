@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <uv.h>
 
-#include "../include/js.h"
 #include "fixtures/promise-rejection-unhandled.js.h"
+#include <js.h>
 
 int unhandled_called = 0;
 

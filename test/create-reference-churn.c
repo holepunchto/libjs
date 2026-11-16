@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 #define len 5000
 
