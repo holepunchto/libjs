@@ -8,13 +8,13 @@ find_package(cmake-gn REQUIRED PATHS node_modules/cmake-gn)
 
 project(js LANGUAGES C CXX VERSION 0.0.0)
 
-if(TARGET js)
-  return()
-endif()
-
 fetch_package("github:libuv/libuv@1.53.0")
 
 fetch_package("github:holepunchto/libutf")
+
+if(TARGET js)
+  return()
+endif()
 
 add_gn_target(c++ prebuilds:c++)
 
