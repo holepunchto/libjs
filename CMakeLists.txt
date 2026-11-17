@@ -12,7 +12,27 @@ fetch_package("github:libuv/libuv@1.53.0")
 
 fetch_package("github:holepunchto/libutf")
 
-if(TARGET js)
+if(TARGET js_headers)
+  target_sources(
+    js_headers
+    INTERFACE
+      FILE_SET HEADERS
+      BASE_DIRS include
+      FILES include/js.h
+  )
+
+  target_include_directories(
+    js_headers
+    INTERFACE
+      $<TARGET_PROPERTY:uv,INTERFACE_INCLUDE_DIRECTORIES>
+  )
+
+  target_link_libraries(
+    js_headers
+    INTERFACE
+      utf::headers
+  )
+
   return()
 endif()
 
