@@ -1,9 +1,3 @@
-if(TARGET js_shared)
-  set(library js::shared)
-else()
-  set(library js::static)
-endif()
-
 add_test_executables(
   add-finalizer.c
   add-finalizer-continuation-variable.c
@@ -412,5 +406,5 @@ add_test_executables(
   wrap-with-finalizer-destroy-env.c
   wrap-with-reference.c
   LINK
-    ${library}
+    js::<TYPE>
 )

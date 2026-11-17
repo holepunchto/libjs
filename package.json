@@ -16,6 +16,6 @@
     "cmake-gn": "^1.0.0",
     "cmake-harden": "^1.0.2",
     "cmake-prelude": "^0.1.3",
-    "cmake-test": "^0.1.0"
+    "cmake-test": "^0.1.6"
   }
 }
