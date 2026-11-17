@@ -36,12 +36,12 @@ add_library_targets(
     src/js.cc
   LINK
     utf::<TYPE>
-  STATIC_LINK
-    uv_a
-    v8
-  SHARED_LINK
-    uv
-    v8
+    PRIVATE
+      v8
+    STATIC
+      uv_a
+    SHARED
+      uv
   EXPORT OFF
 )
 
@@ -51,18 +51,6 @@ target_compile_features(
   js
   PRIVATE
     cxx_std_20
-)
-
-target_include_directories(
-  js
-  PRIVATE
-    $<TARGET_PROPERTY:v8,INTERFACE_INCLUDE_DIRECTORIES>
-)
-
-target_compile_definitions(
-  js
-  PRIVATE
-    $<TARGET_PROPERTY:v8,INTERFACE_COMPILE_DEFINITIONS>
 )
 
 target_include_directories(
