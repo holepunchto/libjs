@@ -346,13 +346,17 @@ add_test_executables(
   reference-unref-with-finalizer.c
   resolve-deferred-thenable-call-function-throw.c
   run-from-snapshot.c
+  run-from-snapshot-continuation-variable.c
   run-from-snapshot-delegate.c
   run-from-snapshot-dynamic-import.c
+  run-from-snapshot-error-stack.c
   run-from-snapshot-function.c
   run-from-snapshot-import-meta.c
   run-from-snapshot-module.c
+  run-from-snapshot-object-global.c
   run-from-snapshot-script.c
   run-from-snapshot-script-dynamic-import.c
+  run-from-snapshot-webassembly.c
   run-from-snapshot-wrap.c
   run-module.c
   run-module-async.c

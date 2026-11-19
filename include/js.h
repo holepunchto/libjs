@@ -1135,6 +1135,11 @@ js_destroy_env(js_env_t *env);
  * Create an environment set up for serialization. The returned environment is
  * warmed up with the regular run/compile APIs, then serialized and consumed by
  * `js_take_snapshot()`.
+ *
+ * The environment lacks some globals that a regular environment provides,
+ * namely `WebAssembly`, `Error.stackTraceLimit`, and some newer language
+ * features. An environment booted from the snapshot has them. Errors created
+ * while warming up have no stack trace, and gain none after restore.
  */
 JS_EXPORT int
 js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_options_t *options, js_env_t **result);
@@ -1144,6 +1149,10 @@ js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_o
  * environment is consumed and must not be passed to `js_destroy_env()`. On
  * success `*data` is a newly allocated buffer owned by the caller and freed with
  * `free()`.
+ *
+ * Only the default context of the environment is serialized. Contexts created
+ * with `js_create_context()` are not, and the behavior is undefined if an
+ * object created in one of them is reachable from the default context.
  */
 JS_EXPORT int
 js_take_snapshot(js_env_t *env, void **data, size_t *len);
