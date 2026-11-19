@@ -35,15 +35,15 @@ typedef struct uv_loop_s uv_loop_t;
  */
 
 /**
- * All functions report success by returning `0` and failure by returning a
- * negative value.
+ * All functions report success by returning `0` and failure by returning one
+ * of the negative status codes below.
  *
  * A function taking a `js_env_t` reports a failure as `js_pending_exception`
  * if an exception is pending on the environment, or as `js_uncaught_exception`
  * if the exception could not be made pending as the JavaScript execution stack
  * is empty. A function taking no environment has nowhere to report an
- * exception, as it may be called without one, and so reports a failure as a
- * negative value alone.
+ * exception, as it may be called without one, and so reports a failure as one
+ * of the other codes instead, as documented for that function.
  */
 
 /**
@@ -125,6 +125,33 @@ enum {
    * JavaScript execution stack is empty.
    */
   js_uncaught_exception = -2,
+
+  /**
+   * The threadsafe function has been released, whether by every thread holding
+   * it, in abort mode, or along with its environment.
+   */
+  js_closing = -3,
+
+  /**
+   * The queue of the threadsafe function is full.
+   */
+  js_queue_full = -4,
+
+  /**
+   * The engine does not support the operation.
+   */
+  js_unsupported = -5,
+
+  /**
+   * The operation is not valid in the current state, such as releasing a
+   * threadsafe function that no thread holds.
+   */
+  js_invalid_state = -6,
+
+  /**
+   * The memory needed for the operation could not be allocated.
+   */
+  js_out_of_memory = -7,
 };
 
 /**
@@ -462,7 +489,9 @@ typedef js_value_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, j
  * Called on the loop of the environment for every call made with
  * `js_call_threadsafe_function()`, and is passed the function the threadsafe
  * function was created with, which may be `NULL`, its context, and the data of
- * the call.
+ * the call. For calls still queued when the environment is destroyed, it is
+ * instead passed `NULL` for both the environment and the function, so that the
+ * data can be released.
  */
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
 
@@ -1033,6 +1062,8 @@ struct js_garbage_collection_tracking_options_s {
  * read for the duration of the call. As the engine is initialized and
  * configured globally, at most one platform may exist at a time within a
  * process.
+ *
+ * The platform must eventually be destroyed with `js_destroy_platform()`.
  */
 JS_EXPORT int
 js_create_platform(uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result);
@@ -1078,24 +1109,62 @@ js_get_platform_limits(js_platform_t *platform, js_platform_limits_t *result);
 JS_EXPORT int
 js_get_platform_loop(js_platform_t *platform, uv_loop_t **result);
 
+/**
+ * Create an empty list of external references, the addresses of the native
+ * functions that a snapshot may refer to. The list must eventually be destroyed
+ * with `js_destroy_external_references()`, but not before every environment it
+ * was passed to has been destroyed or consumed by `js_take_snapshot()`.
+ *
+ * Fails with `js_unsupported` if the engine does not support snapshots.
+ */
 JS_EXPORT int
 js_create_external_references(js_external_references_t **result);
 
+/**
+ * Add an address to a list of external references.
+ */
 JS_EXPORT int
 js_add_external_reference(js_external_references_t *references, const void *address);
 
+/**
+ * Get the addresses of a list of external references as an array of `len`
+ * entries followed by a null terminator. The array remains valid until the
+ * list is changed or destroyed.
+ */
 JS_EXPORT int
 js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len);
 
+/**
+ * Destroy a list of external references. The behavior is undefined if the list
+ * is used afterwards.
+ */
 JS_EXPORT int
 js_destroy_external_references(js_external_references_t *references);
 
+/**
+ * Create an empty set of rebind handlers, consulted while booting an
+ * environment from a snapshot to re-supply the per-instance `data` of the
+ * native bindings it reconstructs. The set is only read for the duration of
+ * `js_create_env()` and must eventually be destroyed with
+ * `js_destroy_rebind_handlers()`.
+ *
+ * Fails with `js_unsupported` if the engine does not support snapshots.
+ */
 JS_EXPORT int
 js_create_rebind_handlers(js_rebind_handlers_t **result);
 
+/**
+ * Add a handler to a set of rebind handlers. For each reconstructed binding,
+ * the handlers are invoked with their `data` in the order they were added until
+ * one of them returns `true`.
+ */
 JS_EXPORT int
 js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data);
 
+/**
+ * Destroy a set of rebind handlers. The behavior is undefined if the set is used
+ * afterwards.
+ */
 JS_EXPORT int
 js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
 
@@ -1110,6 +1179,10 @@ js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
  * another. Several environments may be created from the same platform and run
  * on separate loops and threads, but an environment may only be used from the
  * thread that its loop runs on.
+ *
+ * The environment must eventually be destroyed with `js_destroy_env()`.
+ * Fails with `js_out_of_memory` if the memory for the environment could not be
+ * allocated.
  */
 JS_EXPORT int
 js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result);
@@ -1134,7 +1207,9 @@ js_destroy_env(js_env_t *env);
 /**
  * Create an environment set up for serialization. The returned environment is
  * warmed up with the regular run/compile APIs, then serialized and consumed by
- * `js_take_snapshot()`.
+ * `js_take_snapshot()`, which must eventually be called with it in place of
+ * `js_destroy_env()`. Fails with `js_unsupported` if the engine does not
+ * support snapshots.
  *
  * The environment lacks some globals that a regular environment provides,
  * namely `WebAssembly`, `Error.stackTraceLimit`, and some newer language
@@ -1151,8 +1226,9 @@ js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_o
  * `free()`.
  *
  * Only the default context of the environment is serialized. Contexts created
- * with `js_create_context()` are not, and the behavior is undefined if an
- * object created in one of them is reachable from the default context.
+ * with `js_create_context()` must be destroyed before the snapshot is taken,
+ * and the behavior is undefined if an object created in one of them is
+ * reachable from the default context.
  */
 JS_EXPORT int
 js_take_snapshot(js_env_t *env, void **data, size_t *len);
@@ -1260,6 +1336,8 @@ js_escape_handle(js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *
 /**
  * Create a context with a global object of its own. Values may be passed
  * freely between the contexts of an environment, but not between environments.
+ * The context must be destroyed with `js_destroy_context()` before the
+ * environment is destroyed.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -1373,8 +1451,7 @@ JS_EXPORT int
 js_run_prepared_script(js_env_t *env, js_script_t *script, js_value_t **result);
 
 /**
- * Delete a script previously compiled with `js_prepare_script()`, releasing the
- * resources held by its handle.
+ * Delete a prepared script, releasing the resources held by its handle.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -1405,6 +1482,10 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
  * Look up a prepared script reconstructed from a snapshot by its `id` and return
  * its handle. A prepared script carries no callbacks or per-instance state, so
  * nothing needs to be re-supplied after restore.
+ *
+ * Every lookup of the same script returns the same handle, which must
+ * eventually be deleted with `js_delete_script()`. The script can no longer be
+ * looked up once deleted.
  */
 JS_EXPORT int
 js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result);
@@ -1515,6 +1596,10 @@ js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result);
  * Look up a module reconstructed from a snapshot by its `id` and return its
  * handle. Only fully evaluated modules survive a snapshot; their callbacks are
  * never invoked again after restore, so none need to be re-supplied.
+ *
+ * Every lookup of the same module returns the same handle, which must
+ * eventually be deleted with `js_delete_module()`. The module can no longer be
+ * looked up once deleted.
  */
 JS_EXPORT int
 js_get_module_by_id(js_env_t *env, js_value_t *id, js_module_t **result);
@@ -3504,9 +3589,22 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
  * thread holding it has let go.
  *
  * The `finalize_cb` is invoked with the `context` and the `finalize_hint` on
- * the loop of the environment once the handle has been released. If the
- * environment is destroyed first, the handle is released along with it and
- * must no longer be used by any thread.
+ * the loop of the environment once the handle has been released and every call
+ * queued before then has been dispatched. If the environment is destroyed
+ * first, the handle is released along with it. Any calls still queued are then
+ * passed to the `cb` with neither an environment nor a function, so that their
+ * data can be released, or discarded if no `cb` was given, after which the
+ * `finalize_cb` is invoked while the environment is being destroyed, which it
+ * may still use.
+ *
+ * A thread may keep using the handle until it has released it, or until a call
+ * has failed with `js_closing`, which also lets go of the handle on behalf of
+ * the thread. The handle is freed once it has been released and every thread
+ * holding it has let go, and the behavior is undefined if a thread uses it
+ * after letting go.
+ *
+ * Throws if the environment is being destroyed and its teardown callbacks have
+ * all finished, such as when called from a finalizer run during teardown.
  */
 JS_EXPORT int
 js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result);
@@ -3522,12 +3620,19 @@ js_get_threadsafe_function_context(js_threadsafe_function_t *function, void **re
 
 /**
  * Call a threadsafe function, queueing the `data` to be dispatched on the loop
- * of the environment. May be called from any thread.
+ * of the environment. May be called from any thread. Calls are dispatched in
+ * the order in which they were queued.
  *
  * The `mode` selects what happens when the queue is full: a blocking call
- * waits for room, whereas a non-blocking call fails immediately. A call also
- * fails if the handle has already been released. Taking no environment, the
- * function reports a failure as a negative value alone.
+ * waits for room, whereas a non-blocking call fails immediately with
+ * `js_queue_full`. A blocking call must not be made from the thread that the
+ * loop of the environment runs on, as only that thread can make room in the
+ * queue.
+ *
+ * Fails with `js_closing` if the handle has been released, including while a
+ * blocking call is waiting for room, in which case the call also lets go of the
+ * handle on behalf of the calling thread. Fails with `js_invalid_state` if no
+ * thread holds the handle.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -3536,8 +3641,9 @@ js_call_threadsafe_function(js_threadsafe_function_t *function, void *data, js_t
 
 /**
  * Acquire a threadsafe function on behalf of the calling thread, so that the
- * handle is not released while the thread still holds it. Fails if the handle
- * has already been released. May be called from any thread.
+ * handle is not released while the thread still holds it. Fails with
+ * `js_closing` if the handle has already been released. May be called from any
+ * thread.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
@@ -3550,12 +3656,13 @@ js_acquire_threadsafe_function(js_threadsafe_function_t *function);
  *
  * In `js_threadsafe_function_release` mode the handle is released once every
  * thread holding it has let go, whereas in `js_threadsafe_function_abort` mode
- * it is released at once, regardless of the other threads. Any call made after
- * the handle has been released fails.
+ * it is released at once, regardless of the other threads, which keep holding
+ * it until they let go of it themselves. Any call made after the handle has
+ * been released fails, whereas calls queued before then are still dispatched.
  *
- * The handle itself stays valid until its finalize callback has been invoked
- * on the loop of the environment, and the behavior is undefined if it is used
- * after that.
+ * Releasing lets go of the handle on behalf of the calling thread, which must
+ * not use it afterwards. Fails with `js_invalid_state` if no thread holds the
+ * handle.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
