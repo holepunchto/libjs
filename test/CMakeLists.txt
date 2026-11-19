@@ -126,6 +126,9 @@ add_test_executables(
   create-sharedarraybuffer.c
   create-sharedarraybuffer-with-backing-store.c
   create-sharedarraybuffer-with-backing-store-across-envs.c
+  create-snapshot.c
+  create-snapshot-with-handles.c
+  create-snapshot-with-inspector.c
   create-string-latin1.c
   create-string-too-long.c
   create-string-utf8.c
@@ -133,6 +136,7 @@ add_test_executables(
   create-string-utf16le.c
   create-synthetic-module-code-cache.c
   create-threadsafe-function.c
+  create-threadsafe-function-destroy-env.c
   create-threadsafe-function-with-callback.c
   create-threadsafe-function-with-context.c
   create-threadsafe-function-with-finalizer.c
@@ -188,6 +192,7 @@ add_test_executables(
   dynamic-import-with-referrer-script.c
   dynamic-import-without-handler.c
   escapable-handle-scope.c
+  external-references.c
   fatal-exception.c
   fatal-exception-without-handler.c
   freeze.c
@@ -343,6 +348,20 @@ add_test_executables(
   reference-unref.c
   reference-unref-with-finalizer.c
   resolve-deferred-thenable-call-function-throw.c
+  run-from-snapshot.c
+  run-from-snapshot-add-finalizer.c
+  run-from-snapshot-continuation-variable.c
+  run-from-snapshot-delegate.c
+  run-from-snapshot-dynamic-import.c
+  run-from-snapshot-error-stack.c
+  run-from-snapshot-function.c
+  run-from-snapshot-import-meta.c
+  run-from-snapshot-module.c
+  run-from-snapshot-object-global.c
+  run-from-snapshot-script.c
+  run-from-snapshot-script-dynamic-import.c
+  run-from-snapshot-webassembly.c
+  run-from-snapshot-wrap.c
   run-module.c
   run-module-async.c
   run-module-cyclic-import.c
