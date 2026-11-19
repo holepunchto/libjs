@@ -45,7 +45,7 @@ main() {
 
   {
     uint32_t value;
-    js_get_value_uint32(env, result, &value);
+    e = js_get_value_uint32(env, result, &value);
     assert(e == 0);
 
     assert(value == 42);

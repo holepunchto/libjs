@@ -94,7 +94,8 @@ main() {
   e = uv_async_init(loop, &async, on_async);
   assert(e == 0);
 
-  uv_run(loop, UV_RUN_DEFAULT);
+  e = uv_run(loop, UV_RUN_DEFAULT);
+  assert(e == 0);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);

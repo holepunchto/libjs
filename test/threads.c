@@ -50,7 +50,8 @@ main() {
   e = uv_run(loop, UV_RUN_DEFAULT);
   assert(e == 0);
 
-  uv_thread_join(&thread);
+  e = uv_thread_join(&thread);
+  assert(e == 0);
 
   e = js_destroy_env(env);
   assert(e == 0);

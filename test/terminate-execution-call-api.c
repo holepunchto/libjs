@@ -18,27 +18,38 @@ on_terminate(js_env_t *env, js_callback_info_t *info) {
   // before control returns to JavaScript.
   uv_sleep(100);
 
-  // The results are unspecified, but the calls must be safe to make.
+  // The results are unspecified, but the calls must be safe to make. A value
+  // is only passed on if the call that produced it succeeded.
   js_value_t *global;
-  js_get_global(env, &global);
+  e = js_get_global(env, &global);
 
-  js_value_t *value;
-  js_get_named_property(env, global, "value", &value);
+  if (e == 0) {
+    js_value_t *value;
+    e = js_get_named_property(env, global, "value", &value);
+    (void) e;
+  }
 
   js_value_t *array;
-  js_create_array(env, &array);
+  e = js_create_array(env, &array);
 
-  uint32_t len;
-  js_get_array_length(env, array, &len);
+  if (e == 0) {
+    uint32_t len;
+    e = js_get_array_length(env, array, &len);
+    (void) e;
+  }
 
   js_value_t *date;
-  js_create_date(env, 0, &date);
+  e = js_create_date(env, 0, &date);
+  (void) e;
 
   js_value_t *message;
-  js_create_string_utf8(env, (utf8_t *) "message", -1, &message);
+  e = js_create_string_utf8(env, (utf8_t *) "message", -1, &message);
 
-  js_value_t *error;
-  js_create_error(env, NULL, message, &error);
+  if (e == 0) {
+    js_value_t *error;
+    e = js_create_error(env, NULL, message, &error);
+    (void) e;
+  }
 
   return NULL;
 }

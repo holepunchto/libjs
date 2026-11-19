@@ -32,6 +32,7 @@ main() {
 
   bool is_undefined;
   e = js_is_undefined(env, value, &is_undefined);
+  assert(e == 0);
 
   assert(is_undefined);
 

@@ -31,7 +31,8 @@ main() {
   e = js_run_script(env, NULL, 0, 0, script, &promise);
   assert(e == 0);
 
-  uv_run(loop, UV_RUN_DEFAULT);
+  e = uv_run(loop, UV_RUN_DEFAULT);
+  assert(e == 0);
 
   js_value_t *result;
   e = js_get_promise_result(env, promise, &result);

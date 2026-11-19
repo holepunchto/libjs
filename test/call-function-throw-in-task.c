@@ -83,7 +83,8 @@ main() {
   e = js_request_garbage_collection(env);
   assert(e == 0);
 
-  uv_run(loop, UV_RUN_NOWAIT);
+  e = uv_run(loop, UV_RUN_NOWAIT);
+  (void) e;
 
   assert(fn_called);
 

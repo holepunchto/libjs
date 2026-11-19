@@ -51,7 +51,8 @@ main() {
   e = uv_timer_start(&timer, on_timer, 100, 0);
   assert(e == 0);
 
-  uv_run(loop, UV_RUN_DEFAULT);
+  e = uv_run(loop, UV_RUN_DEFAULT);
+  assert(e == 0);
 
   js_handle_scope_t *scope;
   e = js_open_handle_scope(env, &scope);

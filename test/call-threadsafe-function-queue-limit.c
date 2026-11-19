@@ -31,7 +31,8 @@ check_limit(uv_loop_t *loop, js_env_t *env, size_t limit) {
   e = js_call_threadsafe_function(function, (void *) (intptr_t) limit, js_threadsafe_function_nonblocking);
   assert(e == js_queue_full);
 
-  uv_run(loop, UV_RUN_NOWAIT);
+  e = uv_run(loop, UV_RUN_NOWAIT);
+  (void) e;
 
   assert(next == (intptr_t) limit);
 

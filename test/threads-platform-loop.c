@@ -95,5 +95,6 @@ main() {
   e = uv_run(loop, UV_RUN_DEFAULT);
   assert(e == 0);
 
-  uv_thread_join(&thread);
+  e = uv_thread_join(&thread);
+  assert(e == 0);
 }
