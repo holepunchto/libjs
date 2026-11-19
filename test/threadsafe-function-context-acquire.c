@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static bool called = false;
 static js_threadsafe_function_t *tsfn;

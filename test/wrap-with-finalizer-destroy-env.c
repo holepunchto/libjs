@@ -3,7 +3,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static bool teardown_called = false;
 static int finalize_calls = 0;

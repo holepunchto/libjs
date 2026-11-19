@@ -3,7 +3,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static void
 check(js_env_t *env, double value, int64_t expected) {

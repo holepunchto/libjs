@@ -4,7 +4,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static int typed_calls = 0;
 static int untyped_calls = 0;

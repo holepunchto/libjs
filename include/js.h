@@ -10,7 +10,22 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 #include <utf.h>
-#include <uv.h>
+
+#if defined(_WIN32)
+#if defined(JS_BUILDING)
+#define JS_EXPORT __declspec(dllexport)
+#elif defined(JS_SHARED)
+#define JS_EXPORT __declspec(dllimport)
+#else
+#define JS_EXPORT
+#endif
+#elif defined(__GNUC__)
+#define JS_EXPORT __attribute__((visibility("default")))
+#else
+#define JS_EXPORT
+#endif
+
+typedef struct uv_loop_s uv_loop_t;
 
 /**
  * An ABI stable interface to an embedded JavaScript engine. The interface is
@@ -70,6 +85,7 @@ typedef struct js_env_options_s js_env_options_t;
 typedef struct js_snapshot_options_s js_snapshot_options_t;
 typedef struct js_handle_scope_s js_handle_scope_t;
 typedef struct js_escapable_handle_scope_s js_escapable_handle_scope_t;
+typedef struct js_continuation_scope_s js_continuation_scope_t;
 typedef struct js_context_s js_context_t;
 typedef struct js_module_s js_module_t;
 typedef struct js_script_s js_script_t;
@@ -1018,7 +1034,7 @@ struct js_garbage_collection_tracking_options_s {
  * configured globally, at most one platform may exist at a time within a
  * process.
  */
-int
+JS_EXPORT int
 js_create_platform(uv_loop_t *loop, const js_platform_options_t *options, js_platform_t **result);
 
 /**
@@ -1029,7 +1045,7 @@ js_create_platform(uv_loop_t *loop, const js_platform_options_t *options, js_pla
  * created from it has been destroyed and the loop has been run long enough for
  * the handles of the platform to close.
  */
-int
+JS_EXPORT int
 js_destroy_platform(js_platform_t *platform);
 
 /**
@@ -1037,7 +1053,7 @@ js_destroy_platform(js_platform_t *platform);
  * string is statically allocated and remains valid for the lifetime of the
  * process.
  */
-int
+JS_EXPORT int
 js_get_platform_identifier(js_platform_t *platform, const char **result);
 
 /**
@@ -1045,7 +1061,7 @@ js_get_platform_identifier(js_platform_t *platform, const char **result);
  * allocated and remains valid for the lifetime of the process. Its format is
  * engine specific and should not be parsed.
  */
-int
+JS_EXPORT int
 js_get_platform_version(js_platform_t *platform, const char **result);
 
 /**
@@ -1053,14 +1069,35 @@ js_get_platform_version(js_platform_t *platform, const char **result);
  * within an environment. The caller must initialize the `version` field of the
  * result before the call to declare which fields it knows about.
  */
-int
+JS_EXPORT int
 js_get_platform_limits(js_platform_t *platform, js_platform_limits_t *result);
 
 /**
  * Get the loop that the platform was created with.
  */
-int
+JS_EXPORT int
 js_get_platform_loop(js_platform_t *platform, uv_loop_t **result);
+
+JS_EXPORT int
+js_create_external_references(js_external_references_t **result);
+
+JS_EXPORT int
+js_add_external_reference(js_external_references_t *references, const void *address);
+
+JS_EXPORT int
+js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len);
+
+JS_EXPORT int
+js_destroy_external_references(js_external_references_t *references);
+
+JS_EXPORT int
+js_create_rebind_handlers(js_rebind_handlers_t **result);
+
+JS_EXPORT int
+js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data);
+
+JS_EXPORT int
+js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
 
 /**
  * Create a JavaScript environment, scheduling its tasks on the given loop. The
@@ -1074,28 +1111,7 @@ js_get_platform_loop(js_platform_t *platform, uv_loop_t **result);
  * on separate loops and threads, but an environment may only be used from the
  * thread that its loop runs on.
  */
-int
-js_create_external_references(js_external_references_t **result);
-
-int
-js_add_external_reference(js_external_references_t *references, const void *address);
-
-int
-js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len);
-
-int
-js_destroy_external_references(js_external_references_t *references);
-
-int
-js_create_rebind_handlers(js_rebind_handlers_t **result);
-
-int
-js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data);
-
-int
-js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
-
-int
+JS_EXPORT int
 js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *options, js_env_t **result);
 
 /**
@@ -1112,7 +1128,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
  * with `js_finish_deferred_teardown_callback()` and the loop has been run
  * again.
  */
-int
+JS_EXPORT int
 js_destroy_env(js_env_t *env);
 
 /**
@@ -1120,7 +1136,7 @@ js_destroy_env(js_env_t *env);
  * warmed up with the regular run/compile APIs, then serialized and consumed by
  * `js_take_snapshot()`.
  */
-int
+JS_EXPORT int
 js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_options_t *options, js_env_t **result);
 
 /**
@@ -1129,7 +1145,7 @@ js_create_snapshot(uv_loop_t *loop, js_platform_t *platform, const js_snapshot_o
  * success `*data` is a newly allocated buffer owned by the caller and freed with
  * `free()`.
  */
-int
+JS_EXPORT int
 js_take_snapshot(js_env_t *env, void **data, size_t *len);
 
 /**
@@ -1139,7 +1155,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len);
  * An exception is considered uncaught if the JavaScript execution stack is
  * emptied without the exception being caught.
  */
-int
+JS_EXPORT int
 js_on_uncaught_exception(js_env_t *env, js_uncaught_exception_cb cb, void *data);
 
 /**
@@ -1149,7 +1165,7 @@ js_on_uncaught_exception(js_env_t *env, js_uncaught_exception_cb cb, void *data)
  * A promise rejection is considered unhandled if the rejection has not been
  * caught after performing a microtask checkpoint.
  */
-int
+JS_EXPORT int
 js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *data);
 
 /**
@@ -1157,19 +1173,19 @@ js_on_unhandled_rejection(js_env_t *env, js_unhandled_rejection_cb cb, void *dat
  * By default, a dynamic import is rejected, which will surface as an unhandled
  * promise rejection unless the importing code handles it.
  */
-int
+JS_EXPORT int
 js_on_dynamic_import(js_env_t *env, js_dynamic_import_cb cb, void *data);
 
 /**
  * Get the loop that the environment was created with.
  */
-int
+JS_EXPORT int
 js_get_env_loop(js_env_t *env, uv_loop_t **result);
 
 /**
  * Get the platform that the environment was created from.
  */
-int
+JS_EXPORT int
 js_get_env_platform(js_env_t *env, js_platform_t **result);
 
 /**
@@ -1190,7 +1206,7 @@ js_get_env_platform(js_env_t *env, js_platform_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_open_handle_scope(js_env_t *env, js_handle_scope_t **result);
 
 /**
@@ -1199,7 +1215,7 @@ js_open_handle_scope(js_env_t *env, js_handle_scope_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_close_handle_scope(js_env_t *env, js_handle_scope_t *scope);
 
 /**
@@ -1209,7 +1225,7 @@ js_close_handle_scope(js_env_t *env, js_handle_scope_t *scope);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_open_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t **result);
 
 /**
@@ -1218,7 +1234,7 @@ js_open_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t **resu
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scope);
 
 /**
@@ -1229,7 +1245,7 @@ js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scop
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_escape_handle(js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *escapee, js_value_t **result);
 
 /**
@@ -1238,7 +1254,7 @@ js_escape_handle(js_env_t *env, js_escapable_handle_scope_t *scope, js_value_t *
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_context(js_env_t *env, js_context_t **result);
 
 /**
@@ -1247,7 +1263,7 @@ js_create_context(js_env_t *env, js_context_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_destroy_context(js_env_t *env, js_context_t *context);
 
 /**
@@ -1257,7 +1273,7 @@ js_destroy_context(js_env_t *env, js_context_t *context);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_enter_context(js_env_t *env, js_context_t *context);
 
 /**
@@ -1266,7 +1282,7 @@ js_enter_context(js_env_t *env, js_context_t *context);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_exit_context(js_env_t *env, js_context_t *context);
 
 /**
@@ -1276,7 +1292,7 @@ js_exit_context(js_env_t *env, js_context_t *context);
  * by setting properties on the object and may also import any properties set
  * by embedders.
  */
-int
+JS_EXPORT int
 js_get_bindings(js_env_t *env, js_value_t **result);
 
 /**
@@ -1293,7 +1309,7 @@ js_get_bindings(js_env_t *env, js_value_t **result);
  * compilation unit. Use `js_prepare_script()` if the script must be told apart
  * from them.
  */
-int
+JS_EXPORT int
 js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_value_t **result);
 
 /**
@@ -1306,7 +1322,7 @@ js_run_script(js_env_t *env, const char *file, size_t len, int offset, js_value_
  * `0`, and `offset` is the line within the file at which the source begins.
  * The script must eventually be deleted with `js_delete_script()`.
  */
-int
+JS_EXPORT int
 js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, js_script_t **result);
 
 /**
@@ -1317,11 +1333,13 @@ js_prepare_script(js_env_t *env, const char *file, size_t len, int offset, js_va
  * recompiles from `source`, so a rejected cache is a missed optimization, never
  * a failure.
  *
- * The `source` text and origin must still be supplied, as the engine validates
- * the cache against them. On return, `*cache_rejected` reports whether the cache
- * was usable; it may be `NULL` if the caller does not care.
+ * The `source` text and origin must still be supplied, and the cache must have
+ * been produced from the same ones. Not every engine checks this, so passing a
+ * cache produced from anything else is undefined behavior. On return,
+ * `*cache_rejected` reports whether the cache was usable; it may be `NULL` if
+ * the caller does not care.
  */
-int
+JS_EXPORT int
 js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_script_t **result);
 
 /**
@@ -1334,7 +1352,7 @@ js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, i
  * The code cache stores compiled bytecode only; the script's identifier is not
  * part of the cache and is re-minted on the consume side.
  */
-int
+JS_EXPORT int
 js_create_script_code_cache(js_env_t *env, js_script_t *script, void **data, size_t *len);
 
 /**
@@ -1342,7 +1360,7 @@ js_create_script_code_cache(js_env_t *env, js_script_t *script, void **data, siz
  * be run more than once and in any context entered when it is run. The
  * `result` may be `NULL` if the completion value is not needed.
  */
-int
+JS_EXPORT int
 js_run_prepared_script(js_env_t *env, js_script_t *script, js_value_t **result);
 
 /**
@@ -1351,7 +1369,7 @@ js_run_prepared_script(js_env_t *env, js_script_t *script, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_delete_script(js_env_t *env, js_script_t *script);
 
 /**
@@ -1360,7 +1378,7 @@ js_delete_script(js_env_t *env, js_script_t *script);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
 
 /**
@@ -1371,7 +1389,7 @@ js_get_script_name(js_env_t *env, js_script_t *script, const char **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
 
 /**
@@ -1379,7 +1397,7 @@ js_get_script_id(js_env_t *env, js_script_t *script, js_value_t **result);
  * its handle. A prepared script carries no callbacks or per-instance state, so
  * nothing needs to be re-supplied after restore.
  */
-int
+JS_EXPORT int
 js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result);
 
 /**
@@ -1398,7 +1416,7 @@ js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result);
  * from any other such code, and so is refused; it always falls back to the
  * callback added with `js_on_dynamic_import()`.
  */
-int
+JS_EXPORT int
 js_on_script_dynamic_import(js_env_t *env, js_script_t *script, js_dynamic_import_cb cb, void *data);
 
 /**
@@ -1412,17 +1430,17 @@ js_on_script_dynamic_import(js_env_t *env, js_script_t *script, js_dynamic_impor
  * The module must be instantiated with `js_instantiate_module()` before it can
  * be run, and must eventually be deleted with `js_delete_module()`.
  */
-int
+JS_EXPORT int
 js_create_module(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, js_module_meta_cb cb, void *data, js_module_t **result);
 
 /**
  * As `js_create_module()`, but with a code cache previously produced by
  * `js_create_module_code_cache()` supplied up front. Behaves exactly as
- * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
- * validated against `source` and the origin, and `*cache_rejected` reports
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint
+ * that must match `source` and the origin, and `*cache_rejected` reports
  * whether it was usable (`NULL` if the caller does not care).
  */
-int
+JS_EXPORT int
 js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_module_meta_cb cb, void *data, js_module_t **result);
 
 /**
@@ -1435,7 +1453,7 @@ js_create_module_with_code_cache(js_env_t *env, const char *name, size_t len, in
  * (or after `js_instantiate_module()`) but before `js_run_module()`. Synthetic
  * modules have no source and are not supported.
  */
-int
+JS_EXPORT int
 js_create_module_code_cache(js_env_t *env, js_module_t *module, void **data, size_t *len);
 
 /**
@@ -1450,7 +1468,7 @@ js_create_module_code_cache(js_env_t *env, js_module_t *module, void **data, siz
  * `js_instantiate_module()` before it can be run, and must eventually be
  * deleted with `js_delete_module()`.
  */
-int
+JS_EXPORT int
 js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value_t *const export_names[], size_t export_names_len, js_module_evaluate_cb cb, void *data, js_module_t **result);
 
 /**
@@ -1461,7 +1479,7 @@ js_create_synthetic_module(js_env_t *env, const char *name, size_t len, js_value
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_delete_module(js_env_t *env, js_module_t *module);
 
 /**
@@ -1470,7 +1488,7 @@ js_delete_module(js_env_t *env, js_module_t *module);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_module_name(js_env_t *env, js_module_t *module, const char **result);
 
 /**
@@ -1481,7 +1499,7 @@ js_get_module_name(js_env_t *env, js_module_t *module, const char **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result);
 
 /**
@@ -1489,7 +1507,7 @@ js_get_module_id(js_env_t *env, js_module_t *module, js_value_t **result);
  * handle. Only fully evaluated modules survive a snapshot; their callbacks are
  * never invoked again after restore, so none need to be re-supplied.
  */
-int
+JS_EXPORT int
 js_get_module_by_id(js_env_t *env, js_value_t *id, js_module_t **result);
 
 /**
@@ -1500,7 +1518,7 @@ js_get_module_by_id(js_env_t *env, js_value_t *id, js_module_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_default_module_id(js_env_t *env, js_value_t **result);
 
 /**
@@ -1508,7 +1526,7 @@ js_get_default_module_id(js_env_t *env, js_value_t **result);
  * instantiated with `js_instantiate_module()`, as the namespace does not exist
  * before then.
  */
-int
+JS_EXPORT int
 js_get_module_namespace(js_env_t *env, js_module_t *module, js_value_t **result);
 
 /**
@@ -1516,7 +1534,7 @@ js_get_module_namespace(js_env_t *env, js_module_t *module, js_value_t **result)
  * have been created with `js_create_synthetic_module()` and the name must be
  * one of the export names declared when it was created.
  */
-int
+JS_EXPORT int
 js_set_module_export(js_env_t *env, js_module_t *module, js_value_t *name, js_value_t *value);
 
 /**
@@ -1532,7 +1550,7 @@ js_set_module_export(js_env_t *env, js_module_t *module, js_value_t *name, js_va
  * Instantiation is a no-op for a module that has already been instantiated,
  * but throws for one that is currently being instantiated or evaluated.
  */
-int
+JS_EXPORT int
 js_instantiate_module(js_env_t *env, js_module_t *module, js_module_resolve_cb cb, void *data);
 
 /**
@@ -1545,7 +1563,7 @@ js_instantiate_module(js_env_t *env, js_module_t *module, js_module_resolve_cb c
  * module that has already been evaluated yields the promise of that evaluation
  * without evaluating it again.
  */
-int
+JS_EXPORT int
 js_run_module(js_env_t *env, js_module_t *module, js_value_t **result);
 
 /**
@@ -1561,7 +1579,7 @@ js_run_module(js_env_t *env, js_module_t *module, js_value_t **result);
  * Synthetic modules have no source and so can never be the referrer of a
  * dynamic `import()`; registering against one throws.
  */
-int
+JS_EXPORT int
 js_on_module_dynamic_import(js_env_t *env, js_module_t *module, js_dynamic_import_cb cb, void *data);
 
 /**
@@ -1578,7 +1596,7 @@ js_on_module_dynamic_import(js_env_t *env, js_module_t *module, js_dynamic_impor
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_reference(js_env_t *env, js_value_t *value, uint32_t count, js_ref_t **result);
 
 /**
@@ -1587,7 +1605,7 @@ js_create_reference(js_env_t *env, js_value_t *value, uint32_t count, js_ref_t *
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_delete_reference(js_env_t *env, js_ref_t *reference);
 
 /**
@@ -1597,7 +1615,7 @@ js_delete_reference(js_env_t *env, js_ref_t *reference);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_reference_ref(js_env_t *env, js_ref_t *reference, uint32_t *result);
 
 /**
@@ -1607,7 +1625,7 @@ js_reference_ref(js_env_t *env, js_ref_t *reference, uint32_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_reference_unref(js_env_t *env, js_ref_t *reference, uint32_t *result);
 
 /**
@@ -1617,7 +1635,7 @@ js_reference_unref(js_env_t *env, js_ref_t *reference, uint32_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_reference_value(js_env_t *env, js_ref_t *reference, js_value_t **result);
 
 /**
@@ -1633,7 +1651,7 @@ js_get_reference_value(js_env_t *env, js_ref_t *reference, js_value_t **result);
  *
  * The `name` may be `NULL`, in which case the class is anonymous.
  */
-int
+JS_EXPORT int
 js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb constructor, void *data, js_property_descriptor_t const properties[], size_t properties_len, js_value_t **result);
 
 /**
@@ -1644,7 +1662,7 @@ js_define_class(js_env_t *env, const char *name, size_t len, js_function_cb cons
  *
  * The `data` of a descriptor is passed to its method, getter, and setter.
  */
-int
+JS_EXPORT int
 js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t const properties[], size_t properties_len);
 
 /**
@@ -1660,7 +1678,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
  * If `result` is not `NULL` it is set to a weak reference to the object, which
  * the caller must eventually delete with `js_delete_reference()`.
  */
-int
+JS_EXPORT int
 js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
 
 /**
@@ -1670,7 +1688,7 @@ js_wrap(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_c
  * The wrapper is not inherited, so an object whose prototype is wrapped is not
  * itself wrapped.
  */
-int
+JS_EXPORT int
 js_unwrap(js_env_t *env, js_value_t *object, void **result);
 
 /**
@@ -1679,7 +1697,7 @@ js_unwrap(js_env_t *env, js_value_t *object, void **result);
  * be `NULL` if the pointer is not needed. Removing the wrapper of an object
  * that is not wrapped throws.
  */
-int
+JS_EXPORT int
 js_remove_wrap(js_env_t *env, js_value_t *object, void **result);
 
 /**
@@ -1691,7 +1709,7 @@ js_remove_wrap(js_env_t *env, js_value_t *object, void **result);
  * the object has been collected and may be `NULL`, with the same caveats as
  * the callback passed to `js_wrap()`.
  */
-int
+JS_EXPORT int
 js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 /**
@@ -1709,7 +1727,7 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_add_finalizer(js_env_t *env, js_value_t *object, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_ref_t **result);
 
 /**
@@ -1719,7 +1737,7 @@ js_add_finalizer(js_env_t *env, js_value_t *object, void *data, js_finalize_cb f
  *
  * The tag is copied and need not remain valid after the call.
  */
-int
+JS_EXPORT int
 js_add_type_tag(js_env_t *env, js_value_t *object, const js_type_tag_t *tag);
 
 /**
@@ -1730,7 +1748,7 @@ js_add_type_tag(js_env_t *env, js_value_t *object, const js_type_tag_t *tag);
  * The tag is not inherited, so an object whose prototype is tagged is not
  * itself tagged.
  */
-int
+JS_EXPORT int
 js_check_type_tag(js_env_t *env, js_value_t *object, const js_type_tag_t *tag, bool *result);
 
 /**
@@ -1738,7 +1756,7 @@ js_check_type_tag(js_env_t *env, js_value_t *object, const js_type_tag_t *tag, b
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_int32(js_env_t *env, int32_t value, js_value_t **result);
 
 /**
@@ -1746,7 +1764,7 @@ js_create_int32(js_env_t *env, int32_t value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_uint32(js_env_t *env, uint32_t value, js_value_t **result);
 
 /**
@@ -1756,7 +1774,7 @@ js_create_uint32(js_env_t *env, uint32_t value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_int64(js_env_t *env, int64_t value, js_value_t **result);
 
 /**
@@ -1764,7 +1782,7 @@ js_create_int64(js_env_t *env, int64_t value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_double(js_env_t *env, double value, js_value_t **result);
 
 /**
@@ -1772,7 +1790,7 @@ js_create_double(js_env_t *env, double value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_bigint_int64(js_env_t *env, int64_t value, js_value_t **result);
 
 /**
@@ -1780,7 +1798,7 @@ js_create_bigint_int64(js_env_t *env, int64_t value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result);
 
 /**
@@ -1791,7 +1809,7 @@ js_create_bigint_uint64(js_env_t *env, uint64_t value, js_value_t **result);
  *
  * Throws if the resulting value is larger than the engine supports.
  */
-int
+JS_EXPORT int
 js_create_bigint_words(js_env_t *env, int sign, const uint64_t *words, size_t len, js_value_t **result);
 
 /**
@@ -1802,7 +1820,7 @@ js_create_bigint_words(js_env_t *env, int sign, const uint64_t *words, size_t le
  * Throws if the resulting string would be longer than
  * `js_platform_limits_t::string_length`.
  */
-int
+JS_EXPORT int
 js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1813,7 +1831,7 @@ js_create_string_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t *
  * Throws if the resulting string would be longer than
  * `js_platform_limits_t::string_length`.
  */
-int
+JS_EXPORT int
 js_create_string_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1824,7 +1842,7 @@ js_create_string_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value
  * Throws if the resulting string would be longer than
  * `js_platform_limits_t::string_length`.
  */
-int
+JS_EXPORT int
 js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1842,7 +1860,7 @@ js_create_string_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value
  * The finalize callback may be omitted if the text is guaranteed to outlive
  * the JavaScript environment.
  */
-int
+JS_EXPORT int
 js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
 /**
@@ -1860,7 +1878,7 @@ js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finali
  * The finalize callback may be omitted if the text is guaranteed to outlive
  * the JavaScript environment.
  */
-int
+JS_EXPORT int
 js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
 /**
@@ -1878,7 +1896,7 @@ js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_fi
  * The finalize callback may be omitted if the text is guaranteed to outlive
  * the JavaScript environment.
  */
-int
+JS_EXPORT int
 js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied);
 
 /**
@@ -1887,7 +1905,7 @@ js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_fi
  * of a more expensive creation. It is in all other respects a string as
  * created by `js_create_string_utf8()`.
  */
-int
+JS_EXPORT int
 js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1896,7 +1914,7 @@ js_create_property_key_utf8(js_env_t *env, const utf8_t *str, size_t len, js_val
  * of a more expensive creation. It is in all other respects a string as
  * created by `js_create_string_utf16le()`.
  */
-int
+JS_EXPORT int
 js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1905,7 +1923,7 @@ js_create_property_key_utf16le(js_env_t *env, const utf16_t *str, size_t len, js
  * of a more expensive creation. It is in all other respects a string as
  * created by `js_create_string_latin1()`.
  */
-int
+JS_EXPORT int
 js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js_value_t **result);
 
 /**
@@ -1915,7 +1933,7 @@ js_create_property_key_latin1(js_env_t *env, const latin1_t *str, size_t len, js
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result);
 
 /**
@@ -1924,7 +1942,7 @@ js_create_symbol(js_env_t *env, js_value_t *description, js_value_t **result);
  * `len` is the length of the description in bytes, or `(size_t) -1` if it is
  * NUL terminated.
  */
-int
+JS_EXPORT int
 js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **result);
 
 /**
@@ -1932,7 +1950,7 @@ js_symbol_for(js_env_t *env, const char *description, size_t len, js_value_t **r
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_object(js_env_t *env, js_value_t **result);
 
 /**
@@ -1941,7 +1959,7 @@ js_create_object(js_env_t *env, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_object_with_prototype(js_env_t *env, js_value_t *prototype, js_value_t **result);
 
 /**
@@ -1955,7 +1973,7 @@ js_create_object_with_prototype(js_env_t *env, js_value_t *prototype, js_value_t
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_object_with_properties(js_env_t *env, js_value_t *prototype, js_value_t *const property_names[], js_value_t *const property_values[], size_t property_count, js_value_t **result);
 
 /**
@@ -1963,7 +1981,7 @@ js_create_object_with_properties(js_env_t *env, js_value_t *prototype, js_value_
  * `name` is the name reported by the `name` property of the function and may
  * be `NULL`, in which case the function is anonymous.
  */
-int
+JS_EXPORT int
 js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, void *data, js_value_t **result);
 
 /**
@@ -1981,18 +1999,18 @@ js_create_function(js_env_t *env, const char *name, size_t len, js_function_cb c
  * Throws if the source or any of the argument names cannot be compiled, an
  * argument name that is not an identifier included.
  */
-int
+JS_EXPORT int
 js_compile_function(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
 
 /**
  * As `js_compile_function()`, but with a code cache previously produced by
  * `js_create_function_code_cache()` supplied up front. Behaves exactly as
- * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint,
- * validated against `source` and the origin, and `*cache_rejected` reports
+ * `js_prepare_script_with_code_cache()` with respect to the cache: it is a hint
+ * that must match `source` and the origin, and `*cache_rejected` reports
  * whether it was usable (`NULL` if the caller does not care). On a rejected
  * cache the engine silently recompiles from `source`.
  */
-int
+JS_EXPORT int
 js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, const void *cached_data, size_t cached_data_len, bool *cache_rejected, js_value_t **result);
 
 /**
@@ -2007,13 +2025,13 @@ js_compile_function_with_code_cache(js_env_t *env, const char *name, size_t name
  * compiled bytecode only; the function's identifier is not part of the cache
  * and is re-minted on the consume side.
  */
-int
+JS_EXPORT int
 js_create_function_code_cache(js_env_t *env, js_value_t *function, void **data, size_t *len);
 
 /**
  * @deprecated Use `js_compile_function()`, of which this is an alias.
  */
-int
+JS_EXPORT int
 js_create_function_with_source(js_env_t *env, const char *name, size_t name_len, const char *file, size_t file_len, js_value_t *const args[], size_t args_len, int offset, js_value_t *source, js_value_t **result);
 
 /**
@@ -2031,8 +2049,12 @@ js_create_function_with_source(js_env_t *env, const char *name, size_t name_len,
  * the function silently falls back to a function created with
  * `js_create_function()`. The `cb` must therefore always be provided and must
  * be indistinguishable in behavior from the entry point.
+ *
+ * An exception left pending by the entry point is thrown into JavaScript once
+ * the entry point returns. Unlike in `cb`, it cannot be taken back; even if
+ * `js_get_and_clear_last_exception()` returns it, it is still thrown.
  */
-int
+JS_EXPORT int
 js_create_typed_function(js_env_t *env, const char *name, size_t len, js_function_cb cb, const js_callback_signature_t *signature, const void *address, void *data, js_value_t **result);
 
 /**
@@ -2043,7 +2065,7 @@ js_create_typed_function(js_env_t *env, const char *name, size_t len, js_functio
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result);
 
 /**
@@ -2062,7 +2084,7 @@ js_get_function_id(js_env_t *env, js_value_t *function, js_value_t **result);
  * registering against it registers for the whole of it. One carrying no unit,
  * or one attributed to the default identifier, is refused.
  */
-int
+JS_EXPORT int
 js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_import_cb cb, void *data);
 
 /**
@@ -2070,14 +2092,14 @@ js_on_function_dynamic_import(js_env_t *env, js_value_t *function, js_dynamic_im
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_array(js_env_t *env, js_value_t **result);
 
 /**
  * Create an `Array` of the given length with all of its elements empty. Throws
  * if the length is larger than the engine supports.
  */
-int
+JS_EXPORT int
 js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result);
 
 /**
@@ -2087,7 +2109,7 @@ js_create_array_with_length(js_env_t *env, size_t len, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_array_with_elements(js_env_t *env, js_value_t *const elements[], size_t element_count, js_value_t **result);
 
 /**
@@ -2099,17 +2121,15 @@ js_create_array_with_elements(js_env_t *env, js_value_t *const elements[], size_
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 /**
  * Create a `Date` from a number of milliseconds since the Unix epoch. A time
  * that is `NaN` or outside the range representable by `Date` yields an invalid
  * date, whose value is `NaN`.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_date(js_env_t *env, double time, js_value_t **result);
 
 /**
@@ -2118,7 +2138,7 @@ js_create_date(js_env_t *env, double time, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 /**
@@ -2127,7 +2147,7 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_type_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 /**
@@ -2136,7 +2156,7 @@ js_create_type_error(js_env_t *env, js_value_t *code, js_value_t *message, js_va
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_range_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 /**
@@ -2145,7 +2165,7 @@ js_create_range_error(js_env_t *env, js_value_t *code, js_value_t *message, js_v
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_syntax_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 /**
@@ -2154,7 +2174,7 @@ js_create_syntax_error(js_env_t *env, js_value_t *code, js_value_t *message, js_
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t **result);
 
 /**
@@ -2167,17 +2187,15 @@ js_create_reference_error(js_env_t *env, js_value_t *code, js_value_t *message, 
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *result);
 
 /**
  * Create a pending promise together with the deferred used to settle it. The
  * deferred must eventually be settled with either `js_resolve_deferred()` or
  * `js_reject_deferred()`, exactly one of which may be called and only once.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise);
 
 /**
@@ -2187,10 +2205,8 @@ js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise)
  * If no JavaScript is executing on the stack a microtask checkpoint is
  * performed before returning, running any reactions the promise has
  * registered.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
 /**
@@ -2200,10 +2216,8 @@ js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
  * If no JavaScript is executing on the stack a microtask checkpoint is
  * performed before returning, running any reactions the promise has
  * registered.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution);
 
 /**
@@ -2212,7 +2226,7 @@ js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolutio
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_promise_state(js_env_t *env, js_value_t *promise, js_promise_state_t *result);
 
 /**
@@ -2221,7 +2235,7 @@ js_get_promise_state(js_env_t *env, js_value_t *promise, js_promise_state_t *res
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_promise_result(js_env_t *env, js_value_t *promise, js_value_t **result);
 
 /**
@@ -2232,7 +2246,7 @@ js_get_promise_result(js_env_t *env, js_value_t *promise, js_value_t **result);
  * Throws if the length exceeds `js_platform_limits_t::arraybuffer_length` or
  * the memory could not be allocated.
  */
-int
+JS_EXPORT int
 js_create_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
 /**
@@ -2241,7 +2255,7 @@ js_create_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **resul
  * `js_release_arraybuffer_backing_store()`. Both `data` and `len` may be
  * `NULL` if the contents and their length are not needed.
  */
-int
+JS_EXPORT int
 js_create_arraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result);
 
 /**
@@ -2254,7 +2268,7 @@ js_create_arraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_s
  * Throws if the length exceeds `js_platform_limits_t::arraybuffer_length` or
  * the memory could not be allocated.
  */
-int
+JS_EXPORT int
 js_create_unsafe_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
 /**
@@ -2267,7 +2281,7 @@ js_create_unsafe_arraybuffer(js_env_t *env, size_t len, void **data, js_value_t 
  * The finalize callback may be invoked without an environment and must not
  * assume that the one it is passed is usable.
  */
-int
+JS_EXPORT int
 js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 /**
@@ -2275,12 +2289,12 @@ js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finaliz
  * the data if it is owned by the engine. Detaching a buffer that is already
  * detached has no effect.
  *
- * The behavior is undefined if the buffer cannot be detached, whether that is
- * the case being up to the engine.
+ * The behavior is undefined if the buffer cannot be detached, which can be
+ * checked with `js_is_detachable_arraybuffer()`.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_detach_arraybuffer(js_env_t *env, js_value_t *arraybuffer);
 
 /**
@@ -2291,7 +2305,7 @@ js_detach_arraybuffer(js_env_t *env, js_value_t *arraybuffer);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_arraybuffer_backing_store(js_env_t *env, js_value_t *arraybuffer, js_arraybuffer_backing_store_t **result);
 
 /**
@@ -2300,7 +2314,7 @@ js_get_arraybuffer_backing_store(js_env_t *env, js_value_t *arraybuffer, js_arra
  * valid until the buffer, and every other buffer sharing its backing store,
  * has been collected.
  */
-int
+JS_EXPORT int
 js_create_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
 /**
@@ -2313,7 +2327,7 @@ js_create_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t *
  * a `SharedArrayBuffer` in one environment and create a `SharedArrayBuffer`
  * from it in another.
  */
-int
+JS_EXPORT int
 js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store, void **data, size_t *len, js_value_t **result);
 
 /**
@@ -2322,7 +2336,7 @@ js_create_sharedarraybuffer_with_backing_store(js_env_t *env, js_arraybuffer_bac
  * they have been written. If `data` is not `NULL` it is set to a pointer to
  * the contents of the buffer.
  */
-int
+JS_EXPORT int
 js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_value_t **result);
 
 /**
@@ -2335,7 +2349,7 @@ js_create_unsafe_sharedarraybuffer(js_env_t *env, size_t len, void **data, js_va
  * safe to assume that it will be invoked from the same thread on which the
  * `SharedArrayBuffer` was created.
  */
-int
+JS_EXPORT int
 js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result);
 
 /**
@@ -2346,7 +2360,7 @@ js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_f
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_sharedarraybuffer_backing_store(js_env_t *env, js_value_t *sharedarraybuffer, js_arraybuffer_backing_store_t **result);
 
 /**
@@ -2357,7 +2371,7 @@ js_get_sharedarraybuffer_backing_store(js_env_t *env, js_value_t *sharedarraybuf
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_release_arraybuffer_backing_store(js_env_t *env, js_arraybuffer_backing_store_t *backing_store);
 
 /**
@@ -2367,7 +2381,7 @@ js_release_arraybuffer_backing_store(js_env_t *env, js_arraybuffer_backing_store
  * The offset must be aligned to the size of the element type and the view must
  * lie entirely within the buffer; the behavior is undefined otherwise.
  */
-int
+JS_EXPORT int
 js_create_typedarray(js_env_t *env, js_typedarray_type_t type, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
 /**
@@ -2377,7 +2391,7 @@ js_create_typedarray(js_env_t *env, js_typedarray_type_t type, size_t len, js_va
  * The view must lie entirely within the buffer; the behavior is undefined
  * otherwise.
  */
-int
+JS_EXPORT int
 js_create_dataview(js_env_t *env, size_t len, js_value_t *arraybuffer, size_t offset, js_value_t **result);
 
 /**
@@ -2386,14 +2400,14 @@ js_create_dataview(js_env_t *env, size_t len, js_value_t *arraybuffer, size_t of
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_coerce_to_boolean(js_env_t *env, js_value_t *value, js_value_t **result);
 
 /**
  * Coerce a value to a `Number` as the unary `+` operator would. The coercion
  * may run user code, such as a `valueOf()` method, and may therefore throw.
  */
-int
+JS_EXPORT int
 js_coerce_to_number(js_env_t *env, js_value_t *value, js_value_t **result);
 
 /**
@@ -2401,7 +2415,7 @@ js_coerce_to_number(js_env_t *env, js_value_t *value, js_value_t **result);
  * may run user code, such as a `toString()` method, and may therefore throw.
  * Note that a symbol cannot be coerced to a string and always throws.
  */
-int
+JS_EXPORT int
 js_coerce_to_string(js_env_t *env, js_value_t *value, js_value_t **result);
 
 /**
@@ -2409,7 +2423,7 @@ js_coerce_to_string(js_env_t *env, js_value_t *value, js_value_t **result);
  * primitive in its corresponding object type. Neither `null` nor `undefined`
  * can be coerced to an object and both throw.
  */
-int
+JS_EXPORT int
 js_coerce_to_object(js_env_t *env, js_value_t *value, js_value_t **result);
 
 /**
@@ -2421,7 +2435,7 @@ js_coerce_to_object(js_env_t *env, js_value_t *value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_typeof(js_env_t *env, js_value_t *value, js_value_type_t *result);
 
 /**
@@ -2429,7 +2443,7 @@ js_typeof(js_env_t *env, js_value_t *value, js_value_type_t *result);
  * operator would. The constructor must be a function, and the check may run
  * user code, such as a `Symbol.hasInstance` method, and may therefore throw.
  */
-int
+JS_EXPORT int
 js_instanceof(js_env_t *env, js_value_t *object, js_value_t *constructor, bool *result);
 
 /**
@@ -2443,19 +2457,19 @@ js_instanceof(js_env_t *env, js_value_t *object, js_value_t *constructor, bool *
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_undefined(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_null(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_boolean(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2464,13 +2478,13 @@ js_is_boolean(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_boolean_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_number(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2479,7 +2493,7 @@ js_is_number(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_number_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2488,7 +2502,7 @@ js_is_number_object(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_int32(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2497,13 +2511,13 @@ js_is_int32(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_uint32(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_string(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2512,13 +2526,13 @@ js_is_string(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_string_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_symbol(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2527,13 +2541,13 @@ js_is_symbol(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_symbol_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2542,7 +2556,7 @@ js_is_object(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_function(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2551,7 +2565,7 @@ js_is_function(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_async_function(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2560,7 +2574,7 @@ js_is_async_function(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_generator_function(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2569,7 +2583,7 @@ js_is_generator_function(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_generator(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2577,13 +2591,13 @@ js_is_generator(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_arguments(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2592,7 +2606,7 @@ js_is_array(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_external(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2602,7 +2616,7 @@ js_is_external(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_wrapped(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2610,13 +2624,13 @@ js_is_wrapped(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_delegate(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_bigint(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2625,19 +2639,19 @@ js_is_bigint(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_bigint_object(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_date(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_regexp(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2647,67 +2661,67 @@ js_is_regexp(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_error(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_promise(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_proxy(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_map(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_map_iterator(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_set(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_set_iterator(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_weak_map(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_weak_set(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_weak_ref(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2716,97 +2730,107 @@ js_is_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_detached_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
+
+/**
+ * Check whether a value is an `ArrayBuffer` that can be detached with
+ * `js_detach_arraybuffer()`. A buffer that has already been detached is still
+ * detachable, as detaching it again has no effect.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_is_detachable_arraybuffer(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_sharedarraybuffer(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_typedarray(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_int8array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_uint8array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_uint8clampedarray(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_int16array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_uint16array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_int32array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_uint32array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_float16array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_float32array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_float64array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_bigint64array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_biguint64array(js_env_t *env, js_value_t *value, bool *result);
 
 /**
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_dataview(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2815,7 +2839,7 @@ js_is_dataview(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_module_namespace(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2823,7 +2847,7 @@ js_is_module_namespace(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_object_type(js_env_t *env, js_value_t *value, js_object_type_t *result);
 
 /**
@@ -2833,23 +2857,106 @@ js_get_object_type(js_env_t *env, js_value_t *value, js_object_type_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result);
+
+/**
+ * Get the continuation snapshot of the current execution. The snapshot holds
+ * the continuation variables of the current execution and lets them follow an
+ * asynchronous flow of execution. Engines that support it capture the snapshot
+ * when a promise reaction is created and restore it while the reaction runs.
+ * Other engines leave the snapshot as it is.
+ *
+ * The snapshot is owned by the engine and must not be inspected or changed,
+ * and it never changes once taken. It can be kept alive with a reference and
+ * later restored with `js_open_continuation_scope()`, such as when native code
+ * calls into JavaScript from an I/O callback.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_get_continuation_snapshot(js_env_t *env, js_value_t **result);
+
+/**
+ * Open a continuation scope that makes a continuation snapshot the snapshot of
+ * the current execution until the scope is closed. The snapshot must be one
+ * returned by `js_get_continuation_snapshot()`, or `NULL` for the empty
+ * snapshot.
+ *
+ * Continuation scopes form a stack and must be closed in the reverse order in
+ * which they were opened, and before the handle scope that was innermost when
+ * they were opened is closed. The behavior is undefined if a scope is closed
+ * out of order or more than once.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_open_continuation_scope(js_env_t *env, js_value_t *snapshot, js_continuation_scope_t **result);
+
+/**
+ * Open a continuation scope that sets the continuation variable identified by
+ * a symbol, by making a new continuation snapshot the snapshot of the current
+ * execution until the scope is closed. Setting a variable to `undefined`
+ * removes it. The behavior is undefined if the variable is not a symbol.
+ *
+ * Other variables are carried over to the new snapshot, while snapshots taken
+ * before the call keep the value they held. A value is kept alive for as long
+ * as a snapshot that holds it can still be restored, even if nothing else
+ * refers to the symbol.
+ *
+ * The scope behaves as one opened with `js_open_continuation_scope()` in all
+ * other respects.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_open_continuation_variable_scope(js_env_t *env, js_value_t *variable, js_value_t *value, js_continuation_scope_t **result);
+
+/**
+ * Close a continuation scope, making the snapshot that was current when it was
+ * opened the snapshot of the current execution again. The scope must be the
+ * innermost continuation scope that is currently open.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope);
+
+/**
+ * Get the value of the continuation variable identified by a symbol in the
+ * continuation snapshot of the current execution, or `undefined` if the
+ * variable is not set. The behavior is undefined if the variable is not a
+ * symbol.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_get_continuation_variable(js_env_t *env, js_value_t *variable, js_value_t **result);
 
 /**
  * Get the global object of the current context.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_global(js_env_t *env, js_value_t **result);
+
+/**
+ * Get the global object of the context that an object was created in, or the
+ * `null` value if the engine cannot tell. The behavior is undefined if the
+ * value is not an object.
+ *
+ * This function can be called even if there is a pending JavaScript exception.
+ */
+JS_EXPORT int
+js_get_object_global(js_env_t *env, js_value_t *object, js_value_t **result);
 
 /**
  * Get the `undefined` value.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_undefined(js_env_t *env, js_value_t **result);
 
 /**
@@ -2857,7 +2964,7 @@ js_get_undefined(js_env_t *env, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_null(js_env_t *env, js_value_t **result);
 
 /**
@@ -2865,7 +2972,7 @@ js_get_null(js_env_t *env, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_boolean(js_env_t *env, bool value, js_value_t **result);
 
 /**
@@ -2874,7 +2981,7 @@ js_get_boolean(js_env_t *env, bool value, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_bool(js_env_t *env, js_value_t *value, bool *result);
 
 /**
@@ -2884,7 +2991,7 @@ js_get_value_bool(js_env_t *env, js_value_t *value, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_int32(js_env_t *env, js_value_t *value, int32_t *result);
 
 /**
@@ -2894,7 +3001,7 @@ js_get_value_int32(js_env_t *env, js_value_t *value, int32_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_uint32(js_env_t *env, js_value_t *value, uint32_t *result);
 
 /**
@@ -2904,7 +3011,7 @@ js_get_value_uint32(js_env_t *env, js_value_t *value, uint32_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_int64(js_env_t *env, js_value_t *value, int64_t *result);
 
 /**
@@ -2913,7 +3020,7 @@ js_get_value_int64(js_env_t *env, js_value_t *value, int64_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_double(js_env_t *env, js_value_t *value, double *result);
 
 /**
@@ -2922,7 +3029,7 @@ js_get_value_double(js_env_t *env, js_value_t *value, double *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_bigint_int64(js_env_t *env, js_value_t *value, int64_t *result, bool *lossless);
 
 /**
@@ -2932,7 +3039,7 @@ js_get_value_bigint_int64(js_env_t *env, js_value_t *value, int64_t *result, boo
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_bigint_uint64(js_env_t *env, js_value_t *value, uint64_t *result, bool *lossless);
 
 /**
@@ -2947,7 +3054,7 @@ js_get_value_bigint_uint64(js_env_t *env, js_value_t *value, uint64_t *result, b
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_bigint_words(js_env_t *env, js_value_t *value, int *sign, uint64_t *words, size_t len, size_t *result);
 
 /**
@@ -2964,7 +3071,7 @@ js_get_value_bigint_words(js_env_t *env, js_value_t *value, int *sign, uint64_t 
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t len, size_t *result);
 
 /**
@@ -2982,7 +3089,7 @@ js_get_value_string_utf8(js_env_t *env, js_value_t *value, utf8_t *str, size_t l
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size_t len, size_t *result);
 
 /**
@@ -3000,7 +3107,7 @@ js_get_value_string_utf16le(js_env_t *env, js_value_t *value, utf16_t *str, size
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size_t len, size_t *result);
 
 /**
@@ -3008,7 +3115,7 @@ js_get_value_string_latin1(js_env_t *env, js_value_t *value, latin1_t *str, size
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_external(js_env_t *env, js_value_t *value, void **result);
 
 /**
@@ -3017,7 +3124,7 @@ js_get_value_external(js_env_t *env, js_value_t *value, void **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_value_date(js_env_t *env, js_value_t *value, double *result);
 
 /**
@@ -3026,7 +3133,7 @@ js_get_value_date(js_env_t *env, js_value_t *value, double *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_array_length(js_env_t *env, js_value_t *array, uint32_t *result);
 
 /**
@@ -3038,7 +3145,7 @@ js_get_array_length(js_env_t *env, js_value_t *array, uint32_t *result);
  * The elements are read as ordinary property accesses and may therefore run
  * user code and throw.
  */
-int
+JS_EXPORT int
 js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t *elements[], size_t len, size_t offset, uint32_t *result);
 
 /**
@@ -3048,7 +3155,7 @@ js_get_array_elements(js_env_t *env, js_value_t *array, js_value_t *elements[], 
  * The elements are written as ordinary property accesses and may therefore run
  * user code and throw.
  */
-int
+JS_EXPORT int
 js_set_array_elements(js_env_t *env, js_value_t *array, js_value_t *const elements[], size_t len, size_t offset);
 
 /**
@@ -3057,7 +3164,7 @@ js_set_array_elements(js_env_t *env, js_value_t *array, js_value_t *const elemen
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result);
 
 /**
@@ -3065,7 +3172,7 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result);
  * value. Throws if the object is not extensible or if the assignment would
  * create a cycle in the prototype chain.
  */
-int
+JS_EXPORT int
 js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype);
 
 /**
@@ -3073,14 +3180,14 @@ js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype);
  * properties non-configurable. The values of its properties may still be
  * changed.
  */
-int
+JS_EXPORT int
 js_seal(js_env_t *env, js_value_t *object);
 
 /**
  * Freeze an object, marking it as not extensible and making all of its own
  * properties non-configurable and non-writable.
  */
-int
+JS_EXPORT int
 js_freeze(js_env_t *env, js_value_t *object);
 
 /**
@@ -3088,7 +3195,7 @@ js_freeze(js_env_t *env, js_value_t *object);
  * chain as an array of strings, with array indices converted to strings. Use
  * `js_get_filtered_property_names()` for any other selection of properties.
  */
-int
+JS_EXPORT int
 js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
 
 /**
@@ -3099,7 +3206,7 @@ js_get_property_names(js_env_t *env, js_value_t *object, js_value_t **result);
  * whether array indices are included, and the `key_conversion` whether array
  * indices are converted to strings or kept as numbers.
  */
-int
+JS_EXPORT int
 js_get_filtered_property_names(js_env_t *env, js_value_t *object, js_key_collection_mode_t mode, js_property_filter_t property_filter, js_index_filter_t index_filter, js_key_conversion_mode_t key_conversion, js_value_t **result);
 
 /**
@@ -3107,21 +3214,21 @@ js_get_filtered_property_names(js_env_t *env, js_value_t *object, js_key_collect
  * `key` must be a string or a symbol. The lookup may run user code, such as a
  * getter, and may therefore throw.
  */
-int
+JS_EXPORT int
 js_get_property(js_env_t *env, js_value_t *object, js_value_t *key, js_value_t **result);
 
 /**
  * Check whether an object or its prototype chain has a property, as the `in`
  * operator would. The `key` must be a string or a symbol.
  */
-int
+JS_EXPORT int
 js_has_property(js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
 
 /**
  * Check whether an object itself has a property, disregarding its prototype
  * chain. The `key` must be a string or a symbol.
  */
-int
+JS_EXPORT int
 js_has_own_property(js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
 
 /**
@@ -3132,7 +3239,7 @@ js_has_own_property(js_env_t *env, js_value_t *object, js_value_t *key, bool *re
  * property, is reported as an error is left to the engine, so do not rely on
  * either outcome.
  */
-int
+JS_EXPORT int
 js_set_property(js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *value);
 
 /**
@@ -3140,14 +3247,14 @@ js_set_property(js_env_t *env, js_value_t *object, js_value_t *key, js_value_t *
  * whether the property is gone as a result. The `key` must be a string or a
  * symbol, and `result` may be `NULL` if the outcome is not needed.
  */
-int
+JS_EXPORT int
 js_delete_property(js_env_t *env, js_value_t *object, js_value_t *key, bool *result);
 
 /**
  * Get a property of an object by a NUL terminated name, which is equivalent to
  * `js_get_property()` with the name as a string.
  */
-int
+JS_EXPORT int
 js_get_named_property(js_env_t *env, js_value_t *object, const char *name, js_value_t **result);
 
 /**
@@ -3155,49 +3262,49 @@ js_get_named_property(js_env_t *env, js_value_t *object, const char *name, js_va
  * terminated name, which is equivalent to `js_has_property()` with the name as
  * a string.
  */
-int
+JS_EXPORT int
 js_has_named_property(js_env_t *env, js_value_t *object, const char *name, bool *result);
 
 /**
  * Set a property of an object by a NUL terminated name, which is equivalent to
  * `js_set_property()` with the name as a string.
  */
-int
+JS_EXPORT int
 js_set_named_property(js_env_t *env, js_value_t *object, const char *name, js_value_t *value);
 
 /**
  * Delete a property of an object by a NUL terminated name, which is equivalent
  * to `js_delete_property()` with the name as a string.
  */
-int
+JS_EXPORT int
 js_delete_named_property(js_env_t *env, js_value_t *object, const char *name, bool *result);
 
 /**
  * Get an element of an object by index, which is equivalent to
  * `js_get_property()` with the index as a key.
  */
-int
+JS_EXPORT int
 js_get_element(js_env_t *env, js_value_t *object, uint32_t index, js_value_t **result);
 
 /**
  * Check whether an object or its prototype chain has an element at an index,
  * which is equivalent to `js_has_property()` with the index as a key.
  */
-int
+JS_EXPORT int
 js_has_element(js_env_t *env, js_value_t *object, uint32_t index, bool *result);
 
 /**
  * Set an element of an object by index, which is equivalent to
  * `js_set_property()` with the index as a key.
  */
-int
+JS_EXPORT int
 js_set_element(js_env_t *env, js_value_t *object, uint32_t index, js_value_t *value);
 
 /**
  * Delete an element of an object by index, which is equivalent to
  * `js_delete_property()` with the index as a key.
  */
-int
+JS_EXPORT int
 js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *result);
 
 /**
@@ -3214,7 +3321,7 @@ js_delete_element(js_env_t *env, js_value_t *object, uint32_t index, bool *resul
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *encoding, const void **str, size_t *len, js_string_view_t **result);
 
 /**
@@ -3223,7 +3330,7 @@ js_get_string_view(js_env_t *env, js_value_t *string, js_string_encoding_t *enco
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_release_string_view(js_env_t *env, js_string_view_t *view);
 
 /**
@@ -3240,7 +3347,7 @@ js_release_string_view(js_env_t *env, js_string_view_t *view);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc, js_value_t *argv[], js_value_t **receiver, void **data);
 
 /**
@@ -3253,7 +3360,7 @@ js_get_callback_info(js_env_t *env, const js_callback_info_t *info, size_t *argc
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env, void **data);
 
 /**
@@ -3263,7 +3370,7 @@ js_get_typed_callback_info(const js_typed_callback_info_t *info, js_env_t **env,
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_new_target(js_env_t *env, const js_callback_info_t *info, js_value_t **result);
 
 /**
@@ -3273,7 +3380,7 @@ js_get_new_target(js_env_t *env, const js_callback_info_t *info, js_value_t **re
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_arraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **data, size_t *len);
 
 /**
@@ -3283,7 +3390,7 @@ js_get_arraybuffer_info(js_env_t *env, js_value_t *arraybuffer, void **data, siz
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_sharedarraybuffer_info(js_env_t *env, js_value_t *sharedarraybuffer, void **data, size_t *len);
 
 /**
@@ -3297,7 +3404,7 @@ js_get_sharedarraybuffer_info(js_env_t *env, js_value_t *sharedarraybuffer, void
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type_t *type, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
 /**
@@ -3310,7 +3417,7 @@ js_get_typedarray_info(js_env_t *env, js_value_t *typedarray, js_typedarray_type
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_dataview_info(js_env_t *env, js_value_t *dataview, void **data, size_t *len, js_value_t **arraybuffer, size_t *offset);
 
 /**
@@ -3324,7 +3431,7 @@ js_get_dataview_info(js_env_t *env, js_value_t *dataview, void **data, size_t *l
  * native code making the call was invoked from JavaScript, no microtask
  * checkpoint is performed before returning to native code.
  */
-int
+JS_EXPORT int
 js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 /**
@@ -3335,7 +3442,7 @@ js_call_function(js_env_t *env, js_value_t *receiver, js_value_t *function, size
  * EXECUTING ON THE STACK. If in doubt, use `js_call_function()` instead which
  * automatically performs microtask checkpoints as needed.
  */
-int
+JS_EXPORT int
 js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t *function, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 /**
@@ -3345,10 +3452,8 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
  * If no JavaScript is executing on the stack a checkpoint is performed before
  * returning, in which case the function is called before this function
  * returns.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_queue_microtask(js_env_t *env, js_value_t *function);
 
 /**
@@ -3357,10 +3462,8 @@ js_queue_microtask(js_env_t *env, js_value_t *function);
  * If no JavaScript is executing on the stack a checkpoint is performed before
  * returning, in which case the callback is called before this function
  * returns.
- *
- * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data);
 
 /**
@@ -3370,7 +3473,7 @@ js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data);
  * As with `js_call_function()`, a microtask checkpoint is performed before
  * returning if no JavaScript was already executing on the stack.
  */
-int
+JS_EXPORT int
 js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t *const argv[], js_value_t **result);
 
 /**
@@ -3394,7 +3497,7 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
  * The `finalize_cb` is invoked with the `context` and the `finalize_hint` on
  * the loop of the environment once the handle has been released.
  */
-int
+JS_EXPORT int
 js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result);
 
 /**
@@ -3403,7 +3506,7 @@ js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_threadsafe_function_context(js_threadsafe_function_t *function, void **result);
 
 /**
@@ -3417,7 +3520,7 @@ js_get_threadsafe_function_context(js_threadsafe_function_t *function, void **re
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_call_threadsafe_function(js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode);
 
 /**
@@ -3427,7 +3530,7 @@ js_call_threadsafe_function(js_threadsafe_function_t *function, void *data, js_t
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_acquire_threadsafe_function(js_threadsafe_function_t *function);
 
 /**
@@ -3445,7 +3548,7 @@ js_acquire_threadsafe_function(js_threadsafe_function_t *function);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_release_threadsafe_function(js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode);
 
 /**
@@ -3457,7 +3560,7 @@ js_release_threadsafe_function(js_threadsafe_function_t *function, js_threadsafe
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_ref_threadsafe_function(js_env_t *env, js_threadsafe_function_t *function);
 
 /**
@@ -3469,7 +3572,7 @@ js_ref_threadsafe_function(js_env_t *env, js_threadsafe_function_t *function);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_unref_threadsafe_function(js_env_t *env, js_threadsafe_function_t *function);
 
 /**
@@ -3480,7 +3583,7 @@ js_unref_threadsafe_function(js_env_t *env, js_threadsafe_function_t *function);
  * Throws if the same callback and data pair is already registered, or if the
  * environment is already being destroyed.
  */
-int
+JS_EXPORT int
 js_add_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data);
 
 /**
@@ -3491,7 +3594,7 @@ js_add_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data);
  * It is safe to call while the callbacks are being run, in which case it has
  * no effect.
  */
-int
+JS_EXPORT int
 js_remove_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data);
 
 /**
@@ -3508,7 +3611,7 @@ js_remove_teardown_callback(js_env_t *env, js_teardown_cb callback, void *data);
  * Throws if the same callback and data pair is already registered, or if the
  * environment is already being destroyed.
  */
-int
+JS_EXPORT int
 js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callback, void *data, js_deferred_teardown_t **result);
 
 /**
@@ -3521,7 +3624,7 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_finish_deferred_teardown_callback(js_deferred_teardown_t *handle);
 
 /**
@@ -3532,103 +3635,103 @@ js_finish_deferred_teardown_callback(js_deferred_teardown_t *handle);
  * returns to it, and can be handled in native code with
  * `js_get_and_clear_last_exception()`.
  */
-int
+JS_EXPORT int
 js_throw(js_env_t *env, js_value_t *error);
 
 /**
  * Throw an `Error` with the given NUL terminated message. If `code` is not
  * `NULL` it is set as the `code` property of the error.
  */
-int
+JS_EXPORT int
 js_throw_error(js_env_t *env, const char *code, const char *message);
 
 /**
  * As `js_throw_errorf()`, but taking a `va_list`.
  */
-int
+JS_EXPORT int
 js_throw_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
 
 /**
  * As `js_throw_error()`, but formatting the message as `printf()` does.
  */
-int
+JS_EXPORT int
 js_throw_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
  * Throw a `TypeError` with the given NUL terminated message. If `code` is not
  * `NULL` it is set as the `code` property of the error.
  */
-int
+JS_EXPORT int
 js_throw_type_error(js_env_t *env, const char *code, const char *message);
 
 /**
  * As `js_throw_type_errorf()`, but taking a `va_list`.
  */
-int
+JS_EXPORT int
 js_throw_type_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
 
 /**
  * As `js_throw_type_error()`, but formatting the message as `printf()` does.
  */
-int
+JS_EXPORT int
 js_throw_type_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
  * Throw a `RangeError` with the given NUL terminated message. If `code` is not
  * `NULL` it is set as the `code` property of the error.
  */
-int
+JS_EXPORT int
 js_throw_range_error(js_env_t *env, const char *code, const char *message);
 
 /**
  * As `js_throw_range_errorf()`, but taking a `va_list`.
  */
-int
+JS_EXPORT int
 js_throw_range_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
 
 /**
  * As `js_throw_range_error()`, but formatting the message as `printf()` does.
  */
-int
+JS_EXPORT int
 js_throw_range_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
  * Throw a `SyntaxError` with the given NUL terminated message. If `code` is
  * not `NULL` it is set as the `code` property of the error.
  */
-int
+JS_EXPORT int
 js_throw_syntax_error(js_env_t *env, const char *code, const char *message);
 
 /**
  * As `js_throw_syntax_errorf()`, but taking a `va_list`.
  */
-int
+JS_EXPORT int
 js_throw_syntax_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
 
 /**
  * As `js_throw_syntax_error()`, but formatting the message as `printf()` does.
  */
-int
+JS_EXPORT int
 js_throw_syntax_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
  * Throw a `ReferenceError` with the given NUL terminated message. If `code` is
  * not `NULL` it is set as the `code` property of the error.
  */
-int
+JS_EXPORT int
 js_throw_reference_error(js_env_t *env, const char *code, const char *message);
 
 /**
  * As `js_throw_reference_errorf()`, but taking a `va_list`.
  */
-int
+JS_EXPORT int
 js_throw_reference_verrorf(js_env_t *env, const char *code, const char *message, va_list args);
 
 /**
  * As `js_throw_reference_error()`, but formatting the message as `printf()`
  * does.
  */
-int
+JS_EXPORT int
 js_throw_reference_errorf(js_env_t *env, const char *code, const char *message, ...);
 
 /**
@@ -3636,7 +3739,7 @@ js_throw_reference_errorf(js_env_t *env, const char *code, const char *message, 
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_is_exception_pending(js_env_t *env, bool *result);
 
 /**
@@ -3648,7 +3751,7 @@ js_is_exception_pending(js_env_t *env, bool *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_and_clear_last_exception(js_env_t *env, js_value_t **result);
 
 /**
@@ -3657,16 +3760,18 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_fatal_exception(js_env_t *env, js_value_t *error);
 
 /**
  * Terminate JavaScript execution at the next possible opportunity, discarding
- * the remainder of the execution stack.
+ * the remainder of the execution stack. The termination cannot be caught by
+ * JavaScript. Once execution has been terminated, the environment can run
+ * JavaScript again.
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_terminate_execution(js_env_t *env);
 
 /**
@@ -3680,7 +3785,7 @@ js_terminate_execution(js_env_t *env);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_adjust_external_memory(js_env_t *env, int64_t change_in_bytes, int64_t *result);
 
 /**
@@ -3691,7 +3796,7 @@ js_adjust_external_memory(js_env_t *env, int64_t change_in_bytes, int64_t *resul
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_request_garbage_collection(js_env_t *env);
 
 /**
@@ -3704,7 +3809,7 @@ js_request_garbage_collection(js_env_t *env);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection_tracking_options_t *options, void *data, js_garbage_collection_tracking_t **result);
 
 /**
@@ -3713,7 +3818,7 @@ js_enable_garbage_collection_tracking(js_env_t *env, const js_garbage_collection
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_tracking_t *tracking);
 
 /**
@@ -3723,7 +3828,7 @@ js_disable_garbage_collection_tracking(js_env_t *env, js_garbage_collection_trac
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result);
 
 /**
@@ -3737,7 +3842,7 @@ js_get_heap_statistics(js_env_t *env, js_heap_statistics_t *result);
  *
  * This function can be called even if there is a pending JavaScript exception.
  */
-int
+JS_EXPORT int
 js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistics[], size_t len, size_t offset, size_t *result);
 
 /**
@@ -3750,14 +3855,14 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
  *
  * Inspector support is optional, and an engine that does not offer it throws.
  */
-int
+JS_EXPORT int
 js_create_inspector(js_env_t *env, js_inspector_t **result);
 
 /**
  * Destroy an inspector session. The behavior is undefined if it is used
  * afterwards.
  */
-int
+JS_EXPORT int
 js_destroy_inspector(js_env_t *env, js_inspector_t *inspector);
 
 /**
@@ -3766,7 +3871,7 @@ js_destroy_inspector(js_env_t *env, js_inspector_t *inspector);
  * message is UTF-8 encoded JSON that is only valid for the duration of the
  * call.
  */
-int
+JS_EXPORT int
 js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_message_cb cb, void *data);
 
 /**
@@ -3779,7 +3884,7 @@ js_on_inspector_response(js_env_t *env, js_inspector_t *inspector, js_inspector_
  * While paused, the tasks of the environment continue to be run so that the
  * inspector remains responsive.
  */
-int
+JS_EXPORT int
 js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_paused_cb cb, void *data);
 
 /**
@@ -3787,7 +3892,7 @@ js_on_inspector_paused(js_env_t *env, js_inspector_t *inspector, js_inspector_pa
  * `js_send_inspector_request()` and its messages will be delivered to the
  * callback added with `js_on_inspector_response()`.
  */
-int
+JS_EXPORT int
 js_connect_inspector(js_env_t *env, js_inspector_t *inspector);
 
 /**
@@ -3795,7 +3900,7 @@ js_connect_inspector(js_env_t *env, js_inspector_t *inspector);
  * The message is UTF-8 encoded JSON, and `len` may be `(size_t) -1` if it is
  * NUL terminated.
  */
-int
+JS_EXPORT int
 js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *message, size_t len);
 
 /**
@@ -3804,14 +3909,14 @@ js_send_inspector_request(js_env_t *env, js_inspector_t *inspector, const char *
  *
  * The context that the environment was created with is attached automatically.
  */
-int
+JS_EXPORT int
 js_attach_context_to_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context, const char *name, size_t len);
 
 /**
  * Remove a context from an inspector session, after which it can no longer be
  * inspected.
  */
-int
+JS_EXPORT int
 js_detach_context_from_inspector(js_env_t *env, js_inspector_t *inspector, js_context_t *context);
 
 #ifdef __cplusplus

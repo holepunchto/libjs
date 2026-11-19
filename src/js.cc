@@ -35,6 +35,7 @@
 using namespace v8;
 using namespace v8_inspector;
 
+typedef struct js_unhandled_promise_s js_unhandled_promise_t;
 typedef struct js_callback_s js_callback_t;
 typedef struct js_typed_callback_s js_typed_callback_t;
 typedef struct js_deleter_s js_deleter_t;
@@ -46,8 +47,6 @@ typedef struct js_binding_callbacks_s<js_finalizer_t> js_finalizer_callbacks_t;
 typedef struct js_binding_state_s js_binding_state_t;
 typedef struct js_snapshot_state_s js_snapshot_state_t;
 typedef struct js_delegate_s js_delegate_t;
-typedef struct js_external_string_utf16le_s js_external_string_utf16le_t;
-typedef struct js_external_string_latin1_s js_external_string_latin1_t;
 typedef struct js_tracing_controller_s js_tracing_controller_t;
 typedef struct js_task_handle_s js_task_handle_t;
 typedef struct js_delayed_task_handle_s js_delayed_task_handle_t;
@@ -65,6 +64,9 @@ typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
 typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
+typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
+typedef struct js_isolate_scope_s js_isolate_scope_t;
+typedef struct js_idle_window_s js_idle_window_t;
 typedef struct js_env_scope_s js_env_scope_t;
 typedef struct js_env_scope_options_s js_env_scope_options_t;
 typedef struct js_microtask_s js_microtask_t;
@@ -260,6 +262,36 @@ struct js_segment_array_s {
     for (uint32_t i = 0; i < len; i++) {
       if (is_live(i)) fn(std::launder(reinterpret_cast<T *>(at(i)->value)));
     }
+  }
+
+  // The array may instead be used as a stack, adding and removing elements at its
+  // end. This must not be mixed with alloc() and free().
+  template <typename... Args>
+  T *
+  push(Args &&...args) {
+    auto i = len++;
+
+    auto slot = reserve(i);
+
+    set_live(i, true);
+
+    return new (slot->value) T(std::forward<Args>(args)...);
+  }
+
+  T *
+  top() {
+    if (len == 0) return nullptr;
+
+    return std::launder(reinterpret_cast<T *>(at(len - 1)->value));
+  }
+
+  void
+  pop() {
+    assert(len > 0);
+
+    top()->~T();
+
+    set_live(--len, false);
   }
 
   // Releases the segments at the end of the array that hold no live element.
@@ -1822,7 +1854,168 @@ js__release_allocations(js_allocations_t *allocations);
 static void
 js__destroy_allocations(js_allocations_t *allocations);
 
+static void
+js__finalize_external_strings(js_env_t *env);
+
 } // namespace
+
+// Entering a V8 isolate is reference counted and costs a few nanoseconds per
+// call. libjs enters the isolate around every call into V8; when the calling
+// thread is already inside it, because the call comes from a native callback
+// or from code that libjs itself entered, entering again is redundant. The
+// thread-local pointer records the isolate libjs has entered on this thread,
+// and the scope only enters and exits when it differs. Scopes nest strictly:
+// each one restores the previous isolate when it leaves.
+static thread_local Isolate *js__entered_isolate = nullptr;
+
+struct js_isolate_scope_s {
+  Isolate *current;
+  Isolate *previous;
+
+  explicit js_isolate_scope_s(Isolate *isolate)
+      : current(nullptr),
+        previous(nullptr) {
+    if (js__entered_isolate != isolate) [[unlikely]] {
+      previous = js__entered_isolate;
+      js__entered_isolate = isolate;
+      current = isolate;
+      isolate->Enter();
+    }
+  }
+
+  ~js_isolate_scope_s() {
+    if (current != nullptr) [[unlikely]] {
+      current->Exit();
+      js__entered_isolate = previous;
+    }
+  }
+
+  js_isolate_scope_s(const js_isolate_scope_s &) = delete;
+
+  js_isolate_scope_s &
+  operator=(const js_isolate_scope_s &) = delete;
+};
+
+// V8 only samples an isolate for profiling while it's entered, and libjs only
+// enters it during calls. To record time spent waiting on the loop as idle, the
+// idle window enters every isolate on the loop while it polls for I/O. Entries
+// must be exited in reverse order, so a single window per loop owns them all.
+// It's safe to hold the entries across the poll as libuv always runs prepare
+// and check handles in pairs, and isolates are only disposed from close
+// callbacks, which run after the check handles.
+static thread_local std::map<uv_loop_t *, js_idle_window_t *> js__idle_windows;
+
+struct js_idle_window_s {
+  uv_prepare_t prepare;
+  uv_check_t check;
+
+  int active_handles;
+
+  std::vector<Isolate *> isolates;
+
+  // Isolates are only added while the window is open, so the entered ones are
+  // always the first ones.
+  size_t entered;
+
+  static void
+  attach(uv_loop_t *loop, Isolate *isolate) {
+    auto &window = js__idle_windows[loop];
+
+    if (window == nullptr) window = new js_idle_window_t(loop);
+
+    window->isolates.push_back(isolate);
+  }
+
+  static void
+  detach(uv_loop_t *loop, Isolate *isolate) {
+    auto window = js__idle_windows.at(loop);
+
+    assert(window->entered == 0);
+
+    std::erase(window->isolates, isolate);
+
+    if (window->isolates.empty()) {
+      js__idle_windows.erase(loop);
+
+      uv_close(reinterpret_cast<uv_handle_t *>(&window->prepare), on_handle_close);
+
+      uv_close(reinterpret_cast<uv_handle_t *>(&window->check), on_handle_close);
+    }
+  }
+
+private:
+  js_idle_window_s(uv_loop_t *loop)
+      : prepare(),
+        check(),
+        active_handles(2),
+        isolates(),
+        entered(0) {
+    int err;
+
+    // Prepare handles run in reverse start order, so starting the window before
+    // the handles of its environments opens it after their tasks have run.
+    err = uv_prepare_init(loop, &prepare);
+    assert(err == 0);
+
+    err = uv_prepare_start(&prepare, on_prepare);
+    assert(err == 0);
+
+    prepare.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&prepare));
+
+    err = uv_check_init(loop, &check);
+    assert(err == 0);
+
+    err = uv_check_start(&check, on_check);
+    assert(err == 0);
+
+    check.data = this;
+
+    uv_unref(reinterpret_cast<uv_handle_t *>(&check));
+  }
+
+  js_idle_window_s(const js_idle_window_s &) = delete;
+
+  js_idle_window_s &
+  operator=(const js_idle_window_s &) = delete;
+
+  static void
+  on_prepare(uv_prepare_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    for (auto isolate : window->isolates) {
+      isolate->Enter();
+      isolate->SetIdle(true);
+    }
+
+    window->entered = window->isolates.size();
+  }
+
+  static void
+  on_check(uv_check_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    while (window->entered > 0) {
+      auto isolate = window->isolates[--window->entered];
+
+      isolate->SetIdle(false);
+      isolate->Exit();
+    }
+  }
+
+  static void
+  on_handle_close(uv_handle_t *handle) {
+    auto window = reinterpret_cast<js_idle_window_t *>(handle->data);
+
+    if (--window->active_handles == 0) delete window;
+  }
+};
+
+struct js_unhandled_promise_s {
+  Global<Promise> promise;
+  Global<Value> snapshot;
+};
 
 struct js_env_s {
   uv_loop_t *loop;
@@ -1840,6 +2033,8 @@ struct js_env_s {
 
   uint32_t depth;
 
+  TryCatch *callback_try_catch;
+
   Isolate *isolate;
 
   Global<Context> context;
@@ -1849,6 +2044,11 @@ struct js_env_s {
   Global<Private> tag;
 
   Global<Value> exception;
+
+  // Whether V8 also holds the exception as pending, which is how a stale one
+  // is told apart. An exception with no JavaScript there to receive it, like
+  // one thrown at the top level, is not held as V8 discards it on its own.
+  bool exception_held;
 
   ExternalMemoryAccounter memory;
 
@@ -1860,9 +2060,11 @@ struct js_env_s {
 
   std::vector<std::pair<js_dynamic_import_cb, void *>> dynamic_import_handlers;
 
-  std::list<Global<Promise>> unhandled_promises;
+  std::list<js_unhandled_promise_t> unhandled_promises;
 
   js_teardown_queue_t teardown_queue;
+
+  std::set<std::pair<js_deferred_teardown_cb, void *>> deferred_teardowns;
 
   js_allocations_t *allocations;
 
@@ -1893,17 +2095,20 @@ struct js_env_s {
         platform(platform),
         tasks(),
         depth(0),
+        callback_try_catch(nullptr),
         isolate(isolate),
         context(),
         wrapper(),
         delegate(),
         tag(),
         exception(),
+        exception_held(false),
         modules(),
         scripts(),
         default_module_id(),
         unhandled_promises(),
         teardown_queue(),
+        deferred_teardowns(),
         allocations(js__create_allocations()),
         inspector(),
         callbacks(),
@@ -1920,6 +2125,12 @@ struct js_env_s {
     guard.unlock();
 
     tasks->self = tasks;
+
+    // Isolates start out idle. Mark this one busy so that work done in calls
+    // outside the idle window isn't recorded as idle.
+    isolate->SetIdle(false);
+
+    js_idle_window_t::attach(loop, isolate);
 
     err = uv_prepare_init(loop, &prepare);
     assert(err == 0);
@@ -1956,7 +2167,7 @@ struct js_env_s {
 
     isolate->AddGCEpilogueCallback(on_garbage_collection, this, GCType::kGCTypeMarkSweepCompact);
 
-    auto isolate_scope = Isolate::Scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
     auto scope = HandleScope(isolate);
 
     // Pass the delegate deserialize hook so a delegate's per-instance pointer is
@@ -1992,7 +2203,7 @@ struct js_env_s {
     bindings.finalizers.free.clear();
 
     {
-      auto isolate_scope = Isolate::Scope(isolate);
+      js_isolate_scope_t isolate_scope(isolate);
       auto scope = HandleScope(isolate);
 
       js__finalize_allocations(allocations);
@@ -2004,6 +2215,8 @@ struct js_env_s {
         exception.Reset();
         default_module_id.Reset();
 
+        unhandled_promises.clear();
+
         context.Get(isolate)->Exit();
         context.Reset();
       }
@@ -2012,6 +2225,10 @@ struct js_env_s {
     }
 
     if (snapshot.creator) delete snapshot.creator;
+
+    if (js__entered_isolate == isolate) js__entered_isolate = nullptr;
+
+    js_idle_window_t::detach(loop, isolate);
 
     isolate->Dispose();
 
@@ -2105,20 +2322,38 @@ struct js_env_s {
     if (callbacks.unhandled_rejection == nullptr) unhandled_promises.clear();
     else {
       while (!unhandled_promises.empty()) {
-        auto promise = std::move(unhandled_promises.front());
+        auto rejection = std::move(unhandled_promises.front());
 
         unhandled_promises.pop_front();
 
         auto scope = HandleScope(isolate);
 
-        auto local = promise.Get(isolate);
+        auto local = rejection.promise.Get(isolate);
 
-        callbacks.unhandled_rejection(
-          this,
-          js_from_local(local->Result()),
-          js_from_local(local),
-          callbacks.unhandled_rejection_data
-        );
+        call_with_continuation_snapshot(rejection.snapshot.Get(isolate), [&] {
+          call_into_native<void>(
+            [&] {
+              callbacks.unhandled_rejection(
+                this,
+                js_from_local(local->Result()),
+                js_from_local(local),
+                callbacks.unhandled_rejection_data
+              );
+            },
+            depth == 1 /* detached */
+          );
+        });
+
+        // Within a call into JavaScript, an exception thrown by the handler is
+        // rethrown for that call to catch. Otherwise, nothing is there to
+        // receive it. Either way, the remaining rejections are left for the
+        // next checkpoint rather than handlers that could do nothing with an
+        // exception pending.
+        if (!exception.IsEmpty()) {
+          if (depth > 1) propagate_exception();
+
+          break;
+        }
 
         if (isolate->IsExecutionTerminating()) break;
 
@@ -2133,12 +2368,19 @@ struct js_env_s {
   run_macrotasks() {
     tasks->move_expired_tasks();
 
-    auto isolate_scope = Isolate::Scope(isolate);
+    js_isolate_scope_t isolate_scope(isolate);
 
     while (auto task = tasks->pop_task()) {
       tasks->depth++;
 
+      // JavaScript run by a task, such as a finalization registry callback,
+      // must receive the exceptions thrown into it rather than have them
+      // reported as uncaught.
+      depth++;
+
       task->run();
+
+      depth--;
 
       run_microtasks();
 
@@ -2146,8 +2388,25 @@ struct js_env_s {
     }
   }
 
+  // A fast call is invoked by V8 directly, so no frame of ours takes back an
+  // exception it records. If V8 no longer holds the exception, JavaScript has
+  // caught it and the record is stale.
+  void
+  discard_caught_exception() {
+    if (!exception.IsEmpty() && exception_held && !isolate->HasPendingException()) exception.Reset();
+  }
+
+  void
+  record_exception(Local<Value> error, bool held) {
+    exception.Reset(isolate, error);
+
+    exception_held = held;
+  }
+
   bool
   is_exception_pending() {
+    discard_caught_exception();
+
     return !exception.IsEmpty();
   }
 
@@ -2178,9 +2437,14 @@ struct js_env_s {
   void
   uncaught_exception(Local<Value> error) {
     if (callbacks.uncaught_exception) {
-      callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+      call_into_native<void>(
+        [&] {
+          callbacks.uncaught_exception(this, js_from_local(error), callbacks.uncaught_exception_data);
+        },
+        true /* detached */
+      );
     } else {
-      exception.Reset(isolate, error);
+      record_exception(error, false);
     }
   }
 
@@ -2189,21 +2453,71 @@ struct js_env_s {
     return isolate->GetCurrentContext();
   }
 
+  Local<Value>
+  get_continuation_snapshot() {
+    return isolate->GetContinuationPreservedEmbedderData().As<Value>();
+  }
+
+  void
+  set_continuation_snapshot(Local<Value> snapshot) {
+    if (snapshot.IsEmpty()) snapshot = Undefined(isolate);
+
+    isolate->SetContinuationPreservedEmbedderData(snapshot);
+  }
+
+  // Finalizers run in the empty snapshot, so they do not inherit whatever
+  // snapshot happens to be current when the garbage collector runs.
+  template <typename F>
+  void
+  call_into_finalizer(F &&fn) {
+    auto scope = HandleScope(isolate);
+
+    if (get_continuation_snapshot()->IsUndefined()) {
+      call_into_native<void>(fn, true /* detached */);
+    } else {
+      call_with_continuation_snapshot(Local<Value>(), [&] {
+        call_into_native<void>(fn, true /* detached */);
+      });
+    }
+  }
+
+  template <typename F>
+  void
+  call_with_continuation_snapshot(Local<Value> snapshot, F &&fn) {
+    auto scope = HandleScope(isolate);
+
+    auto previous = get_continuation_snapshot();
+
+    set_continuation_snapshot(snapshot);
+
+    fn();
+
+    set_continuation_snapshot(previous);
+  }
+
   template <typename T>
   T
   try_catch(const std::function<T()> &fn) {
     auto try_catch = TryCatch(isolate);
 
+    depth++;
+
     auto result = fn();
+
+    depth--;
 
     if (try_catch.HasCaught() && try_catch.CanContinue()) {
       auto error = try_catch.Exception();
 
       if (depth == 0) uncaught_exception(error);
       else {
-        exception.Reset(isolate, error);
+        record_exception(error, true);
 
         try_catch.ReThrow();
+
+        // The call itself may have succeeded with the exception thrown at a
+        // microtask checkpoint after it, but the caller must still see it.
+        return T();
       }
     }
 
@@ -2227,13 +2541,9 @@ struct js_env_s {
   call_into_javascript(const std::function<T()> &fn, bool always_checkpoint = false) {
     return try_catch<T>(
       [&] {
-        depth++;
-
         auto result = fn();
 
         if (depth == 1 || always_checkpoint) run_microtasks();
-
-        depth--;
 
         return result;
       }
@@ -2252,10 +2562,12 @@ struct js_env_s {
     return call_into_javascript<MaybeLocal<T>>(fn, always_checkpoint);
   }
 
-  template <typename T>
+  // A detached callback has no JavaScript there to receive the exceptions it
+  // throws, so they are left pending for the embedder instead.
+  template <typename T, typename F>
   T
-  call_into_native(const std::function<T()> &fn) {
-    auto try_catch = TryCatch(isolate);
+  call_into_native(F &&fn, bool detached = false) {
+    js_callback_scope_s callback_scope(this, detached);
 
     return fn();
   }
@@ -2297,12 +2609,15 @@ struct js_env_s {
 
     switch (message.GetEvent()) {
     case kPromiseRejectWithNoHandler:
-      env->unhandled_promises.push_back(Global<Promise>(isolate, promise));
+      env->unhandled_promises.push_back({
+        Global<Promise>(isolate, promise),
+        Global<Value>(isolate, env->get_continuation_snapshot()),
+      });
       break;
 
     case kPromiseHandlerAddedAfterReject:
       for (auto it = env->unhandled_promises.begin(); it != env->unhandled_promises.end(); it++) {
-        auto unhandled_promise = it->Get(isolate);
+        auto unhandled_promise = it->promise.Get(isolate);
 
         if (unhandled_promise == promise) {
           env->unhandled_promises.erase(it);
@@ -2342,6 +2657,8 @@ private:
   static void
   on_garbage_collection(Isolate *isolate, GCType type, GCCallbackFlags flags, void *data) {
     auto env = reinterpret_cast<js_env_t *>(data);
+
+    js__finalize_external_strings(env);
 
     js__shrink_allocations(env->allocations);
   }
@@ -2389,6 +2706,35 @@ private:
 
     env->dispose_maybe();
   }
+
+  struct js_callback_scope_s {
+    js_env_t *env;
+    bool detached;
+    TryCatch try_catch;
+    TryCatch *previous;
+
+    js_callback_scope_s(js_env_t *env, bool detached)
+        : env(env),
+          detached(detached),
+          try_catch(env->isolate),
+          previous(std::exchange(env->callback_try_catch, &try_catch)) {}
+
+    // The TryCatch is destroyed after the body has run, and with it whatever
+    // V8 holds of an exception the callback threw, so a stale record can only
+    // be told apart here.
+    ~js_callback_scope_s() {
+      env->discard_caught_exception();
+
+      if (detached) env->exception_held = false;
+
+      env->callback_try_catch = previous;
+    }
+
+    js_callback_scope_s(const js_callback_scope_s &) = delete;
+
+    js_callback_scope_s &
+    operator=(const js_callback_scope_s &) = delete;
+  };
 };
 
 struct js_env_scope_options_s {
@@ -2396,7 +2742,7 @@ struct js_env_scope_options_s {
 };
 
 struct js_env_scope_s {
-  Isolate::Scope isolate_scope;
+  js_isolate_scope_t isolate_scope;
   std::optional<HandleScope> handle_scope;
 
   js_env_scope_s(js_env_t *env, js_env_scope_options_t options = {})
@@ -2414,13 +2760,11 @@ struct js_env_scope_s {
 struct js_context_s {
   Global<Context> context;
 
-  js_context_s(js_env_t *env)
-      : context() {
+  js_context_s(js_env_t *env, Local<Context> local)
+      : context(env->isolate, local) {
     auto parent_context = env->context.Get(env->isolate);
 
-    context.Reset(env->isolate, Context::New(env->isolate));
-
-    context.Get(env->isolate)->SetSecurityToken(parent_context->GetSecurityToken());
+    local->SetSecurityToken(parent_context->GetSecurityToken());
   }
 
   js_context_s(const js_context_s &) = delete;
@@ -2429,10 +2773,11 @@ struct js_context_s {
   operator=(const js_context_s &) = delete;
 };
 
-// Handle scopes are not owned by the environment. They must be destroyed in
-// the exact reverse of the order they were opened, interleaved with the scopes
-// held on the native stack, and no sweep can reconstruct that order. Leaving
-// one open therefore leaks it.
+// The environment owns the storage for handle scopes, but does not destroy any
+// left open when it is torn down: they must be destroyed in the exact reverse
+// of the order they were opened, interleaved with the scopes held on the native
+// stack, and no sweep can reconstruct that order. Only their storage is
+// released, after the isolate is disposed.
 struct js_handle_scope_s {
   HandleScope scope;
 
@@ -2455,6 +2800,37 @@ struct js_escapable_handle_scope_s {
 
   js_escapable_handle_scope_s &
   operator=(const js_escapable_handle_scope_s &) = delete;
+};
+
+struct js_continuation_scope_s {
+  Local<Value> previous;
+
+  js_continuation_scope_s(Local<Value> previous)
+      : previous(previous) {}
+
+  js_continuation_scope_s(const js_continuation_scope_s &) = delete;
+
+  js_continuation_scope_s &
+  operator=(const js_continuation_scope_s &) = delete;
+};
+
+// Handle scopes are opened and closed often, and must close in the reverse order
+// they were opened. Their storage is therefore kept as a stack on the
+// environment and reused as scopes are opened again.
+struct js_handle_scope_slot_s {
+  union {
+    js_handle_scope_t handle_scope;
+    js_escapable_handle_scope_t escapable_handle_scope;
+  };
+
+  js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s(const js_handle_scope_slot_s &) = delete;
+
+  ~js_handle_scope_slot_s() {}
+
+  js_handle_scope_slot_s &
+  operator=(const js_handle_scope_slot_s &) = delete;
 };
 
 // Every unit compiled by this library carries host-defined options of its own,
@@ -2583,7 +2959,9 @@ struct js_module_s {
 
     auto assertions = Object::New(env->isolate, Null(env->isolate), nullptr, nullptr, 0);
 
-    for (int i = 0; i < raw_assertions->Length(); i += 3) {
+    // Unlike those passed to `on_resolve()`, the attributes of a dynamic import
+    // carry no source locations, so each entry is a key and a value only.
+    for (int i = 0; i < raw_assertions->Length(); i += 2) {
       assertions
         ->Set(
           context,
@@ -3002,7 +3380,11 @@ private:
     auto finalizer = info.GetParameter();
 
     if (finalizer->finalize_cb) {
-      finalizer->finalize_cb(finalizer->env, finalizer->data, finalizer->finalize_hint);
+      auto env = finalizer->env;
+
+      env->call_into_finalizer([&] {
+        finalizer->finalize_cb(env, finalizer->data, finalizer->finalize_hint);
+      });
     }
 
     finalizer->destroy();
@@ -3197,35 +3579,49 @@ public:
   }
 };
 
-struct js_external_string_utf16le_s : String::ExternalStringResource {
+// The engine may dispose of these on a worker thread in the middle of a
+// collection, or while garbage collection is held off, and neither allows
+// calling into the environment. Disposing of one therefore only defers its
+// finalizer to the end of the next full collection.
+template <typename R, typename C>
+struct js_external_string_s : R {
   js_env_t *env;
 
-  utf16_t *str;
+  C *str;
   size_t len;
 
   js_finalize_cb finalize_cb;
   void *finalize_hint;
 
-  js_external_string_utf16le_s(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
+  js_external_string_s *next;
+
+  js_external_string_s(js_env_t *env, void *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
       : env(env),
-        str(str),
+        str(static_cast<C *>(str)),
         len(len),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
+        finalize_hint(finalize_hint),
+        next(nullptr) {}
 
-  js_external_string_utf16le_s(const js_external_string_utf16le_s &) = delete;
+  js_external_string_s(const js_external_string_s &) = delete;
 
-  ~js_external_string_utf16le_s() {
-    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+  js_external_string_s &
+  operator=(const js_external_string_s &) = delete;
+
+  void
+  finalize() {
+    auto cb = std::exchange(finalize_cb, nullptr);
+
+    if (cb) cb(env, str, finalize_hint);
   }
 
-  js_external_string_utf16le_s &
-  operator=(const js_external_string_utf16le_s &) = delete;
+  void
+  Dispose() override;
 
-  const uint16_t *
+  const C *
   data() const override {
     return str;
-  };
+  }
 
   size_t
   length() const override {
@@ -3233,40 +3629,21 @@ struct js_external_string_utf16le_s : String::ExternalStringResource {
   }
 };
 
-struct js_external_string_latin1_s : String::ExternalOneByteStringResource {
-  js_env_t *env;
+using js_external_string_utf16le_t = js_external_string_s<String::ExternalStringResource, uint16_t>;
+using js_external_string_latin1_t = js_external_string_s<String::ExternalOneByteStringResource, char>;
 
-  latin1_t *str;
-  size_t len;
+template <>
+void
+js_external_string_utf16le_t::Dispose();
 
-  js_finalize_cb finalize_cb;
-  void *finalize_hint;
+template <>
+void
+js_external_string_latin1_t::Dispose();
 
-  js_external_string_latin1_s(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint)
-      : env(env),
-        str(str),
-        len(len),
-        finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint) {}
-
-  js_external_string_latin1_s(const js_external_string_latin1_s &) = delete;
-
-  ~js_external_string_latin1_s() {
-    if (finalize_cb) finalize_cb(env, str, finalize_hint);
-  }
-
-  js_external_string_latin1_s &
-  operator=(const js_external_string_latin1_s &) = delete;
-
-  const char *
-  data() const override {
-    return reinterpret_cast<char *>(str);
-  };
-
-  size_t
-  length() const override {
-    return len;
-  }
+template <typename T>
+struct js_external_strings_s {
+  js_segment_array_t<T> resources;
+  std::atomic<T *> disposed;
 };
 
 struct js_string_view_s {
@@ -3701,7 +4078,12 @@ private: // V8 embedder API
       utf16le_convert_to_utf8(reinterpret_cast<const utf16_t *>(string.characters16()), string.length(), utf8.data());
     }
 
-    cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+    env->call_into_native<void>(
+      [&] {
+        cb(env, inspector, reinterpret_cast<char *>(utf8.data()), utf8.size() - 1 /* NULL */, data);
+      },
+      true /* detached */
+    );
   }
 
   void
@@ -3837,7 +4219,13 @@ struct js_inspector_s {
 
     utf8_convert_to_utf16le(reinterpret_cast<const utf8_t *>(message), len, utf16.data());
 
+    // JavaScript evaluated by the inspector must receive the exceptions thrown
+    // into it rather than have them reported as uncaught.
+    env->depth++;
+
     session->dispatchProtocolMessage(StringView(utf16.data(), utf16_len));
+
+    env->depth--;
   }
 };
 
@@ -3845,7 +4233,12 @@ bool
 js_inspector_client_s::on_pause(js_inspector_t *session) {
   if (session->cb == nullptr) return false;
 
-  return session->cb(session->env, session, session->data);
+  return session->env->call_into_native<bool>(
+    [&] {
+      return session->cb(session->env, session, session->data);
+    },
+    true /* detached */
+  );
 }
 
 namespace {
@@ -3886,6 +4279,25 @@ struct js_garbage_collection_tracking_s {
   operator=(const js_garbage_collection_tracking_s &) = delete;
 };
 
+struct js_microtask_s {
+  js_env_t *env;
+  js_task_cb cb;
+  void *data;
+
+  js_microtask_s(js_env_t *env, js_task_cb cb, void *data)
+      : env(env),
+        cb(cb),
+        data(data) {}
+
+  js_microtask_s(const js_microtask_s &) = delete;
+
+  js_microtask_s &
+  operator=(const js_microtask_s &) = delete;
+
+  static void
+  on_run(void *data);
+};
+
 struct js_allocations_s {
   js_segment_array_t<js_context_t> contexts;
   js_segment_array_t<js_script_t> scripts;
@@ -3896,11 +4308,17 @@ struct js_allocations_s {
   js_segment_array_t<js_garbage_collection_tracking_t> garbage_collection_tracking;
   js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
   js_segment_array_t<js_inspector_t> inspectors;
+  js_segment_array_t<js_microtask_t> microtasks;
+  js_external_strings_s<js_external_string_utf16le_t> external_strings_utf16le;
+  js_external_strings_s<js_external_string_latin1_t> external_strings_latin1;
 
   js_segment_array_t<js_callback_t> callbacks;
   js_segment_array_t<js_typed_callback_t> typed_callbacks;
   js_segment_array_t<js_finalizer_t> finalizers;
   js_segment_array_t<js_delegate_t> delegates;
+
+  js_segment_array_t<js_handle_scope_slot_t> handle_scopes;
+  js_segment_array_t<js_continuation_scope_t> continuation_scopes;
 };
 
 namespace {
@@ -3921,10 +4339,15 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->garbage_collection_tracking.shrink();
   allocations->deferred_teardowns.shrink();
   allocations->inspectors.shrink();
+  allocations->microtasks.shrink();
+  allocations->external_strings_utf16le.resources.shrink();
+  allocations->external_strings_latin1.resources.shrink();
   allocations->callbacks.shrink();
   allocations->typed_callbacks.shrink();
   allocations->finalizers.shrink();
   allocations->delegates.shrink();
+  allocations->handle_scopes.shrink();
+  allocations->continuation_scopes.shrink();
 }
 
 static void
@@ -3936,11 +4359,20 @@ js__finalize_allocations(js_allocations_t *allocations) {
   allocations->delegates.each([](js_delegate_t *delegate) {
     delegate->finalize();
   });
+
+  allocations->external_strings_utf16le.resources.each([](js_external_string_utf16le_t *string) {
+    string->finalize();
+  });
+
+  allocations->external_strings_latin1.resources.each([](js_external_string_latin1_t *string) {
+    string->finalize();
+  });
 }
 
 static void
 js__release_allocations(js_allocations_t *allocations) {
   allocations->callbacks.clear();
+  allocations->microtasks.clear();
   allocations->inspectors.clear();
   allocations->deferred_teardowns.clear();
   allocations->garbage_collection_tracking.clear();
@@ -3955,7 +4387,8 @@ js__release_allocations(js_allocations_t *allocations) {
   // callbacks through the signatures its compiler threads read, and finalizers
   // through second pass callbacks that are still pending, which any collection
   // runs first. They therefore only let go of their handles here and are freed
-  // along with the allocations.
+  // along with the allocations. External strings are left alone entirely, as
+  // the engine still disposes of them when the isolate is disposed.
 
   allocations->typed_callbacks.each([](js_typed_callback_t *callback) {
     callback->instance.Reset();
@@ -3973,6 +4406,36 @@ js__release_allocations(js_allocations_t *allocations) {
 static void
 js__destroy_allocations(js_allocations_t *allocations) {
   delete allocations;
+}
+
+template <typename T, typename F>
+static inline void
+js__drain_external_strings(js_external_strings_s<T> &strings, F finalize) {
+  auto string = strings.disposed.exchange(nullptr, std::memory_order_acquire);
+
+  while (string) {
+    auto next = string->next;
+
+    finalize(string);
+
+    strings.resources.free(string);
+
+    string = next;
+  }
+}
+
+static void
+js__finalize_external_strings(js_env_t *env) {
+  auto finalize = [env](auto string) {
+    if (string->finalize_cb == nullptr) return;
+
+    env->call_into_finalizer([&] {
+      string->finalize();
+    });
+  };
+
+  js__drain_external_strings(env->allocations->external_strings_utf16le, finalize);
+  js__drain_external_strings(env->allocations->external_strings_latin1, finalize);
 }
 
 } // namespace
@@ -3997,25 +4460,49 @@ js_delegate_s::destroy() {
   env->allocations->delegates.free(this);
 }
 
-struct js_microtask_s {
-  js_env_t *env;
-  js_task_cb cb;
-  void *data;
+template <typename T>
+static inline void
+js__defer_external_string(js_external_strings_s<T> &strings, T *string) {
+  auto next = strings.disposed.load(std::memory_order_relaxed);
 
-  js_microtask_s(js_env_t *env, js_task_cb cb, void *data)
-      : env(env),
-        cb(cb),
-        data(data) {}
+  do {
+    string->next = next;
+  } while (!strings.disposed.compare_exchange_weak(next, string, std::memory_order_release, std::memory_order_relaxed));
+}
 
-  static void
-  on_run(void *data) {
-    auto task = static_cast<js_microtask_t *>(data);
+template <>
+void
+js_external_string_utf16le_t::Dispose() {
+  js__defer_external_string(env->allocations->external_strings_utf16le, this);
+}
 
-    task->cb(task->env, task->data);
+template <>
+void
+js_external_string_latin1_t::Dispose() {
+  js__defer_external_string(env->allocations->external_strings_latin1, this);
+}
 
-    delete task;
-  }
-};
+void
+js_microtask_s::on_run(void *data) {
+  auto task = static_cast<js_microtask_t *>(data);
+
+  auto env = task->env;
+
+  // A microtask is not part of the call that queued it, so nothing is there to
+  // receive its exceptions. V8 would drop them, so report them as uncaught.
+  env->call_into_native<void>(
+    [&] {
+      task->cb(env, task->data);
+    },
+    true /* detached */
+  );
+
+  Local<Value> error;
+
+  if (env->take_exception().ToLocal(&error)) env->uncaught_exception(error);
+
+  env->allocations->microtasks.free(task);
+}
 
 namespace {
 
@@ -4732,7 +5219,7 @@ js_create_env(uv_loop_t *loop, js_platform_t *platform, const js_env_options_t *
 
   Isolate::Initialize(isolate, params);
 
-  auto isolate_scope = Isolate::Scope(isolate);
+  js_isolate_scope_t isolate_scope(isolate);
 
   isolate->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
 
@@ -4999,6 +5486,8 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
   env->default_module_id.Reset();
   env->context.Reset();
 
+  env->unhandled_promises.clear();
+
   for (auto callback : env->bindings.functions.entries) {
     if (callback) callback->instance.Reset();
   }
@@ -5128,6 +5617,22 @@ js__on_dynamic_import(js_env_t *env, Local<PrimitiveArray> host_defined_options,
   return 0;
 }
 
+template <typename T>
+static inline T *
+js__open_handle_scope(js_env_t *env) {
+  auto slot = env->allocations->handle_scopes.push();
+
+  return new (slot) T(env->isolate);
+}
+
+template <typename T>
+static inline void
+js__close_handle_scope(js_env_t *env, T *scope) {
+  scope->~T();
+
+  env->allocations->handle_scopes.pop();
+}
+
 } // namespace
 
 extern "C" int
@@ -5136,7 +5641,7 @@ js_open_handle_scope(js_env_t *env, js_handle_scope_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_handle_scope_t>(env);
 
   return 0;
 }
@@ -5147,7 +5652,7 @@ js_close_handle_scope(js_env_t *env, js_handle_scope_t *scope) {
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }
@@ -5158,7 +5663,7 @@ js_open_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t **resu
 
   js_env_scope_t env_scope(env);
 
-  *result = new js_escapable_handle_scope_t(env->isolate);
+  *result = js__open_handle_scope<js_escapable_handle_scope_t>(env);
 
   return 0;
 }
@@ -5169,7 +5674,7 @@ js_close_escapable_handle_scope(js_env_t *env, js_escapable_handle_scope_t *scop
 
   js_env_scope_t env_scope(env);
 
-  delete scope;
+  js__close_handle_scope(env, scope);
 
   return 0;
 }
@@ -5193,7 +5698,11 @@ js_create_context(js_env_t *env, js_context_t **result) {
 
   js_env_scope_t env_scope(env);
 
-  *result = env->allocations->contexts.alloc(env);
+  auto context = Context::New(env->isolate);
+
+  if (context.IsEmpty()) return js__error(env);
+
+  *result = env->allocations->contexts.alloc(env, context);
 
   return 0;
 }
@@ -6130,7 +6639,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -6145,7 +6654,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
       descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
       descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-      success = env->try_catch<bool>(
+      success = env->call_into_javascript<bool>(
         [&] {
           return local->DefineProperty(context, name, descriptor);
         }
@@ -6158,7 +6667,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         (property->attributes & js_enumerable) &&
         (property->attributes & js_configurable)
       ) {
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->CreateDataProperty(context, name, value);
           }
@@ -6169,7 +6678,7 @@ js_define_properties(js_env_t *env, js_value_t *object, js_property_descriptor_t
         descriptor.set_enumerable((property->attributes & js_enumerable) != 0);
         descriptor.set_configurable((property->attributes & js_configurable) != 0);
 
-        success = env->try_catch<bool>(
+        success = env->call_into_javascript<bool>(
           [&] {
             return local->DefineProperty(context, name, descriptor);
           }
@@ -6648,18 +7157,30 @@ js_create_external_string_utf8(js_env_t *env, utf8_t *str, size_t len, js_finali
   return 0;
 }
 
-extern "C" int
-js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
-  if (env->is_exception_pending()) return js__error(env);
+namespace {
 
-  js_env_scope_t env_scope(env);
+template <typename T, typename F>
+static inline int
+js__create_external_string(js_env_t *env, js_external_strings_s<T> &strings, void *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied, F create) {
+  // The engine would dispose of the resource of an empty string right away.
+  if (len == 0) {
+    if (copied) *copied = false;
 
-  auto resource = new js_external_string_utf16le_t(env, str, len, finalize_cb, finalize_hint);
+    *result = js_from_local(String::Empty(env->isolate));
 
-  auto string = String::NewExternalTwoByte(env->isolate, resource);
+    if (finalize_cb) finalize_cb(env, str, finalize_hint);
+
+    return 0;
+  }
+
+  auto resource = strings.resources.alloc(env, str, len, finalize_cb, finalize_hint);
+
+  auto string = create(resource);
 
   if (string.IsEmpty()) {
-    delete resource;
+    resource->finalize();
+
+    strings.resources.free(resource);
 
     return js__error(env);
   }
@@ -6671,27 +7192,28 @@ js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_fi
   return 0;
 }
 
+} // namespace
+
+extern "C" int
+js_create_external_string_utf16le(js_env_t *env, utf16_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
+  if (env->is_exception_pending()) return js__error(env);
+
+  js_env_scope_t env_scope(env);
+
+  return js__create_external_string(env, env->allocations->external_strings_utf16le, str, len, finalize_cb, finalize_hint, result, copied, [env](js_external_string_utf16le_t *resource) {
+    return String::NewExternalTwoByte(env->isolate, resource);
+  });
+}
+
 extern "C" int
 js_create_external_string_latin1(js_env_t *env, latin1_t *str, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result, bool *copied) {
   if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
-  auto resource = new js_external_string_latin1_t(env, str, len, finalize_cb, finalize_hint);
-
-  auto string = String::NewExternalOneByte(env->isolate, resource);
-
-  if (string.IsEmpty()) {
-    delete resource;
-
-    return js__error(env);
-  }
-
-  if (copied) *copied = false;
-
-  *result = js_from_local(string.ToLocalChecked());
-
-  return 0;
+  return js__create_external_string(env, env->allocations->external_strings_latin1, str, len, finalize_cb, finalize_hint, result, copied, [env](js_external_string_latin1_t *resource) {
+    return String::NewExternalOneByte(env->isolate, resource);
+  });
 }
 
 extern "C" int
@@ -7300,15 +7822,17 @@ js_create_external(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *
 
 extern "C" int
 js_create_date(js_env_t *env, double time, js_value_t **result) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
-  auto date = Date::New(context, time).ToLocalChecked();
+  auto date = Date::New(context, time);
 
-  *result = js_from_local(date);
+  if (date.IsEmpty()) return js__error(env);
+
+  *result = js_from_local(date.ToLocalChecked());
 
   return 0;
 }
@@ -7325,7 +7849,8 @@ js_create_error(js_env_t *env, js_value_t *code, js_value_t *message, js_value_t
   auto error = Error(js_to_local<String>(message), {}).As<Object>();
 
   if (code) {
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), js_to_local(code)).Check();
   }
 
   *result = js_from_local(error);
@@ -7389,13 +7914,15 @@ js_get_error_location(js_env_t *env, js_value_t *error, js_error_location_t *res
 
 extern "C" int
 js_create_promise(js_env_t *env, js_deferred_t **deferred, js_value_t **promise) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
   auto context = env->current_context();
 
-  auto resolver = Promise::Resolver::New(context).ToLocalChecked();
+  Local<Promise::Resolver> resolver;
+
+  if (!Promise::Resolver::New(context).ToLocal(&resolver)) return js__error(env);
 
   *deferred = env->allocations->deferreds.alloc(env->isolate, resolver);
 
@@ -7409,18 +7936,23 @@ namespace {
 template <bool resolved>
 static inline int
 js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
-  // Allow continuing even with a pending exception
-
   auto context = env->current_context();
 
   auto resolver = deferred->resolver.Get(env->isolate);
 
   auto local = js_to_local(resolution);
 
-  if (resolved) resolver->Resolve(context, local).Check();
-  else resolver->Reject(context, local).Check();
+  // Resolving with a thenable reads its `then` property, which may run
+  // JavaScript.
+  auto success = env->try_catch<bool>(
+    [&] {
+      return resolved ? resolver->Resolve(context, local) : resolver->Reject(context, local);
+    }
+  );
 
   env->allocations->deferreds.free(deferred);
+
+  if (success.IsNothing()) return js__error(env);
 
   if (env->depth == 0) env->run_microtasks();
 
@@ -7431,6 +7963,8 @@ js_conclude_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolut
 
 extern "C" int
 js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  if (env->is_exception_pending()) return js__error(env);
+
   js_env_scope_t env_scope(env);
 
   return js_conclude_deferred<true>(env, deferred, resolution);
@@ -7438,6 +7972,8 @@ js_resolve_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resoluti
 
 extern "C" int
 js_reject_deferred(js_env_t *env, js_deferred_t *deferred, js_value_t *resolution) {
+  if (env->is_exception_pending()) return js__error(env);
+
   js_env_scope_t env_scope(env);
 
   return js_conclude_deferred<false>(env, deferred, resolution);
@@ -7569,12 +8105,17 @@ extern "C" int
 js_create_external_arraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  assert(data != nullptr || len == 0);
+
   js_env_scope_t env_scope(env);
 
   js_deleter_t *deleter = nullptr;
 
+  // V8 ignores the backing store deleter when the data is null, so finalize
+  // immediately as there is nothing for the ArrayBuffer to keep alive.
   if (finalize_cb) {
-    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    if (data) deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    else finalize_cb(nullptr, data, finalize_hint);
   }
 
   auto store = ArrayBuffer::NewBackingStore(
@@ -7685,12 +8226,17 @@ extern "C" int
 js_create_external_sharedarraybuffer(js_env_t *env, void *data, size_t len, js_finalize_cb finalize_cb, void *finalize_hint, js_value_t **result) {
   if (env->is_exception_pending()) return js__error(env);
 
+  assert(data != nullptr || len == 0);
+
   js_env_scope_t env_scope(env);
 
   js_deleter_t *deleter = nullptr;
 
+  // V8 ignores the backing store deleter when the data is null, so finalize
+  // immediately as there is nothing for the SharedArrayBuffer to keep alive.
   if (finalize_cb) {
-    deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    if (data) deleter = new js_deleter_t(data, finalize_cb, finalize_hint);
+    else finalize_cb(nullptr, data, finalize_hint);
   }
 
   auto store = SharedArrayBuffer::NewBackingStore(
@@ -7841,7 +8387,7 @@ js_coerce_to_number(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto number = env->try_catch<Number>(
+  auto number = env->call_into_javascript<Number>(
     [&] {
       return local->ToNumber(context);
     }
@@ -7864,7 +8410,7 @@ js_coerce_to_string(js_env_t *env, js_value_t *value, js_value_t **result) {
 
   auto local = js_to_local(value);
 
-  auto string = env->try_catch<String>(
+  auto string = env->call_into_javascript<String>(
     [&] {
       return local->ToString(context);
     }
@@ -7943,7 +8489,7 @@ js_instanceof(js_env_t *env, js_value_t *object, js_value_t *constructor, bool *
 
   auto context = env->current_context();
 
-  auto success = env->try_catch<bool>(
+  auto success = env->call_into_javascript<bool>(
     [&] {
       return js_to_local(object)->InstanceOf(context, js_to_local<Function>(constructor));
     }
@@ -8389,6 +8935,19 @@ js_is_detached_arraybuffer(js_env_t *env, js_value_t *value, bool *result) {
 }
 
 extern "C" int
+js_is_detachable_arraybuffer(js_env_t *env, js_value_t *value, bool *result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local(value);
+
+  *result = local->IsArrayBuffer() && local.As<ArrayBuffer>()->IsDetachable();
+
+  return 0;
+}
+
+extern "C" int
 js_is_sharedarraybuffer(js_env_t *env, js_value_t *value, bool *result) {
   // Allow continuing even with a pending exception
 
@@ -8643,12 +9202,209 @@ js_strict_equals(js_env_t *env, js_value_t *a, js_value_t *b, bool *result) {
 }
 
 extern "C" int
+js_get_continuation_snapshot(js_env_t *env, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js_from_local(env->get_continuation_snapshot());
+
+  return 0;
+}
+
+static inline js_continuation_scope_t *
+js__open_continuation_scope(js_env_t *env, Local<Value> snapshot) {
+  auto scope = env->allocations->continuation_scopes.push(env->get_continuation_snapshot());
+
+  env->set_continuation_snapshot(snapshot);
+
+  return scope;
+}
+
+extern "C" int
+js_open_continuation_scope(js_env_t *env, js_value_t *snapshot, js_continuation_scope_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  *result = js__open_continuation_scope(env, snapshot ? js_to_local(snapshot) : Local<Value>());
+
+  return 0;
+}
+
+extern "C" int
+js_close_continuation_scope(js_env_t *env, js_continuation_scope_t *scope) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  assert(scope == env->allocations->continuation_scopes.top());
+
+  env->set_continuation_snapshot(scope->previous);
+
+  env->allocations->continuation_scopes.pop();
+
+  return 0;
+}
+
+namespace {
+
+// Snapshots are flat arrays of alternating keys and values. They are only read
+// with `Array::Iterate()` and built with `Array::New()`, as neither runs
+// JavaScript and so both are safe while an exception is pending. Elements
+// passed to the iteration callback die with its handle scope, so those that
+// must outlive it are escaped or held in globals.
+
+struct js_continuation_lookup_s {
+  Local<Value> key;
+  EscapableHandleScope *scope;
+  bool match;
+  Local<Value> value;
+};
+
+struct js_continuation_copy_s {
+  Isolate *isolate;
+  Local<Value> key;
+  bool match;
+  bool found;
+  std::vector<Global<Value>> entries;
+};
+
+static Array::CallbackResult
+js__lookup_continuation_variable(uint32_t i, Local<Value> element, void *data) {
+  auto lookup = reinterpret_cast<js_continuation_lookup_s *>(data);
+
+  if (i % 2 == 0) {
+    lookup->match = element == lookup->key;
+
+    return Array::CallbackResult::kContinue;
+  }
+
+  if (!lookup->match) return Array::CallbackResult::kContinue;
+
+  lookup->value = lookup->scope->Escape(element);
+
+  return Array::CallbackResult::kBreak;
+}
+
+static Array::CallbackResult
+js__copy_continuation_variable(uint32_t i, Local<Value> element, void *data) {
+  auto copy = reinterpret_cast<js_continuation_copy_s *>(data);
+
+  if (i % 2 == 0) {
+    copy->match = element == copy->key;
+
+    if (copy->match) copy->found = true;
+  }
+
+  if (!copy->match) copy->entries.emplace_back(copy->isolate, element);
+
+  return Array::CallbackResult::kContinue;
+}
+
+static inline void
+js__iterate_continuation_snapshot(js_env_t *env, Array::IterationCallback callback, void *data) {
+  auto snapshot = env->get_continuation_snapshot();
+
+  if (!snapshot->IsArray()) return;
+
+  auto iterated = snapshot.As<Array>()->Iterate(env->current_context(), callback, data);
+  assert(iterated.IsJust());
+}
+
+} // namespace
+
+extern "C" int
+js_get_continuation_variable(js_env_t *env, js_value_t *variable, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  Local<Value> value;
+
+  {
+    auto scope = EscapableHandleScope(env->isolate);
+
+    js_continuation_lookup_s lookup = {js_to_local<Symbol>(variable), &scope};
+
+    js__iterate_continuation_snapshot(env, js__lookup_continuation_variable, &lookup);
+
+    value = lookup.value;
+  }
+
+  if (value.IsEmpty()) value = Undefined(env->isolate);
+
+  *result = js_from_local(value);
+
+  return 0;
+}
+
+extern "C" int
+js_open_continuation_variable_scope(js_env_t *env, js_value_t *variable, js_value_t *value, js_continuation_scope_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto key = js_to_local<Symbol>(variable);
+
+  auto local = js_to_local(value);
+
+  js_continuation_copy_s copy = {env->isolate, key};
+
+  js__iterate_continuation_snapshot(env, js__copy_continuation_variable, &copy);
+
+  if (local->IsUndefined() && !copy.found) {
+    *result = js__open_continuation_scope(env, env->get_continuation_snapshot());
+
+    return 0;
+  }
+
+  std::vector<Local<Value>> entries;
+
+  entries.reserve(copy.entries.size() + 2);
+
+  for (auto &entry : copy.entries) entries.push_back(entry.Get(env->isolate));
+
+  if (!local->IsUndefined()) {
+    entries.push_back(key);
+    entries.push_back(local);
+  }
+
+  Local<Value> snapshot;
+
+  if (!entries.empty()) snapshot = Array::New(env->isolate, entries.data(), entries.size());
+
+  *result = js__open_continuation_scope(env, snapshot);
+
+  return 0;
+}
+
+extern "C" int
 js_get_global(js_env_t *env, js_value_t **result) {
   // Allow continuing even with a pending exception
 
   js_env_scope_t env_scope(env);
 
   *result = js_from_local(env->current_context()->Global());
+
+  return 0;
+}
+
+extern "C" int
+js_get_object_global(js_env_t *env, js_value_t *object, js_value_t **result) {
+  // Allow continuing even with a pending exception
+
+  js_env_scope_t env_scope(env);
+
+  auto local = js_to_local<Object>(object);
+
+  Local<Context> context;
+
+  if (local->GetCreationContext(env->isolate).ToLocal(&context)) {
+    *result = js_from_local(context->Global());
+  } else {
+    *result = js_from_local(Null(env->isolate));
+  }
 
   return 0;
 }
@@ -9012,7 +9768,7 @@ js_get_prototype(js_env_t *env, js_value_t *object, js_value_t **result) {
 
   auto local = js_to_local<Object>(object);
 
-  *result = js_from_local(local->GetPrototypeV2());
+  *result = js_from_local(local->GetPrototype());
 
   return 0;
 }
@@ -9029,7 +9785,7 @@ js_set_prototype(js_env_t *env, js_value_t *object, js_value_t *prototype) {
 
   auto success = env->call_into_javascript<bool>(
     [&] {
-      return local->SetPrototypeV2(context, js_to_local(prototype));
+      return local->SetPrototype(context, js_to_local(prototype));
     }
   );
 
@@ -9811,7 +10567,7 @@ js_call_function_with_checkpoint(js_env_t *env, js_value_t *receiver, js_value_t
 
 extern "C" int
 js_queue_microtask(js_env_t *env, js_value_t *function) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
@@ -9824,11 +10580,11 @@ js_queue_microtask(js_env_t *env, js_value_t *function) {
 
 extern "C" int
 js_queue_microtask_with_callback(js_env_t *env, js_task_cb cb, void *data) {
-  // Allow continuing even with a pending exception
+  if (env->is_exception_pending()) return js__error(env);
 
   js_env_scope_t env_scope(env);
 
-  auto task = new js_microtask_t(env, cb, data);
+  auto task = env->allocations->microtasks.alloc(env, cb, data);
 
   env->isolate->EnqueueMicrotask(js_microtask_t::on_run, task);
 
@@ -10022,19 +10778,18 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
 
   int err;
 
+  if (env->deferred_teardowns.contains({callback, data})) {
+    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
   auto handle = env->allocations->deferred_teardowns.alloc(env, callback, data);
 
   auto status = env->add_teardown_callback(js_call_deferred_teardown, handle);
 
   switch (status) {
-  case js_teardown_queue_t::status::already_registered:
-    env->allocations->deferred_teardowns.free(handle);
-
-    err = js_throw_error(env, NULL, "Teardown callback has already been registered");
-    assert(err == 0);
-
-    return js__error(env);
-
   case js_teardown_queue_t::status::drained:
     env->allocations->deferred_teardowns.free(handle);
 
@@ -10045,6 +10800,8 @@ js_add_deferred_teardown_callback(js_env_t *env, js_deferred_teardown_cb callbac
 
   default:
     assert(status == js_teardown_queue_s::status::success);
+
+    env->deferred_teardowns.emplace(callback, data);
 
     if (result) *result = handle;
 
@@ -10060,6 +10817,8 @@ js_finish_deferred_teardown_callback(js_deferred_teardown_t *handle) {
 
   assert(status == js_teardown_queue_s::status::success);
 
+  handle->env->deferred_teardowns.erase({handle->cb, handle->data});
+
   handle->env->allocations->deferred_teardowns.free(handle);
 
   return 0;
@@ -10073,9 +10832,11 @@ js_throw(js_env_t *env, js_value_t *error) {
 
   auto local = js_to_local(error);
 
-  env->exception.Reset(env->isolate, local);
-
+  // A garbage collection while throwing may run finalizers, which would take a
+  // record made before V8 holds the exception for a stale one.
   env->isolate->ThrowException(local);
+
+  env->record_exception(local, env->depth > 0);
 
   return 0;
 }
@@ -10102,7 +10863,8 @@ js_throw_error(js_env_t *env, const char *code, const char *message) {
 
     if (string.IsEmpty()) return js__error(env);
 
-    error->Set(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
+    // Defined rather than set, so no setter on the prototype chain runs.
+    error->CreateDataProperty(context, js_to_string_utf8_literal(env, "code", true), string.ToLocalChecked()).Check();
   }
 
   return js_throw(env, js_from_local(error));
@@ -10285,11 +11047,19 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 
   js_env_scope_t env_scope(env);
 
+  env->discard_caught_exception();
+
   if (env->exception.IsEmpty()) return js_get_undefined(env, result);
 
   *result = js_from_local(env->exception.Get(env->isolate));
 
   env->exception.Reset();
+
+  // The callback's TryCatch also holds the exception, which would otherwise
+  // leave V8 with an exception pending for the rest of the callback.
+  auto try_catch = env->callback_try_catch;
+
+  if (try_catch && try_catch->HasCaught()) try_catch->Reset();
 
   return 0;
 }
@@ -10297,6 +11067,8 @@ js_get_and_clear_last_exception(js_env_t *env, js_value_t **result) {
 extern "C" int
 js_fatal_exception(js_env_t *env, js_value_t *error) {
   // Allow continuing even with a pending exception
+
+  if (env->callbacks.uncaught_exception == nullptr) return 0;
 
   js_env_scope_t env_scope(env);
 

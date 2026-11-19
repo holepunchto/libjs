@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 js_platform_t *platform;
 

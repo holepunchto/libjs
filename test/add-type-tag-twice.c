@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 int
 main() {
@@ -31,7 +31,7 @@ main() {
 
   // An object carries one tag, so a second must be refused rather than take
   // over the identity the first gave it.
-  e = js_add_type_tag(env, object, &(js_type_tag_t) {2, 3});
+  e = js_add_type_tag(env, object, &(js_type_tag_t){2, 3});
   assert(e != 0);
 
   js_value_t *exception;
@@ -45,7 +45,7 @@ main() {
 
   assert(result);
 
-  e = js_check_type_tag(env, object, &(js_type_tag_t) {2, 3}, &result);
+  e = js_check_type_tag(env, object, &(js_type_tag_t){2, 3}, &result);
   assert(e == 0);
 
   assert(!result);

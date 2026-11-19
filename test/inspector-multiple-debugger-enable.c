@@ -3,7 +3,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 static js_inspector_t *a;
 static js_inspector_t *b;

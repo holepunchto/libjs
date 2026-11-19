@@ -3,7 +3,7 @@
 #include <utf.h>
 #include <uv.h>
 
-#include "../include/js.h"
+#include <js.h>
 
 #include "fixtures/atomics-wait-timeout-notify.js.h"
 
