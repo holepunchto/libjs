@@ -3727,6 +3727,7 @@ struct js_threadsafe_function_s {
 
   status state;
   size_t thread_count;
+  bool aborted;
 
   std::atomic<uint8_t> dispatch_state;
 
@@ -3748,6 +3749,7 @@ struct js_threadsafe_function_s {
         queue_limit(queue_limit),
         state(status::open),
         thread_count(thread_count),
+        aborted(false),
         dispatch_state(js_threadsafe_function_idle),
         handle_closing(false),
         context(context),
@@ -3823,6 +3825,8 @@ struct js_threadsafe_function_s {
       if ((thread_count == 0 || mode == js_threadsafe_function_abort) && state == status::open) {
         state = status::closing;
 
+        aborted = mode == js_threadsafe_function_abort;
+
         available.notify_all();
 
         signal();
@@ -3876,7 +3880,7 @@ private:
     {
       std::unique_lock guard(lock);
 
-      if (!queue.empty()) {
+      if (!aborted && !queue.empty()) {
         data = queue.front();
 
         queue.pop_front();
@@ -3886,7 +3890,7 @@ private:
         available.notify_one();
       }
 
-      drained = queue.empty() && state != status::open;
+      drained = (aborted || queue.empty()) && state != status::open;
     }
 
     if (popped) {

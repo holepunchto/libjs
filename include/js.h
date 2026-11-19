@@ -489,9 +489,9 @@ typedef js_value_t *(*js_dynamic_import_cb)(js_env_t *, js_value_t *specifier, j
  * Called on the loop of the environment for every call made with
  * `js_call_threadsafe_function()`, and is passed the function the threadsafe
  * function was created with, which may be `NULL`, its context, and the data of
- * the call. For calls still queued when the environment is destroyed, it is
- * instead passed `NULL` for both the environment and the function, so that the
- * data can be released.
+ * the call. For calls still queued when the handle is released in abort mode or
+ * the environment is destroyed, it is instead passed `NULL` for both the
+ * environment and the function, so that the data can be released.
  */
 typedef void (*js_threadsafe_function_cb)(js_env_t *, js_value_t *function, void *context, void *data);
 
@@ -1162,8 +1162,8 @@ JS_EXPORT int
 js_add_rebind_handler(js_rebind_handlers_t *handlers, js_rebind_cb cb, void *data);
 
 /**
- * Destroy a set of rebind handlers. The behavior is undefined if the set is used
- * afterwards.
+ * Destroy a set of rebind handlers. The behavior is undefined if the set is
+ * used afterwards.
  */
 JS_EXPORT int
 js_destroy_rebind_handlers(js_rebind_handlers_t *handlers);
@@ -3590,12 +3590,12 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
  *
  * The `finalize_cb` is invoked with the `context` and the `finalize_hint` on
  * the loop of the environment once the handle has been released and every call
- * queued before then has been dispatched. If the environment is destroyed
- * first, the handle is released along with it. Any calls still queued are then
- * passed to the `cb` with neither an environment nor a function, so that their
- * data can be released, or discarded if no `cb` was given, after which the
- * `finalize_cb` is invoked while the environment is being destroyed, which it
- * may still use.
+ * queued before then has been dispatched or passed back. If the environment is
+ * destroyed first, the handle is released along with it. Any calls still queued
+ * are then passed to the `cb` with neither an environment nor a function, so
+ * that their data can be released, or discarded if no `cb` was given, after
+ * which the `finalize_cb` is invoked while the environment is being destroyed,
+ * which it may still use.
  *
  * A thread may keep using the handle until it has released it, or until a call
  * has failed with `js_closing`, which also lets go of the handle on behalf of
@@ -3658,7 +3658,11 @@ js_acquire_threadsafe_function(js_threadsafe_function_t *function);
  * thread holding it has let go, whereas in `js_threadsafe_function_abort` mode
  * it is released at once, regardless of the other threads, which keep holding
  * it until they let go of it themselves. Any call made after the handle has
- * been released fails, whereas calls queued before then are still dispatched.
+ * been released fails. Calls queued before then are still dispatched in
+ * `js_threadsafe_function_release` mode, whereas in
+ * `js_threadsafe_function_abort` mode they are passed to the `cb` with neither
+ * an environment nor a function, so that their data can be released, or
+ * discarded if no `cb` was given.
  *
  * Releasing lets go of the handle on behalf of the calling thread, which must
  * not use it afterwards. Fails with `js_invalid_state` if no thread holds the

@@ -12,7 +12,9 @@ static int finalize_calls = 0;
 
 static void
 on_call(js_env_t *env, js_value_t *function, void *context, void *data) {
-  assert(env != NULL);
+  assert(env == NULL);
+  assert(function == NULL);
+  assert(finalize_calls == 0);
 
   received = (intptr_t) data;
   calls++;

@@ -58,7 +58,7 @@ main() {
   e = uv_run(loop, UV_RUN_DEFAULT);
   assert(e == 0);
 
-  assert(fn_called);
+  assert(!fn_called);
 
   e = js_close_handle_scope(env, scope);
   assert(e == 0);
