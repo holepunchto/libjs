@@ -127,6 +127,8 @@ add_test_executables(
   create-sharedarraybuffer-with-backing-store.c
   create-sharedarraybuffer-with-backing-store-across-envs.c
   create-snapshot.c
+  create-snapshot-with-handles.c
+  create-snapshot-with-inspector.c
   create-string-latin1.c
   create-string-too-long.c
   create-string-utf8.c
@@ -134,6 +136,7 @@ add_test_executables(
   create-string-utf16le.c
   create-synthetic-module-code-cache.c
   create-threadsafe-function.c
+  create-threadsafe-function-destroy-env.c
   create-threadsafe-function-with-callback.c
   create-threadsafe-function-with-context.c
   create-threadsafe-function-with-finalizer.c
@@ -346,6 +349,7 @@ add_test_executables(
   reference-unref-with-finalizer.c
   resolve-deferred-thenable-call-function-throw.c
   run-from-snapshot.c
+  run-from-snapshot-add-finalizer.c
   run-from-snapshot-continuation-variable.c
   run-from-snapshot-delegate.c
   run-from-snapshot-dynamic-import.c

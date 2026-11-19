@@ -3504,7 +3504,9 @@ js_new_instance(js_env_t *env, js_value_t *constructor, size_t argc, js_value_t 
  * thread holding it has let go.
  *
  * The `finalize_cb` is invoked with the `context` and the `finalize_hint` on
- * the loop of the environment once the handle has been released.
+ * the loop of the environment once the handle has been released. If the
+ * environment is destroyed first, the handle is released along with it and
+ * must no longer be used by any thread.
  */
 JS_EXPORT int
 js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_limit, size_t initial_thread_count, js_finalize_cb finalize_cb, void *finalize_hint, void *context, js_threadsafe_function_cb cb, js_threadsafe_function_t **result);
@@ -3863,6 +3865,7 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
  * nothing until it has been connected with `js_connect_inspector()`.
  *
  * Inspector support is optional, and an engine that does not offer it throws.
+ * An environment created with `js_create_snapshot()` also throws.
  */
 JS_EXPORT int
 js_create_inspector(js_env_t *env, js_inspector_t **result);

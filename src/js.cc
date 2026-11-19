@@ -1855,6 +1855,9 @@ static void
 js__destroy_allocations(js_allocations_t *allocations);
 
 static void
+js__close_threadsafe_functions(js_allocations_t *allocations);
+
+static void
 js__finalize_external_strings(js_env_t *env);
 
 } // namespace
@@ -2054,8 +2057,6 @@ struct js_env_s {
 
   std::multimap<int, js_module_t *> modules;
 
-  std::list<js_script_t *> scripts;
-
   Global<Symbol> default_module_id;
 
   std::vector<std::pair<js_dynamic_import_cb, void *>> dynamic_import_handlers;
@@ -2104,7 +2105,6 @@ struct js_env_s {
         exception(),
         exception_held(false),
         modules(),
-        scripts(),
         default_module_id(),
         unhandled_promises(),
         teardown_queue(),
@@ -2632,10 +2632,24 @@ struct js_env_s {
     }
   }
 
+  void
+  retain_handle() {
+    active_handles++;
+  }
+
+  void
+  release_handle() {
+    active_handles--;
+
+    dispose_maybe();
+  }
+
 private:
   void
   close() {
     tasks->close();
+
+    js__close_threadsafe_functions(allocations);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
@@ -3313,7 +3327,6 @@ struct js_finalizer_s {
   void *data;
   js_finalize_cb finalize_cb;
   void *finalize_hint;
-  bool is_delegate;
 
   js_finalizer_s(js_env_t *env, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : value(),
@@ -3321,8 +3334,7 @@ struct js_finalizer_s {
         env(env),
         data(data),
         finalize_cb(finalize_cb),
-        finalize_hint(finalize_hint),
-        is_delegate(false) {}
+        finalize_hint(finalize_hint) {}
 
   js_finalizer_s(const js_finalizer_s &) = delete;
 
@@ -3396,9 +3408,7 @@ struct js_delegate_s : js_finalizer_t {
 
   js_delegate_s(js_env_t *env, js_delegate_callbacks_t callbacks, void *data, js_finalize_cb finalize_cb, void *finalize_hint)
       : js_finalizer_t(env, data, finalize_cb, finalize_hint),
-        callbacks(std::move(callbacks)) {
-    is_delegate = true;
-  }
+        callbacks(std::move(callbacks)) {}
 
   js_delegate_s(const js_delegate_s &) = delete;
 
@@ -3857,6 +3867,8 @@ struct js_threadsafe_function_s {
 
     async.data = this;
 
+    env->retain_handle();
+
     if (queue_limit) {
       queue.reset(new js_threadsafe_bounded_queue_t(std::bit_ceil(queue_limit)));
     } else {
@@ -3935,11 +3947,19 @@ struct js_threadsafe_function_s {
     uv_unref(reinterpret_cast<uv_handle_t *>(&async));
   }
 
-private:
   void
   close() {
-    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
+    auto handle = reinterpret_cast<uv_handle_t *>(&async);
+
+    if (uv_is_closing(handle)) return;
+
+    uv_close(handle, on_close);
   }
+
+  void
+  destroy();
+
+private:
 
   bool
   call() {
@@ -4017,9 +4037,13 @@ private:
   on_close(uv_handle_t *handle) {
     auto function = reinterpret_cast<js_threadsafe_function_t *>(handle->data);
 
-    if (function->finalize_cb) function->finalize_cb(function->env, function->context, function->finalize_hint);
+    auto env = function->env;
 
-    delete function;
+    if (function->finalize_cb) function->finalize_cb(env, function->context, function->finalize_hint);
+
+    function->destroy();
+
+    env->release_handle();
   }
 };
 
@@ -4309,6 +4333,7 @@ struct js_allocations_s {
   js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
   js_segment_array_t<js_inspector_t> inspectors;
   js_segment_array_t<js_microtask_t> microtasks;
+  js_segment_array_t<js_threadsafe_function_t> threadsafe_functions;
   js_external_strings_s<js_external_string_utf16le_t> external_strings_utf16le;
   js_external_strings_s<js_external_string_latin1_t> external_strings_latin1;
 
@@ -4340,6 +4365,7 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->deferred_teardowns.shrink();
   allocations->inspectors.shrink();
   allocations->microtasks.shrink();
+  allocations->threadsafe_functions.shrink();
   allocations->external_strings_utf16le.resources.shrink();
   allocations->external_strings_latin1.resources.shrink();
   allocations->callbacks.shrink();
@@ -4366,6 +4392,13 @@ js__finalize_allocations(js_allocations_t *allocations) {
 
   allocations->external_strings_latin1.resources.each([](js_external_string_latin1_t *string) {
     string->finalize();
+  });
+}
+
+static void
+js__close_threadsafe_functions(js_allocations_t *allocations) {
+  allocations->threadsafe_functions.each([](js_threadsafe_function_t *function) {
+    function->close();
   });
 }
 
@@ -4448,6 +4481,11 @@ js_callback_s::destroy() {
 void
 js_typed_callback_s::destroy() {
   env->allocations->typed_callbacks.free(this);
+}
+
+void
+js_threadsafe_function_s::destroy() {
+  env->allocations->threadsafe_functions.free(this);
 }
 
 void
@@ -4718,8 +4756,9 @@ js_option(const js_env_options_t *options, int min_version, T fallback = T(js_en
 
 } // namespace
 
+// The addresses are kept null-terminated, as the engine expects.
 struct js_external_references_s {
-  std::vector<intptr_t> addresses;
+  std::vector<intptr_t> addresses{0};
 };
 
 extern "C" int
@@ -4733,12 +4772,9 @@ extern "C" int
 js_add_external_reference(js_external_references_t *references, const void *address) {
   auto &addresses = references->addresses;
 
-  // Drop any terminator a prior `js_get_external_references` appended so that
-  // adding remains valid regardless of call order. A real reference is never
-  // null, so a trailing zero can only be the terminator.
-  if (!addresses.empty() && addresses.back() == 0) addresses.pop_back();
+  addresses.back() = reinterpret_cast<intptr_t>(address);
 
-  addresses.push_back(reinterpret_cast<intptr_t>(address));
+  addresses.push_back(0);
 
   return 0;
 }
@@ -4747,12 +4783,8 @@ extern "C" int
 js_get_external_references(js_external_references_t *references, const intptr_t **data, size_t *len) {
   auto &addresses = references->addresses;
 
-  // V8 expects a null-terminated array. Maintain the terminator lazily so the
-  // returned pointer is stable and safe to hand to `Isolate::CreateParams`.
-  if (addresses.empty() || addresses.back() != 0) addresses.push_back(0);
-
   if (data) *data = addresses.data();
-  if (len) *len = addresses.size() - 1; // Excluding the terminator.
+  if (len) *len = addresses.size() - 1;
 
   return 0;
 }
@@ -4997,9 +5029,7 @@ js_build_external_references(std::vector<intptr_t> &result, const js_external_re
   result.push_back(reinterpret_cast<intptr_t>(&js_delegate_t::on_delete_indexed));
 
   if (references) {
-    for (auto address : references->addresses) {
-      if (address != 0) result.push_back(address); // Skip a lazily-added terminator.
-    }
+    result.insert(result.end(), references->addresses.begin(), references->addresses.end() - 1);
   }
 
   result.push_back(0);
@@ -5149,9 +5179,7 @@ js_rebind_from_snapshot(js_env_t *env, const js_rebind_handlers_t *handlers) {
       string->WriteUtf8V2(isolate, name.data(), length, String::WriteFlags::kReplaceInvalidUtf8);
     }
 
-    auto record = env->allocations->scripts.alloc(isolate, script, id, options, std::move(name));
-
-    env->scripts.push_back(record);
+    env->allocations->scripts.alloc(isolate, script, id, options, std::move(name));
   }
 }
 
@@ -5367,7 +5395,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
     for (uint32_t slot = 0; slot < env->bindings.finalizers.entries.size(); slot++) {
       auto finalizer = env->bindings.finalizers.entries[slot];
 
-      if (finalizer == nullptr || finalizer->value.IsEmpty() || finalizer->is_delegate) continue;
+      if (finalizer == nullptr || finalizer->value.IsEmpty()) continue;
 
       auto cb_index = finalizer->finalize_cb
                         ? int32_t(js_external_reference_index(env, reinterpret_cast<const void *>(finalizer->finalize_cb)))
@@ -5425,11 +5453,11 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
 
     uint32_t sn = 0;
 
-    for (auto script : env->scripts) {
+    env->allocations->scripts.each([&](js_script_t *script) {
       scripts->Set(context, sn++, script->id.Get(isolate)).Check();
       script_records.push_back(script->script.Get(isolate));
       script_options.push_back(script->host_defined_options.Get(isolate));
-    }
+    });
 
     auto metadata = Array::New(isolate);
     metadata->Set(context, js_snapshot_metadata_functions, functions).Check();
@@ -5492,19 +5520,39 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
     if (callback) callback->instance.Reset();
   }
 
-  for (auto finalizer : env->bindings.finalizers.entries) {
-    if (finalizer) finalizer->value.Reset();
-  }
+  env->allocations->finalizers.each([](js_finalizer_t *finalizer) {
+    finalizer->value.Reset();
+  });
+
+  env->allocations->delegates.each([](js_delegate_t *delegate) {
+    delegate->value.Reset();
+  });
+
+  env->allocations->references.each([](js_ref_t *reference) {
+    reference->value.Reset();
+  });
+
+  env->allocations->deferreds.each([](js_deferred_t *deferred) {
+    deferred->resolver.Reset();
+  });
+
+  env->allocations->contexts.each([](js_context_t *context) {
+    context->context.Reset();
+  });
+
+  env->allocations->threadsafe_functions.each([](js_threadsafe_function_t *function) {
+    function->function.Reset();
+  });
 
   for (auto &entry : env->modules) {
     entry.second->module.Reset();
     entry.second->id.Reset();
   }
 
-  for (auto script : env->scripts) {
+  env->allocations->scripts.each([](js_script_t *script) {
     script->script.Reset();
     script->id.Reset();
-  }
+  });
 
   // Must run outside any handle scope.
   auto blob = creator->CreateBlob(env->snapshot.function_code_handling);
@@ -5892,10 +5940,6 @@ js_prepare_script_with_code_cache(js_env_t *env, const char *file, size_t len, i
 
   auto script = env->allocations->scripts.alloc(env->isolate, compiled.ToLocalChecked(), id, host_defined_options, std::move(script_name));
 
-  // Track the script so the snapshot producer can serialize its compiled record
-  // and reset its global handles before `CreateBlob()`.
-  env->scripts.push_back(script);
-
   *result = script;
 
   return 0;
@@ -5966,8 +6010,6 @@ js_delete_script(js_env_t *env, js_script_t *script) {
 
   js_env_scope_t env_scope(env);
 
-  env->scripts.remove(script);
-
   env->allocations->scripts.free(script);
 
   return 0;
@@ -6001,12 +6043,16 @@ js_get_script_by_id(js_env_t *env, js_value_t *id, js_script_t **result) {
 
   auto symbol = js_to_local<Symbol>(id);
 
-  for (auto script : env->scripts) {
-    if (script->id.Get(env->isolate) == symbol) {
-      *result = script;
+  js_script_t *found = nullptr;
 
-      return 0;
-    }
+  env->allocations->scripts.each([&](js_script_t *script) {
+    if (script->id.Get(env->isolate) == symbol) found = script;
+  });
+
+  if (found) {
+    *result = found;
+
+    return 0;
   }
 
   err = js_throw_error(env, NULL, "Could not find script");
@@ -6860,8 +6906,6 @@ js_create_delegate(js_env_t *env, const js_delegate_callbacks_t *callbacks, void
   auto context = env->current_context();
 
   auto delegate = env->allocations->delegates.alloc(env, *callbacks, data, finalize_cb, finalize_hint);
-
-  delegate->index = env->bindings.finalizers.add(delegate);
 
   auto tpl = delegate->to_object_template(env->isolate);
 
@@ -10650,7 +10694,7 @@ js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_
     return js__error(env);
   }
 
-  auto threadsafe_function = new js_threadsafe_function_t(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
+  auto threadsafe_function = env->allocations->threadsafe_functions.alloc(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
 
   if (function) {
     threadsafe_function->function.Reset(env->isolate, js_to_local(function));
@@ -11226,7 +11270,20 @@ js_get_heap_space_statistics(js_env_t *env, js_heap_space_statistics_t statistic
 
 extern "C" int
 js_create_inspector(js_env_t *env, js_inspector_t **result) {
+  if (env->is_exception_pending()) return js__error(env);
+
   js_env_scope_t env_scope(env);
+
+  int err;
+
+  // The engine inspector installs functions into the context that cannot be
+  // serialized, even once it has been destroyed.
+  if (env->snapshot.creator) {
+    err = js_throw_error(env, NULL, "Inspectors are not supported in environments created for snapshotting");
+    assert(err == 0);
+
+    return js__error(env);
+  }
 
   *result = env->allocations->inspectors.alloc(env);
 
