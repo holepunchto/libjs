@@ -8,8 +8,6 @@ bool fn_called = false;
 
 js_value_t *
 on_call(js_env_t *env, js_callback_info_t *info) {
-  int e;
-
   fn_called = true;
 
   return NULL;
@@ -37,8 +35,9 @@ main() {
   e = js_create_function(env, "hello", -1, on_call, NULL, &fn);
   assert(e == 0);
 
+  // Held on behalf of three threads, the second of which aborts.
   js_threadsafe_function_t *tsfn;
-  e = js_create_threadsafe_function(env, fn, 0, 1, NULL, NULL, NULL, NULL, &tsfn);
+  e = js_create_threadsafe_function(env, fn, 0, 3, NULL, NULL, NULL, NULL, &tsfn);
   assert(e == 0);
 
   e = js_call_threadsafe_function(tsfn, NULL, js_threadsafe_function_nonblocking);
@@ -47,8 +46,14 @@ main() {
   e = js_release_threadsafe_function(tsfn, js_threadsafe_function_release);
   assert(e == 0);
 
+  e = js_release_threadsafe_function(tsfn, js_threadsafe_function_abort);
+  assert(e == 0);
+
+  e = js_acquire_threadsafe_function(tsfn);
+  assert(e == js_closing);
+
   e = js_call_threadsafe_function(tsfn, NULL, js_threadsafe_function_nonblocking);
-  assert(e != 0);
+  assert(e == js_closing);
 
   e = uv_run(loop, UV_RUN_DEFAULT);
   assert(e == 0);

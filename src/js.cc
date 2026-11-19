@@ -59,9 +59,6 @@ typedef struct js_worker_s js_worker_t;
 typedef struct js_heap_s js_heap_t;
 typedef struct js_allocator_s js_allocator_t;
 typedef struct js_teardown_queue_s js_teardown_queue_t;
-typedef struct js_threadsafe_queue_s js_threadsafe_queue_t;
-typedef struct js_threadsafe_unbounded_queue_s js_threadsafe_unbounded_queue_t;
-typedef struct js_threadsafe_bounded_queue_s js_threadsafe_bounded_queue_t;
 typedef struct js_inspector_client_s js_inspector_client_t;
 typedef struct js_inspector_channel_s js_inspector_channel_t;
 typedef struct js_handle_scope_slot_s js_handle_scope_slot_t;
@@ -1855,7 +1852,7 @@ static void
 js__destroy_allocations(js_allocations_t *allocations);
 
 static void
-js__close_threadsafe_functions(js_allocations_t *allocations);
+js__close_threadsafe_functions(js_env_t *env);
 
 static void
 js__finalize_external_strings(js_env_t *env);
@@ -2030,6 +2027,10 @@ struct js_env_s {
 
   uint32_t refs;
 
+  bool closing;
+
+  std::set<js_threadsafe_function_t *> threadsafe_functions;
+
   js_platform_t *platform;
 
   std::shared_ptr<js_task_runner_t> tasks;
@@ -2093,6 +2094,8 @@ struct js_env_s {
         teardown(),
         active_handles(3),
         refs(0),
+        closing(false),
+        threadsafe_functions(),
         platform(platform),
         tasks(),
         depth(0),
@@ -2647,9 +2650,11 @@ struct js_env_s {
 private:
   void
   close() {
+    closing = true;
+
     tasks->close();
 
-    js__close_threadsafe_functions(allocations);
+    js__close_threadsafe_functions(this);
 
     uv_close(reinterpret_cast<uv_handle_t *>(&prepare), on_handle_close);
 
@@ -3691,136 +3696,6 @@ struct js_arraybuffer_backing_store_s {
   operator=(const js_arraybuffer_backing_store_s &) = delete;
 };
 
-struct js_threadsafe_queue_s {
-  virtual ~js_threadsafe_queue_s() = default;
-
-  virtual bool
-  push(void *data, js_threadsafe_function_call_mode_t mode) = 0;
-
-  virtual std::optional<void *>
-  pop() = 0;
-
-  virtual void
-  close() = 0;
-};
-
-struct js_threadsafe_unbounded_queue_s : js_threadsafe_queue_t {
-  std::queue<void *> queue;
-
-  bool closed;
-
-  std::mutex lock;
-
-  js_threadsafe_unbounded_queue_s()
-      : queue(),
-        closed(false),
-        lock() {}
-
-  bool
-  push(void *data, js_threadsafe_function_call_mode_t mode) override {
-    std::unique_lock guard(lock);
-
-    if (closed) return false;
-
-    queue.push(data);
-
-    return true;
-  }
-
-  std::optional<void *>
-  pop() override {
-    std::unique_lock guard(lock);
-
-    if (queue.empty()) return std::nullopt;
-
-    auto data = queue.front();
-
-    queue.pop();
-
-    return data;
-  }
-
-  void
-  close() override {
-    std::unique_lock guard(lock);
-
-    closed = true;
-  }
-};
-
-struct js_threadsafe_bounded_queue_s : js_threadsafe_queue_t {
-  std::vector<void *> queue;
-
-  const size_t mask;
-
-  size_t read;
-  size_t write;
-
-  bool closed;
-
-  std::mutex lock;
-  std::condition_variable available;
-
-  js_threadsafe_bounded_queue_s(size_t queue_limit)
-      : queue(queue_limit),
-        mask(queue_limit - 1),
-        read(0),
-        write(0),
-        closed(false),
-        lock(),
-        available() {
-    assert(std::has_single_bit(queue_limit));
-  }
-
-  bool
-  push(void *data, js_threadsafe_function_call_mode_t mode) override {
-    std::unique_lock guard(lock);
-
-    while (true) {
-      if (closed) return false;
-
-      auto next = (write + 1) & mask;
-
-      if (next != read) {
-        queue[write] = data;
-        write = next;
-
-        return true;
-      }
-
-      if (mode == js_threadsafe_function_nonblocking) {
-        return false;
-      }
-
-      available.wait(guard);
-    }
-  }
-
-  std::optional<void *>
-  pop() override {
-    std::unique_lock guard(lock);
-
-    if (read == write) return std::nullopt;
-
-    auto data = queue[read];
-
-    read = (read + 1) & mask;
-
-    available.notify_one();
-
-    return data;
-  }
-
-  void
-  close() override {
-    std::unique_lock guard(lock);
-
-    closed = true;
-
-    available.notify_all();
-  }
-};
-
 namespace {
 
 static const uint8_t js_threadsafe_function_idle = 0x0;
@@ -3829,19 +3704,33 @@ static const uint8_t js_threadsafe_function_pending = 0x2;
 
 } // namespace
 
-// The lifetime of a threadsafe function is owned by the loop rather than the
-// environment; it is released only once its async handle has finished closing.
-// It is allocated on its own for that reason.
+// The lifetime of a threadsafe function is shared between the loop and the
+// threads holding it: it is released only once its async handle has finished
+// closing and every thread has let go of it, possibly on another thread. It is
+// allocated on its own for that reason.
 struct js_threadsafe_function_s {
+  enum class status {
+    open,
+    closing,
+    closed,
+  };
+
   Global<Value> function;
   js_env_t *env;
 
   uv_async_t async;
 
-  std::unique_ptr<js_threadsafe_queue_t> queue;
+  std::mutex lock;
+  std::condition_variable available;
+  std::deque<void *> queue;
+  const size_t queue_limit;
 
-  std::atomic<uint8_t> state;
-  std::atomic<size_t> thread_count;
+  status state;
+  size_t thread_count;
+
+  std::atomic<uint8_t> dispatch_state;
+
+  bool handle_closing;
 
   void *context;
   js_finalize_cb finalize_cb;
@@ -3853,9 +3742,14 @@ struct js_threadsafe_function_s {
       : function(),
         env(env),
         async(),
+        lock(),
+        available(),
         queue(),
-        state(js_threadsafe_function_idle),
+        queue_limit(queue_limit),
+        state(status::open),
         thread_count(thread_count),
+        dispatch_state(js_threadsafe_function_idle),
+        handle_closing(false),
         context(context),
         finalize_cb(finalize_cb),
         finalize_hint(finalize_hint),
@@ -3868,73 +3762,78 @@ struct js_threadsafe_function_s {
     async.data = this;
 
     env->retain_handle();
-
-    if (queue_limit) {
-      queue.reset(new js_threadsafe_bounded_queue_t(std::bit_ceil(queue_limit)));
-    } else {
-      queue.reset(new js_threadsafe_unbounded_queue_t());
-    }
   }
 
-  bool
+  js_threadsafe_function_s(const js_threadsafe_function_s &) = delete;
+
+  js_threadsafe_function_s &
+  operator=(const js_threadsafe_function_s &) = delete;
+
+  int
   push(void *data, js_threadsafe_function_call_mode_t mode) {
-    if (thread_count.load(std::memory_order_relaxed) == 0) return false;
+    {
+      std::unique_lock guard(lock);
 
-    if (queue->push(data, mode)) {
-      signal();
+      while (state == status::open && queue_limit > 0 && queue.size() >= queue_limit) {
+        if (mode == js_threadsafe_function_nonblocking) return js_queue_full;
 
-      return true;
+        available.wait(guard);
+      }
+
+      if (state == status::open) {
+        queue.push_back(data);
+
+        signal();
+
+        return 0;
+      }
+
+      if (thread_count == 0) return js_invalid_state;
+
+      thread_count--;
+
+      if (state != status::closed || thread_count > 0) return js_closing;
     }
 
-    return false;
+    delete this;
+
+    return js_closing;
   }
 
-  bool
+  int
   acquire() {
-    auto thread_count = this->thread_count.load(std::memory_order_relaxed);
+    std::unique_lock guard(lock);
 
-    while (thread_count != 0) {
-      if (
-        this->thread_count.compare_exchange_weak(
-          thread_count,
-          thread_count + 1,
-          std::memory_order_acquire,
-          std::memory_order_relaxed
-        )
-      ) {
-        return true;
-      }
-    }
+    if (state != status::open) return js_closing;
 
-    return false;
+    thread_count++;
+
+    return 0;
   }
 
-  bool
+  int
   release(js_threadsafe_function_release_mode_t mode) {
-    auto thread_count = this->thread_count.load(std::memory_order_relaxed);
+    {
+      std::unique_lock guard(lock);
 
-    auto abort = mode == js_threadsafe_function_abort;
+      if (thread_count == 0) return js_invalid_state;
 
-    while (thread_count != 0) {
-      if (
-        this->thread_count.compare_exchange_weak(
-          thread_count,
-          abort ? 0 : thread_count - 1,
-          std::memory_order_acquire,
-          std::memory_order_relaxed
-        )
-      ) {
-        if (abort || thread_count == 1) {
-          queue->close();
+      thread_count--;
 
-          signal();
-        }
+      if ((thread_count == 0 || mode == js_threadsafe_function_abort) && state == status::open) {
+        state = status::closing;
 
-        return true;
+        available.notify_all();
+
+        signal();
       }
+
+      if (state != status::closed || thread_count > 0) return 0;
     }
 
-    return false;
+    delete this;
+
+    return 0;
   }
 
   void
@@ -3949,30 +3848,53 @@ struct js_threadsafe_function_s {
 
   void
   close() {
-    auto handle = reinterpret_cast<uv_handle_t *>(&async);
+    if (handle_closing) return;
 
-    if (uv_is_closing(handle)) return;
+    handle_closing = true;
 
-    uv_close(handle, on_close);
+    {
+      std::unique_lock guard(lock);
+
+      if (state == status::open) state = status::closing;
+
+      available.notify_all();
+    }
+
+    uv_close(reinterpret_cast<uv_handle_t *>(&async), on_close);
   }
 
-  void
-  destroy();
-
 private:
-
   bool
   call() {
     int err;
 
-    auto data = queue->pop();
+    void *data = nullptr;
 
-    if (data.has_value()) {
+    auto popped = false;
+    auto drained = false;
+
+    {
+      std::unique_lock guard(lock);
+
+      if (!queue.empty()) {
+        data = queue.front();
+
+        queue.pop_front();
+
+        popped = true;
+
+        available.notify_one();
+      }
+
+      drained = queue.empty() && state != status::open;
+    }
+
+    if (popped) {
       js_env_scope_t env_scope(env, {.handle_scope = true});
 
       auto fn = function.IsEmpty() ? nullptr : js_from_local(function.Get(env->isolate));
 
-      if (cb) cb(env, fn, context, data.value());
+      if (cb) cb(env, fn, context, data);
       else {
         js_value_t *receiver;
         err = js_get_undefined(env, &receiver);
@@ -3981,22 +3903,18 @@ private:
         err = js_call_function(env, receiver, fn, 0, nullptr, nullptr);
         (void) err;
       }
-
-      return true;
     }
 
-    if (thread_count.load(std::memory_order_relaxed) == 0) {
-      close();
-    }
+    if (drained) close();
 
-    return false;
+    return popped;
   }
 
   void
   signal() {
     int err;
 
-    auto state = this->state.fetch_or(js_threadsafe_function_pending, std::memory_order_acq_rel);
+    auto state = dispatch_state.fetch_or(js_threadsafe_function_pending, std::memory_order_acq_rel);
 
     if (state & js_threadsafe_function_running) {
       return;
@@ -4013,19 +3931,18 @@ private:
     auto iterations = 1024;
 
     while (!done && --iterations >= 0) {
-      state.store(js_threadsafe_function_running, std::memory_order_release);
+      dispatch_state.store(js_threadsafe_function_running, std::memory_order_release);
 
       done = call() == false;
 
-      if (state.exchange(js_threadsafe_function_idle, std::memory_order_acq_rel) != js_threadsafe_function_running) {
+      if (dispatch_state.exchange(js_threadsafe_function_idle, std::memory_order_acq_rel) != js_threadsafe_function_running) {
         done = false;
       }
     }
 
-    if (!done) signal();
+    if (!done && !handle_closing) signal();
   }
 
-private:
   static void
   on_async(uv_async_t *handle) {
     auto function = reinterpret_cast<js_threadsafe_function_t *>(handle->data);
@@ -4039,9 +3956,35 @@ private:
 
     auto env = function->env;
 
+    std::deque<void *> queue;
+
+    {
+      std::unique_lock guard(function->lock);
+
+      queue.swap(function->queue);
+    }
+
+    for (auto data : queue) {
+      if (function->cb) function->cb(nullptr, nullptr, function->context, data);
+    }
+
     if (function->finalize_cb) function->finalize_cb(env, function->context, function->finalize_hint);
 
-    function->destroy();
+    function->function.Reset();
+
+    env->threadsafe_functions.erase(function);
+
+    auto release = false;
+
+    {
+      std::unique_lock guard(function->lock);
+
+      function->state = status::closed;
+
+      release = function->thread_count == 0;
+    }
+
+    if (release) delete function;
 
     env->release_handle();
   }
@@ -4333,7 +4276,6 @@ struct js_allocations_s {
   js_segment_array_t<js_deferred_teardown_t> deferred_teardowns;
   js_segment_array_t<js_inspector_t> inspectors;
   js_segment_array_t<js_microtask_t> microtasks;
-  js_segment_array_t<js_threadsafe_function_t> threadsafe_functions;
   js_external_strings_s<js_external_string_utf16le_t> external_strings_utf16le;
   js_external_strings_s<js_external_string_latin1_t> external_strings_latin1;
 
@@ -4365,7 +4307,6 @@ js__shrink_allocations(js_allocations_t *allocations) {
   allocations->deferred_teardowns.shrink();
   allocations->inspectors.shrink();
   allocations->microtasks.shrink();
-  allocations->threadsafe_functions.shrink();
   allocations->external_strings_utf16le.resources.shrink();
   allocations->external_strings_latin1.resources.shrink();
   allocations->callbacks.shrink();
@@ -4396,10 +4337,8 @@ js__finalize_allocations(js_allocations_t *allocations) {
 }
 
 static void
-js__close_threadsafe_functions(js_allocations_t *allocations) {
-  allocations->threadsafe_functions.each([](js_threadsafe_function_t *function) {
-    function->close();
-  });
+js__close_threadsafe_functions(js_env_t *env) {
+  for (auto function : env->threadsafe_functions) function->close();
 }
 
 static void
@@ -4481,11 +4420,6 @@ js_callback_s::destroy() {
 void
 js_typed_callback_s::destroy() {
   env->allocations->typed_callbacks.free(this);
-}
-
-void
-js_threadsafe_function_s::destroy() {
-  env->allocations->threadsafe_functions.free(this);
 }
 
 void
@@ -4956,7 +4890,7 @@ js_serialize_internal_field(Local<Object> holder, int index, void *data) {
     return address ? int32_t(js_external_reference_index(env, address)) : -1;
   };
 
-  auto fields = new js_delegate_fields_t{
+  js_delegate_fields_t fields = {
     delegate->callbacks.version,
     reference(reinterpret_cast<const void *>(delegate->callbacks.get)),
     reference(reinterpret_cast<const void *>(delegate->callbacks.has)),
@@ -4966,7 +4900,12 @@ js_serialize_internal_field(Local<Object> holder, int index, void *data) {
     reference(reinterpret_cast<const void *>(delegate->finalize_cb)),
   };
 
-  return StartupData{reinterpret_cast<const char *>(fields), int(sizeof(js_delegate_fields_t))};
+  // The engine releases the payload with `delete[]`.
+  auto payload = new char[sizeof(fields)];
+
+  memcpy(payload, &fields, sizeof(fields));
+
+  return StartupData{payload, int(sizeof(fields))};
 }
 
 static void
@@ -5540,9 +5479,7 @@ js_take_snapshot(js_env_t *env, void **data, size_t *len) {
     context->context.Reset();
   });
 
-  env->allocations->threadsafe_functions.each([](js_threadsafe_function_t *function) {
-    function->function.Reset();
-  });
+  for (auto function : env->threadsafe_functions) function->function.Reset();
 
   for (auto &entry : env->modules) {
     entry.second->module.Reset();
@@ -10694,7 +10631,16 @@ js_create_threadsafe_function(js_env_t *env, js_value_t *function, size_t queue_
     return js__error(env);
   }
 
-  auto threadsafe_function = env->allocations->threadsafe_functions.alloc(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
+  if (env->closing) {
+    err = js_throw_error(env, NULL, "Environment is being destroyed");
+    assert(err == 0);
+
+    return js__error(env);
+  }
+
+  auto threadsafe_function = new js_threadsafe_function_t(env, queue_limit, initial_thread_count, cb, context, finalize_cb, finalize_hint);
+
+  env->threadsafe_functions.insert(threadsafe_function);
 
   if (function) {
     threadsafe_function->function.Reset(env->isolate, js_to_local(function));
@@ -10718,21 +10664,21 @@ extern "C" int
 js_call_threadsafe_function(js_threadsafe_function_t *function, void *data, js_threadsafe_function_call_mode_t mode) {
   // Allow continuing even with a pending exception
 
-  return function->push(data, mode) ? 0 : -1;
+  return function->push(data, mode);
 }
 
 extern "C" int
 js_acquire_threadsafe_function(js_threadsafe_function_t *function) {
   // Allow continuing even with a pending exception
 
-  return function->acquire() ? 0 : -1;
+  return function->acquire();
 }
 
 extern "C" int
 js_release_threadsafe_function(js_threadsafe_function_t *function, js_threadsafe_function_release_mode_t mode) {
   // Allow continuing even with a pending exception
 
-  return function->release(mode) ? 0 : -1;
+  return function->release(mode);
 }
 
 extern "C" int
